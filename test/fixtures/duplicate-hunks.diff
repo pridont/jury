@@ -1,0 +1,20 @@
+diff --git a/duplicate.txt b/duplicate.txt
+index 1cda9bf..3eb4d24 100644
+--- a/duplicate.txt
++++ b/duplicate.txt
+@@ -1,6 +1,6 @@
+ head
+ keep
+-A
++B
+ keep
+ keep
+ keep
+@@ -8,6 +8,6 @@ keep
+ keep
+ keep
+ keep
+-A
++B
+ keep
+ tail

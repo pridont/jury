@@ -1,0 +1,67 @@
+# Change Stack
+
+Review a diff in VS Code as an **ordered stack of logical changes** instead of an
+alphabetical list of files. A model groups and orders the change and writes the summaries;
+you judge the code.
+
+> Status: **V3 — the review works with no AI at all, and survives a force-push.** Open a
+> diff, walk every hunk in reading order with one key, tick what you have read, quit, come
+> back, and refresh after the author pushes again. Grouping is still heuristic; the
+> model-driven ordering that justifies the tool is V6. See [docs/PLAN.md](docs/PLAN.md).
+
+```
+Change Stack: Review Working Tree     uncommitted work, untracked files included
+Change Stack: Review Staged Changes   the index
+Change Stack: Review This Branch…     what this branch introduced, against a merge base
+```
+
+`alt+j` walks every hunk in the review, crossing files, layers and cohorts on its own.
+`alt+m` ticks the hunk under the cursor, `alt+shift+m` the whole layer. `alt+z` hides
+everything but the code.
+
+Progress is stored in `.git/`, so it survives quitting, and it survives a rebase: marks are
+keyed by content, not by line number. A hunk that actually changed comes back unreviewed —
+a tick that outlives an edit would be a lie — and refresh says exactly what it did.
+
+Files arrive in alphabetical order, which is almost never the order that makes a change
+comprehensible: you read the caller before the callee and the test before the thing it
+tests. Change Stack reorganises the diff into **cohorts** of related work, each split into
+**layers** in dependency-first reading order — introduce the thing, then the change that
+needed it, then the plumbing, then the tests.
+
+Everything renders in VS Code's own surfaces: the built-in diff editor, the Comments API,
+the tree view. Real syntax highlighting, real LSP, real go-to-definition, your keybindings.
+
+## Design principles
+
+- **Ordering is the product.** If the order is not better than alphabetical, nothing else
+  matters.
+- **AI failure degrades quality, never availability.** Turn the model off, or have no
+  provider installed, and the review still works — grouped by file, with marks and comments
+  intact.
+- **A tick that survives an edit is a lie.** Review marks are carried only by an exact
+  content match, so a hunk that changed comes back unreviewed.
+- **Read-only.** A review tool must never edit the code it is reviewing.
+- **Generated code is not review material.** Lockfiles, Nx generator output and anything
+  marked `@generated` are collected out of the reading order and out of the token budget —
+  always with the reason shown, and always one click from coming back.
+
+## Providers
+
+v1 speaks to Claude through the `claude` CLI you are already signed in to — no API key.
+Everything model-specific sits behind one provider interface, so a Copilot, Codex, Gemini or
+local-model subscription can be pointed at it instead. Choosing a provider is choosing where
+the code under review is sent, and the setting says so.
+
+## Development
+
+```
+npm install
+npm run build      # bundle to dist/
+npm run watch      # rebuild on change
+npm run check      # typecheck
+npm test           # unit tests
+```
+
+Press `F5` to launch an Extension Development Host. `Change Stack: Doctor` reports git, `gh`,
+`claude` and their sign-in state.

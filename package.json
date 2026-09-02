@@ -1,0 +1,352 @@
+{
+  "name": "change-stack",
+  "displayName": "Change Stack",
+  "description": "Review a diff as an ordered stack of logical changes instead of an alphabetical list of files. AI organises and summarises; you judge.",
+  "version": "0.0.1",
+  "publisher": "pridont",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pridont/change-stack-vscode.git"
+  },
+  "homepage": "https://github.com/pridont/change-stack-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/pridont/change-stack-vscode/issues"
+  },
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "code review",
+    "diff",
+    "pull request",
+    "claude",
+    "ai"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:changestack.stack"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "changestack",
+          "title": "Change Stack",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "changestack": [
+        {
+          "id": "changestack.stack",
+          "name": "Change Stack"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "changestack.stack",
+        "contents": "No review is open.\n[Review working tree](command:changestack.review)\n[Review staged changes](command:changestack.reviewStaged)\n[Review this branch](command:changestack.reviewBase)\n[Resume last review](command:changestack.resume)\n",
+        "when": "!changestack.active"
+      }
+    ],
+    "commands": [
+      {
+        "command": "changestack.review",
+        "title": "Review Working Tree",
+        "category": "Change Stack",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "changestack.reviewStaged",
+        "title": "Review Staged Changes",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.reviewBase",
+        "title": "Review This Branch\u2026",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.refresh",
+        "title": "Refresh Review",
+        "category": "Change Stack",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "changestack.close",
+        "title": "Close Review",
+        "category": "Change Stack",
+        "icon": "$(close)"
+      },
+      {
+        "command": "changestack.resume",
+        "title": "Resume Last Review",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.list",
+        "title": "Open a Saved Review\u2026",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.doctor",
+        "title": "Doctor",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.nextHunk",
+        "title": "Next Hunk",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.prevHunk",
+        "title": "Previous Hunk",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.nextLayer",
+        "title": "Next Layer",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.prevLayer",
+        "title": "Previous Layer",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.openLayer",
+        "title": "Open Layer",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.openCohort",
+        "title": "Open All Files in This Cohort",
+        "category": "Change Stack",
+        "icon": "$(diff-multiple)"
+      },
+      {
+        "command": "changestack.toggleReviewed",
+        "title": "Toggle Reviewed on This Hunk",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.markLayerReviewed",
+        "title": "Mark Layer Reviewed and Advance",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.notScaffolding",
+        "title": "Not Scaffolding",
+        "category": "Change Stack",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "changestack.focusMode",
+        "title": "Focus Mode",
+        "category": "Change Stack"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "changestack.refresh",
+          "when": "view == changestack.stack && changestack.active",
+          "group": "navigation@1"
+        },
+        {
+          "command": "changestack.close",
+          "when": "view == changestack.stack && changestack.active",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "changestack.openCohort",
+          "when": "view == changestack.stack && viewItem =~ /^cohort/",
+          "group": "inline"
+        },
+        {
+          "command": "changestack.notScaffolding",
+          "when": "view == changestack.stack && viewItem == cohort-scaffolding",
+          "group": "inline"
+        },
+        {
+          "command": "changestack.notScaffolding",
+          "when": "view == changestack.stack && viewItem == layer"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "changestack.refresh",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.close",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.openLayer",
+          "when": "false"
+        },
+        {
+          "command": "changestack.openCohort",
+          "when": "false"
+        },
+        {
+          "command": "changestack.notScaffolding",
+          "when": "false"
+        },
+        {
+          "command": "changestack.nextHunk",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.prevHunk",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.nextLayer",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.prevLayer",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.toggleReviewed",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.markLayerReviewed",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.focusMode",
+          "when": "changestack.active"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Change Stack",
+      "properties": {
+        "changestack.ai.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use a model to group, order and summarise the change. With this off the review still works, grouped by file."
+        },
+        "changestack.provider": {
+          "type": "string",
+          "default": "claude",
+          "enum": [
+            "claude"
+          ],
+          "markdownDescription": "Which provider receives the diff. **Choosing a provider is choosing where the code under review is sent.**"
+        },
+        "changestack.providers": {
+          "type": "object",
+          "default": {
+            "claude": {
+              "command": "claude",
+              "models": {
+                "fast": "haiku",
+                "smart": "sonnet",
+                "deep": "opus"
+              }
+            }
+          },
+          "description": "Per-provider settings: executable and the model used for each tier."
+        },
+        "changestack.passes": {
+          "type": "object",
+          "default": {},
+          "description": "Route individual passes to different providers, e.g. { \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }. Unset passes use changestack.provider."
+        },
+        "changestack.scaffolding.mode": {
+          "type": "string",
+          "default": "collapse",
+          "enum": [
+            "collapse",
+            "inline",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Collect generated and boilerplate files into one trailing cohort, out of the reading order.",
+            "Classify them, but leave them in the reading order.",
+            "Do not classify at all."
+          ],
+          "description": "What to do with generated files, lockfiles and generator output."
+        },
+        "changestack.scaffolding.patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra globs treated as scaffolding. Prefix with ! to force a path back into the review."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "changestack.nextHunk",
+        "key": "alt+j",
+        "when": "changestack.active"
+      },
+      {
+        "command": "changestack.prevHunk",
+        "key": "alt+k",
+        "when": "changestack.active"
+      },
+      {
+        "command": "changestack.nextLayer",
+        "key": "alt+shift+j",
+        "when": "changestack.active"
+      },
+      {
+        "command": "changestack.prevLayer",
+        "key": "alt+shift+k",
+        "when": "changestack.active"
+      },
+      {
+        "command": "changestack.toggleReviewed",
+        "key": "alt+m",
+        "when": "changestack.active"
+      },
+      {
+        "command": "changestack.markLayerReviewed",
+        "key": "alt+shift+m",
+        "when": "changestack.active"
+      },
+      {
+        "command": "changestack.focusMode",
+        "key": "alt+z",
+        "when": "changestack.active"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "vscode:prepublish": "npm run check && node esbuild.mjs --production",
+    "package": "npx --yes @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

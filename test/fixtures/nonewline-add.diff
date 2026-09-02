@@ -1,0 +1,9 @@
+diff --git a/nonewline.txt b/nonewline.txt
+new file mode 100644
+index 0000000..0bfc124
+--- /dev/null
++++ b/nonewline.txt
+@@ -0,0 +1,2 @@
++first
++second
+\ No newline at end of file

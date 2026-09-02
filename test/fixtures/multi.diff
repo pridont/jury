@@ -1,0 +1,42 @@
+diff --git a/four.txt b/four.txt
+new file mode 100644
+index 0000000..3e75765
+--- /dev/null
++++ b/four.txt
+@@ -0,0 +1 @@
++new
+diff --git a/one.txt b/one.txt
+index 0fdf397..91ac79b 100644
+--- a/one.txt
++++ b/one.txt
+@@ -1,5 +1,5 @@
+ a
+-b
++B
+ c
+ d
+ e
+diff --git a/three.txt b/three.txt
+deleted file mode 100644
+index 0fdf397..0000000
+--- a/three.txt
++++ /dev/null
+@@ -1,6 +0,0 @@
+-a
+-b
+-c
+-d
+-e
+-f
+diff --git a/two.txt b/two.txt
+index 0fdf397..e7b6241 100644
+--- a/two.txt
++++ b/two.txt
+@@ -1,6 +1,6 @@
+ a
+ b
+ c
+-d
++D
+ e
+ f

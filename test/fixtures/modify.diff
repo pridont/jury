@@ -1,0 +1,15 @@
+diff --git a/modify.txt b/modify.txt
+index b00a0f1..d15064d 100644
+--- a/modify.txt
++++ b/modify.txt
+@@ -1,8 +1,8 @@
+ one
+ two
+-three
++THREE
+ four
+ five
+ six
+ seven
+-eight
++EIGHT

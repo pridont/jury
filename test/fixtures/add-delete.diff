@@ -1,0 +1,22 @@
+diff --git a/added.txt b/added.txt
+new file mode 100644
+index 0000000..fbbee86
+--- /dev/null
++++ b/added.txt
+@@ -0,0 +1,2 @@
++alpha
++beta
+diff --git a/modify.txt b/modify.txt
+deleted file mode 100644
+index d15064d..0000000
+--- a/modify.txt
++++ /dev/null
+@@ -1,8 +0,0 @@
+-one
+-two
+-THREE
+-four
+-five
+-six
+-seven
+-EIGHT

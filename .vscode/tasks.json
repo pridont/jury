@@ -1,0 +1,7 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "type": "npm", "script": "build", "group": { "kind": "build", "isDefault": true }, "problemMatcher": ["$esbuild"] },
+    { "type": "npm", "script": "watch", "isBackground": true, "problemMatcher": ["$esbuild-watch"] }
+  ]
+}

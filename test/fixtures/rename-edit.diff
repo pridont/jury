@@ -1,0 +1,14 @@
+diff --git a/renamed.txt b/moved.txt
+similarity index 89%
+rename from renamed.txt
+rename to moved.txt
+index 1e395f2..4d8fac7 100644
+--- a/renamed.txt
++++ b/moved.txt
+@@ -1,5 +1,5 @@
+ alpha
+-beta
++BETA
+ gamma
+ delta
+ epsilon
