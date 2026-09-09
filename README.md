@@ -4,10 +4,10 @@ Review a diff in VS Code as an **ordered stack of logical changes** instead of a
 alphabetical list of files. A model groups and orders the change and writes the summaries;
 you judge the code.
 
-> Status: **V3 — the review works with no AI at all, and survives a force-push.** Open a
-> diff, walk every hunk in reading order with one key, tick what you have read, quit, come
-> back, and refresh after the author pushes again. Grouping is still heuristic; the
-> model-driven ordering that justifies the tool is V6. See [docs/PLAN.md](docs/PLAN.md).
+> Status: **V4 — a complete review, with no AI at all.** Open a diff, walk every hunk in
+> reading order with one key, tick what you have read, leave notes, export them, and refresh
+> after the author pushes again. Grouping is still heuristic; the model-driven ordering that
+> justifies the tool is V6. See [docs/PLAN.md](docs/PLAN.md).
 
 ```
 Change Stack: Review Working Tree     uncommitted work, untracked files included
@@ -22,6 +22,11 @@ everything but the code.
 Progress is stored in `.git/`, so it survives quitting, and it survives a rebase: marks are
 keyed by content, not by line number. A hunk that actually changed comes back unreviewed —
 a tick that outlives an edit would be a lie — and refresh says exactly what it did.
+
+Notes are left on the diff itself and anchored the same way. They make the opposite trade
+from marks: a note follows code that moved and says its position is approximate, because
+losing it entirely would be worse. Notes whose code is gone are listed for you to re-pin or
+discard. `Export Review as Markdown` writes the whole thing out, grouped by cohort.
 
 Files arrive in alphabetical order, which is almost never the order that makes a change
 comprehensible: you read the caller before the callee and the test before the thing it

@@ -17,8 +17,17 @@ export function heuristicCohorts(files: FileChange[]): Cohort[] {
 
   const paired = pairTestsWithSources(rest);
   const cohorts = paired.map(toCohort);
+  disambiguate(cohorts, paired);
 
-  cohorts.sort((a, b) => rank(a.kind) - rank(b.kind) || a.title.localeCompare(b.title));
+  // Order by path, not by the title shown. Titles are names, and some are qualified with a
+  // directory to stay distinct, so sorting on them interleaves `agent/init.lua` with
+  // `cache.lua`. Sorting on the path keeps a directory's files together, which is at least a
+  // structure the reviewer already knows — the reading order proper is not something a path
+  // can produce.
+  const leadPath = new Map(cohorts.map((cohort, index) => [cohort, paired[index]?.files[0]?.path ?? cohort.title]));
+  cohorts.sort(
+    (a, b) => rank(a.kind) - rank(b.kind) || leadPath.get(a)!.localeCompare(leadPath.get(b)!),
+  );
 
   if (scaffolding.length > 0) {
     cohorts.push(scaffoldingCohort(scaffolding));
@@ -84,13 +93,33 @@ function toCohort(group: Group): Cohort {
 
   return {
     id: `h:${lead.path}`,
-    title: extra > 0 ? `${lead.path} and its test${extra > 1 ? 's' : ''}` : lead.path,
+    // The name, not the path. Every layer row underneath already carries the path, and a
+    // cohort title long enough to truncate hides the counts that come after it.
+    title: extra > 0 ? `${basename(lead.path)} and its test${extra > 1 ? 's' : ''}` : basename(lead.path),
     summary: group.files.map(describe).join(' '),
     kind: group.kind,
     risk: 'low',
     layers,
     origin: 'heuristic',
   };
+}
+
+/**
+ * A codebase has many files called `init`, `config` or `index`. Where the name alone would
+ * name two different cohorts the same thing, qualify it with the directory it came from —
+ * the way an editor disambiguates two tabs — rather than leaving two identical rows.
+ */
+function disambiguate(cohorts: Cohort[], groups: Group[]): void {
+  const seen = new Map<string, number>();
+  for (const cohort of cohorts) seen.set(cohort.title, (seen.get(cohort.title) ?? 0) + 1);
+
+  cohorts.forEach((cohort, index) => {
+    if ((seen.get(cohort.title) ?? 0) < 2) return;
+    const lead = groups[index]?.files[0];
+    if (!lead) return;
+    const parent = lead.path.split('/').at(-2);
+    if (parent) cohort.title = `${parent}/${cohort.title}`;
+  });
 }
 
 function scaffoldingCohort(files: FileChange[]): Cohort {

@@ -9,6 +9,9 @@ import { StackTree, type Node } from './ui/tree.js';
 import { BlobProvider, SCHEME } from './ui/content.js';
 import { openMultiDiff } from './ui/diff.js';
 import { Navigator } from './ui/nav.js';
+import { Comments } from './ui/comments.js';
+import { reconcileComments } from './model/comments.js';
+import { toMarkdown } from './export.js';
 import { buildOrder } from './model/order.js';
 import { heuristicCohorts } from './model/heuristic.js';
 import { classifyScaffolding } from './model/classify.js';
@@ -20,8 +23,17 @@ import { describeSpec } from './model/types.js';
 
 let log: vscode.OutputChannel;
 
+/**
+ * Which review this window had open, so reloading the window brings it back rather than
+ * dropping the reviewer on the welcome screen. Per window, not per repository: opening a
+ * second window on the same repo should not inherit what the first one was reading.
+ */
+let windowState: vscode.Memento;
+const LAST_REVIEW = 'changestack.lastReview';
+
 export function activate(context: vscode.ExtensionContext): void {
   log = vscode.window.createOutputChannel('Change Stack');
+  windowState = context.workspaceState;
 
   const host = new SessionHost();
   const tree = new StackTree(host);
@@ -32,27 +44,40 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   const nav = new Navigator(new Session({ root: '', commonDir: '', linkedWorktree: false }, { kind: 'worktree' }));
+  const comments = new Comments();
 
   context.subscriptions.push(
     log,
     host,
     view,
     nav,
+    comments,
+
+    comments.onDidChange(() => {
+      tree.refresh();
+      if (host.active) void persist(host.active);
+    }),
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, blobs),
 
     view.onDidChangeCheckboxState((event) => {
+      const session = host.active;
+      if (!session) return;
       for (const [node, state] of event.items) {
-        if (node.type !== 'layer') continue;
-        const session = host.active;
-        if (!session) continue;
+        // A cohort of one layer is rendered as that layer, so it carries the tick too.
+        const hunkIds =
+          node.type === 'layer'
+            ? node.layer.hunkIds
+            : node.type === 'cohort'
+              ? node.cohort.layers.flatMap((layer) => layer.hunkIds)
+              : [];
         const checked = state === vscode.TreeItemCheckboxState.Checked;
-        for (const id of node.layer.hunkIds) {
+        for (const id of hunkIds) {
           if (checked) session.marks.add(id);
           else session.marks.delete(id);
         }
       }
       updateBadge(view, nav, host);
-      if (host.active) void persist(host.active);
+      void persist(session);
     }),
 
     vscode.window.onDidChangeTextEditorSelection((event) => {
@@ -66,10 +91,24 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('changestack.close', () => {
       blobs.clear();
       host.close();
+      void windowState.update(LAST_REVIEW, undefined);
     }),
     vscode.commands.registerCommand('changestack.resume', () => resume(host, ctx())),
     vscode.commands.registerCommand('changestack.list', () => pickReview(host, ctx())),
     vscode.commands.registerCommand('changestack.doctor', () => runDoctor()),
+
+    vscode.commands.registerCommand('changestack.createComment', (reply: vscode.CommentReply) =>
+      comments.add(reply),
+    ),
+    vscode.commands.registerCommand('changestack.editComment', (c: vscode.Comment) => comments.edit(c)),
+    vscode.commands.registerCommand('changestack.saveComment', (c: vscode.Comment) => comments.save(c)),
+    vscode.commands.registerCommand('changestack.cancelComment', (c: vscode.Comment) => comments.cancel(c)),
+    vscode.commands.registerCommand('changestack.deleteComment', (c: vscode.Comment) => comments.remove(c)),
+    vscode.commands.registerCommand('changestack.repinComment', (node?: Node) => repin(host, comments, node)),
+    vscode.commands.registerCommand('changestack.discardComment', (node?: Node) => {
+      if (node?.type === 'orphan') comments.discard(node.comment);
+    }),
+    vscode.commands.registerCommand('changestack.export', () => exportReview(host)),
 
     vscode.commands.registerCommand('changestack.nextHunk', () => nav.next()),
     vscode.commands.registerCommand('changestack.prevHunk', () => nav.previous()),
@@ -79,6 +118,9 @@ export function activate(context: vscode.ExtensionContext): void {
       nav.goToLayer(cohortIndex, layerIndex),
     ),
     vscode.commands.registerCommand('changestack.openCohort', (node?: Node) => openCohort(host, node)),
+    vscode.commands.registerCommand('changestack.markCohortReviewed', (node?: Node) =>
+      markCohort(host, node, ctx()),
+    ),
     vscode.commands.registerCommand('changestack.toggleReviewed', () => toggleReviewed(host, nav, tree, view)),
     vscode.commands.registerCommand('changestack.markLayerReviewed', () => markLayer(host, nav, tree, view)),
     vscode.commands.registerCommand('changestack.notScaffolding', (node?: Node) =>
@@ -97,9 +139,10 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   void vscode.commands.executeCommand('setContext', 'changestack.active', false);
+  void restoreLast(host, ctx());
 
   function ctx(): Context {
-    return { tree, nav, view, blobs };
+    return { tree, nav, view, blobs, comments };
   }
 }
 
@@ -107,7 +150,13 @@ export function deactivate(): void {
   // Everything a review allocates is owned by the session, which the context disposes.
 }
 
-type Context = { tree: StackTree; nav: Navigator; view: vscode.TreeView<Node>; blobs: BlobProvider };
+type Context = {
+  tree: StackTree;
+  nav: Navigator;
+  view: vscode.TreeView<Node>;
+  blobs: BlobProvider;
+  comments: Comments;
+};
 
 async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<void> {
   const repo = await resolveRepo();
@@ -124,7 +173,36 @@ async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<
 
   host.open(session);
   ctx.nav.setSession(session);
+  ctx.comments.setSession(session);
+  await windowState.update(LAST_REVIEW, spec);
   await load(session, ctx);
+}
+
+/**
+ * Reopen whatever this window was reviewing when it was last closed.
+ *
+ * Silent by design: a window that was mid-review should come back mid-review, and a window
+ * that was not should see nothing happen. Anything that goes wrong — the repository moved,
+ * the branch is gone — leaves the welcome screen rather than an error the reviewer did not
+ * ask for.
+ */
+async function restoreLast(host: SessionHost, ctx: Context): Promise<void> {
+  const spec = windowState.get<ReviewSpec>(LAST_REVIEW);
+  if (!spec) return;
+
+  const cwd = workspaceCwd();
+  const repo = cwd ? await findRepo(cwd) : null;
+  if (!repo) return;
+
+  const session = new Session(repo, spec);
+  const stored = await loadStored(repo, reviewId(repo, spec));
+  if (stored) session.hydrate(stored);
+
+  host.open(session);
+  ctx.nav.setSession(session);
+  ctx.comments.setSession(session);
+  await load(session, ctx);
+  log.appendLine(`  restored ${describeSpec(spec)} with ${session.marks.size} marks`);
 }
 
 /** Reopen the most recently touched review for this repository. */
@@ -176,13 +254,22 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   if (session.error) return;
 
   const current = session.files.flatMap((file) => file.hunks);
-  const { marks, report } = reconcileMarks(previous, current, session.marks);
+  const { marks, anchors, report } = reconcileMarks(previous, current, session.marks);
   session.marks = marks;
+
+  // Comments take the fuzzy matches marks refuse: losing a note is worse than showing it a
+  // couple of lines off, and the flag says not to trust the position.
+  const notes = reconcileComments(session.comments, anchors);
+  session.comments = notes.comments;
   await persist(session);
 
+  ctx.comments.render();
   ctx.tree.refresh();
   updateBadge(ctx.view, ctx.nav, host);
 
+  if (notes.moved > 0 || notes.orphaned > 0) {
+    log.appendLine(`  notes: ${notes.moved} moved, ${notes.orphaned} orphaned`);
+  }
   const message = describeRefresh(report);
   log.appendLine(`  ${message}`);
   vscode.window.setStatusBarMessage(`Change Stack: ${message}`, 6000);
@@ -237,6 +324,7 @@ async function load(session: Session, ctx: Context): Promise<void> {
   if (session.error) return;
 
   ctx.nav.setOrder(buildOrder(session.cohorts, session.files));
+  ctx.comments.render();
   updateBadge(ctx.view, ctx.nav, { active: session } as SessionHost);
 
   // Best-effort labelling; a missing language server costs a label, never the review.
@@ -267,6 +355,19 @@ async function openCohort(host: SessionHost, node?: Node): Promise<void> {
   const files = session.files.filter((file) => paths.has(file.path));
   const multi = await openMultiDiff(session, node.cohort.title, files);
   if (!multi) log.appendLine('  multi-file diff editor unavailable; opened files individually');
+}
+
+/** Tick every hunk in a cohort, from the tree rather than from the cursor. */
+async function markCohort(host: SessionHost, node: Node | undefined, ctx: Context): Promise<void> {
+  const session = host.active;
+  if (!session || !node || node.type !== 'cohort') return;
+
+  for (const layer of node.cohort.layers) {
+    for (const id of layer.hunkIds) session.marks.add(id);
+  }
+  ctx.tree.refresh();
+  updateBadge(ctx.view, ctx.nav, host);
+  await persist(session);
 }
 
 function toggleReviewed(host: SessionHost, nav: Navigator, tree: StackTree, view: vscode.TreeView<Node>): void {
@@ -379,6 +480,47 @@ async function reviewBase(host: SessionHost, ctx: Context): Promise<void> {
   if (!base) return;
 
   await open(host, { kind: 'range', base, head: 'HEAD', threeDot: true }, ctx);
+}
+
+/** Put an orphaned note back on a hunk the reviewer picks out of the reading order. */
+async function repin(host: SessionHost, comments: Comments, node?: Node): Promise<void> {
+  const session = host.active;
+  if (!session || node?.type !== 'orphan') return;
+
+  const choices = session.cohorts.flatMap((cohort) =>
+    cohort.layers.flatMap((layer) =>
+      layer.hunkIds.map((id) => ({
+        label: layer.title,
+        description: cohort.title,
+        hunkId: id,
+      })),
+    ),
+  );
+
+  const picked = await vscode.window.showQuickPick<(typeof choices)[number]>(choices, {
+    title: 'Re-pin this note',
+    placeHolder: node.comment.body.split('\n')[0] ?? 'Choose a hunk',
+  });
+  if (picked) comments.repin(node.comment, picked.hunkId);
+}
+
+/** Write the review as markdown and open it, so it can be read before it is sent anywhere. */
+async function exportReview(host: SessionHost): Promise<void> {
+  const session = host.active;
+  if (!session) return;
+
+  const markdown = toMarkdown({
+    spec: session.spec,
+    base: session.base,
+    head: session.head,
+    cohorts: session.cohorts,
+    files: session.files,
+    comments: session.comments,
+    marks: session.marks,
+  });
+
+  const document = await vscode.workspace.openTextDocument({ content: markdown, language: 'markdown' });
+  await vscode.window.showTextDocument(document, { preview: false });
 }
 
 async function runDoctor(): Promise<void> {

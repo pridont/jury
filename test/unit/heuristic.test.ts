@@ -65,7 +65,7 @@ describe('heuristicCohorts', () => {
     const cohorts = heuristicCohorts([file('src/auth/token.spec.ts'), file('src/auth/token.ts')]);
     expect(cohorts).toHaveLength(1);
     expect(cohorts[0]!.layers.map((l) => l.title)).toEqual(['src/auth/token.ts', 'src/auth/token.spec.ts']);
-    expect(cohorts[0]!.title).toBe('src/auth/token.ts and its test');
+    expect(cohorts[0]!.title).toBe('token.ts and its test');
   });
 
   it('pairs a mirrored test tree by basename', () => {
@@ -88,6 +88,31 @@ describe('heuristicCohorts', () => {
     const cohorts = heuristicCohorts([file('src/nothing.spec.ts')]);
     expect(cohorts).toHaveLength(1);
     expect(cohorts[0]!.kind).toBe('test');
+  });
+
+  it('titles a cohort by name, leaving the path to the rows underneath', () => {
+    const cohorts = heuristicCohorts([file('lua/revstack/agent/cache.lua')]);
+    expect(cohorts[0]!.title).toBe('cache.lua');
+    expect(cohorts[0]!.layers[0]!.title).toBe('lua/revstack/agent/cache.lua');
+  });
+
+  it('qualifies a name that would otherwise appear twice', () => {
+    const cohorts = heuristicCohorts([file('lua/revstack/ui/ask.lua'), file('lua/revstack/agent/prompts/ask.lua')]);
+    expect(cohorts.map((c) => c.title).sort()).toEqual(['prompts/ask.lua', 'ui/ask.lua']);
+  });
+
+  it('leaves an unambiguous name alone', () => {
+    const cohorts = heuristicCohorts([file('lua/revstack/ui/ask.lua'), file('lua/revstack/ui/keys.lua')]);
+    expect(cohorts.map((c) => c.title).sort()).toEqual(['ask.lua', 'keys.lua']);
+  });
+
+  it('keeps a directory together rather than sorting on the displayed name', () => {
+    const cohorts = heuristicCohorts([
+      file('lua/agent/cache.lua'),
+      file('lua/ui/init.lua'),
+      file('lua/agent/init.lua'),
+    ]);
+    expect(cohorts.map((c) => c.title)).toEqual(['cache.lua', 'agent/init.lua', 'ui/init.lua']);
   });
 
   it('orders code before config before tests before docs', () => {

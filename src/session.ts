@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import type { Repo } from './git/repo.js';
 import type { FileChange } from './git/parse.js';
-import type { Cohort, Review, ReviewSpec } from './model/types.js';
+import type { Cohort, Comment, Review, ReviewSpec } from './model/types.js';
 import { describeSpec } from './model/types.js';
 import { emptyReview, reviewId, save, type StoredReview } from './state/store.js';
 
@@ -38,6 +38,8 @@ export class Session implements vscode.Disposable {
   marks = new Set<string>();
   /** Paths the reviewer has said are not scaffolding, however they were classified. */
   notScaffolding = new Set<string>();
+  /** Review notes. The output of the review, and the thing that gets exported or posted. */
+  comments: Comment[] = [];
   /** The record on disk. Written after every change the reviewer makes. */
   stored: StoredReview;
 
@@ -50,6 +52,7 @@ export class Session implements vscode.Disposable {
     this.stored = stored;
     this.marks = new Set(stored.marks);
     this.notScaffolding = new Set(stored.notScaffolding);
+    this.comments = stored.comments.map((comment) => ({ ...comment }));
   }
 
   /**
@@ -59,6 +62,7 @@ export class Session implements vscode.Disposable {
   async persist(): Promise<void> {
     this.stored.marks = [...this.marks];
     this.stored.notScaffolding = [...this.notScaffolding];
+    this.stored.comments = this.comments;
     await save(this.repo, this.stored);
   }
 

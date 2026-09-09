@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### V4 — comments and export
+- Review notes as native comment threads on the diff. The gutter only invites a note where
+  there is a hunk: a note left on unchanged context is one nobody finds again.
+- Anchored to `{hunkId, offset, side}` and never to a file line, so a note holds its place
+  when code above it moves. Persisted with the rest of the review state.
+- Comments take the fuzzy matches marks refuse. Losing a note is worse than showing it a
+  couple of lines off, so a moved note follows its code and is labelled "position is
+  approximate". A note whose code is gone is listed under **Notes whose code is gone**, to
+  re-pin or discard — never silently dropped.
+- Clearing a note's text deletes it; an empty comment is not a comment.
+- `Export Review as Markdown` — grouped by cohort rather than by path, because the grouping
+  is the review. Every note carries a `file:line`, generated files are not counted as work
+  the reviewer skipped, and a guessed position says so.
+
 ### V3 — state, marks, refresh, anchoring
 - Review progress persists under `<git-common-dir>/changestack/`, written atomically so a
   crash mid-write leaves the previous state intact rather than a truncated one. Inside

@@ -29,6 +29,20 @@ export function sidesFor(session: Session, file: FileChange): Sides {
   return { before, after: blobUri(root, file.path, session.head) };
 }
 
+/** Which file and side a document belongs to, or null when it is not part of the review. */
+export function fileForUri(
+  session: Session,
+  uri: vscode.Uri,
+): { file: FileChange; side: 'old' | 'new' } | null {
+  const key = uri.toString();
+  for (const file of session.files) {
+    const { before, after } = sidesFor(session, file);
+    if (key === after.toString()) return { file, side: 'new' };
+    if (key === before.toString()) return { file, side: 'old' };
+  }
+  return null;
+}
+
 export function diffTitle(file: FileChange): string {
   const name = path.basename(file.path);
   if (file.status === 'renamed' || file.status === 'copied') {

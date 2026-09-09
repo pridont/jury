@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import type { SessionHost } from '../session.js';
-import type { Cohort, Layer, Risk } from '../model/types.js';
+import type { Cohort, Comment, Layer, Risk } from '../model/types.js';
 
 export type Node =
   | { type: 'message'; text: string; icon?: string }
+  | { type: 'orphans' }
+  | { type: 'orphan'; comment: Comment }
   | { type: 'cohort'; cohort: Cohort; index: number }
   | { type: 'layer'; cohortIndex: number; layerIndex: number; cohort: Cohort; layer: Layer };
 
@@ -36,25 +38,80 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
 
       case 'cohort': {
         const scaffolding = node.cohort.kind === 'scaffolding';
+        // A cohort of one layer says everything its child would. Expanding it to a row that
+        // repeats the title is noise, so it becomes that row: openable, tickable, one line.
+        const only = node.cohort.layers.length === 1 ? node.cohort.layers[0] : undefined;
+
         const item = new vscode.TreeItem(
           scaffolding ? node.cohort.title : `${node.index + 1}. ${node.cohort.title}`,
-          scaffolding ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded,
+          only
+            ? vscode.TreeItemCollapsibleState.None
+            : scaffolding
+              ? vscode.TreeItemCollapsibleState.Collapsed
+              : vscode.TreeItemCollapsibleState.Expanded,
         );
+
         const hunks = node.cohort.layers.reduce((n, layer) => n + layer.hunkIds.length, 0);
-        item.description = `${node.cohort.kind} · ${hunks} hunk${hunks === 1 ? '' : 's'}`;
+        const where = only ? directory(only.title) : `${node.cohort.layers.length} files`;
+        item.description = `${where ? `${where} · ` : ''}${hunks} hunk${hunks === 1 ? '' : 's'}`;
         item.tooltip = new vscode.MarkdownString(
           node.cohort.summary + (node.cohort.riskReason ? `\n\n**Risk:** ${node.cohort.riskReason}` : ''),
         );
+
         const icon = riskIcon(node.cohort.risk);
         if (icon) item.iconPath = icon;
         item.contextValue = scaffolding ? 'cohort-scaffolding' : 'cohort';
+
+        if (only) {
+          item.resourceUri = vscode.Uri.file(only.title);
+          item.checkboxState =
+            session && only.hunkIds.every((id) => session.marks.has(id))
+              ? vscode.TreeItemCheckboxState.Checked
+              : vscode.TreeItemCheckboxState.Unchecked;
+          item.command = {
+            command: 'changestack.openLayer',
+            title: 'Open',
+            arguments: [node.index, 0],
+          };
+        }
+        return item;
+      }
+
+      case 'orphans': {
+        const count = session?.comments.filter((comment) => comment.orphaned).length ?? 0;
+        const item = new vscode.TreeItem(
+          'Notes whose code is gone',
+          vscode.TreeItemCollapsibleState.Expanded,
+        );
+        item.description = `${count}`;
+        item.iconPath = new vscode.ThemeIcon('unverified', new vscode.ThemeColor('list.warningForeground'));
+        item.tooltip = new vscode.MarkdownString(
+          'The code these notes were written about is no longer in the diff. Re-pin one to a hunk, or discard it.',
+        );
+        item.contextValue = 'orphans';
+        return item;
+      }
+
+      case 'orphan': {
+        const first = node.comment.body.split('\n')[0] ?? '';
+        const item = new vscode.TreeItem(first, vscode.TreeItemCollapsibleState.None);
+        item.tooltip = new vscode.MarkdownString(node.comment.body);
+        item.iconPath = new vscode.ThemeIcon('comment');
+        item.contextValue = 'orphan';
         return item;
       }
 
       case 'layer': {
-        const item = new vscode.TreeItem(node.layer.title, vscode.TreeItemCollapsibleState.None);
+        const item = new vscode.TreeItem(name(node.layer.title), vscode.TreeItemCollapsibleState.None);
         const marked = session ? node.layer.hunkIds.every((id) => session.marks.has(id)) : false;
-        item.description = `${node.layer.hunkIds.length} hunk${node.layer.hunkIds.length === 1 ? '' : 's'}`;
+        const notes = session
+          ? session.comments.filter((comment) => !comment.orphaned && node.layer.hunkIds.includes(comment.hunkId))
+              .length
+          : 0;
+        const where = directory(node.layer.title);
+        item.description = `${where ? `${where} · ` : ''}${node.layer.hunkIds.length} hunk${
+          node.layer.hunkIds.length === 1 ? '' : 's'
+        }${notes > 0 ? ` · ${notes} note${notes === 1 ? '' : 's'}` : ''}`;
         item.tooltip = new vscode.MarkdownString(node.layer.summary);
         item.resourceUri = vscode.Uri.file(node.layer.title);
         item.checkboxState = marked
@@ -79,10 +136,22 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
       if (session.error) return [{ type: 'message', text: session.error, icon: 'error' }];
       if (session.loading) return [{ type: 'message', text: `Reading ${session.title}…`, icon: 'loading~spin' }];
       if (session.cohorts.length === 0) return [{ type: 'message', text: 'No changes to review.' }];
-      return session.cohorts.map((cohort, index) => ({ type: 'cohort', cohort, index }));
+
+      const nodes: Node[] = session.cohorts.map((cohort, index) => ({ type: 'cohort', cohort, index }));
+      // Orphaned notes get their own section rather than vanishing with the code they were
+      // about. Last, so they never push the reading order down the view.
+      if (session.comments.some((comment) => comment.orphaned)) nodes.push({ type: 'orphans' });
+      return nodes;
+    }
+
+    if (node.type === 'orphans') {
+      return session.comments
+        .filter((comment) => comment.orphaned)
+        .map((comment) => ({ type: 'orphan', comment }) as Node);
     }
 
     if (node.type === 'cohort') {
+      if (node.cohort.layers.length === 1) return [];
       return node.cohort.layers.map((layer, layerIndex) => ({
         type: 'layer',
         cohortIndex: node.index,
@@ -107,6 +176,16 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     if (!cohort || !layer) return undefined;
     return { type: 'layer', cohortIndex, layerIndex, cohort, layer };
   }
+}
+
+function name(path: string): string {
+  const at = path.lastIndexOf('/');
+  return at === -1 ? path : path.slice(at + 1);
+}
+
+function directory(path: string): string {
+  const at = path.lastIndexOf('/');
+  return at === -1 ? '' : path.slice(0, at);
 }
 
 function riskIcon(risk: Risk): vscode.ThemeIcon | undefined {

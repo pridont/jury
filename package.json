@@ -144,6 +144,12 @@
         "category": "Change Stack"
       },
       {
+        "command": "changestack.markCohortReviewed",
+        "title": "Mark Cohort Reviewed",
+        "category": "Change Stack",
+        "icon": "$(check-all)"
+      },
+      {
         "command": "changestack.notScaffolding",
         "title": "Not Scaffolding",
         "category": "Change Stack",
@@ -153,10 +159,60 @@
         "command": "changestack.focusMode",
         "title": "Focus Mode",
         "category": "Change Stack"
+      },
+      {
+        "command": "changestack.createComment",
+        "title": "Add Note",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.editComment",
+        "title": "Edit",
+        "category": "Change Stack",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "changestack.saveComment",
+        "title": "Save",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.cancelComment",
+        "title": "Cancel",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.deleteComment",
+        "title": "Delete",
+        "category": "Change Stack",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "changestack.repinComment",
+        "title": "Re-pin to a Hunk\u2026",
+        "category": "Change Stack",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "changestack.discardComment",
+        "title": "Discard",
+        "category": "Change Stack",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "changestack.export",
+        "title": "Export Review as Markdown",
+        "category": "Change Stack",
+        "icon": "$(markdown)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "changestack.export",
+          "when": "view == changestack.stack && changestack.active",
+          "group": "navigation@0"
+        },
         {
           "command": "changestack.refresh",
           "when": "view == changestack.stack && changestack.active",
@@ -172,16 +228,42 @@
         {
           "command": "changestack.openCohort",
           "when": "view == changestack.stack && viewItem =~ /^cohort/",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "changestack.openCohort",
+          "when": "view == changestack.stack && viewItem =~ /^cohort/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "changestack.markCohortReviewed",
+          "when": "view == changestack.stack && viewItem =~ /^cohort/",
+          "group": "navigation@2"
         },
         {
           "command": "changestack.notScaffolding",
           "when": "view == changestack.stack && viewItem == cohort-scaffolding",
-          "group": "inline"
+          "group": "navigation@3"
         },
         {
           "command": "changestack.notScaffolding",
-          "when": "view == changestack.stack && viewItem == layer"
+          "when": "view == changestack.stack && viewItem == layer",
+          "group": "navigation@3"
+        },
+        {
+          "command": "changestack.openLayer",
+          "when": "view == changestack.stack && viewItem == layer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "changestack.repinComment",
+          "when": "view == changestack.stack && viewItem == orphan",
+          "group": "inline@1"
+        },
+        {
+          "command": "changestack.discardComment",
+          "when": "view == changestack.stack && viewItem == orphan",
+          "group": "inline@2"
         }
       ],
       "commandPalette": [
@@ -232,6 +314,73 @@
         {
           "command": "changestack.focusMode",
           "when": "changestack.active"
+        },
+        {
+          "command": "changestack.markCohortReviewed",
+          "when": "false"
+        },
+        {
+          "command": "changestack.createComment",
+          "when": "false"
+        },
+        {
+          "command": "changestack.editComment",
+          "when": "false"
+        },
+        {
+          "command": "changestack.saveComment",
+          "when": "false"
+        },
+        {
+          "command": "changestack.cancelComment",
+          "when": "false"
+        },
+        {
+          "command": "changestack.deleteComment",
+          "when": "false"
+        },
+        {
+          "command": "changestack.repinComment",
+          "when": "false"
+        },
+        {
+          "command": "changestack.discardComment",
+          "when": "false"
+        },
+        {
+          "command": "changestack.export",
+          "when": "changestack.active"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "changestack.createComment",
+          "group": "inline@1",
+          "when": "commentController == changestack"
+        }
+      ],
+      "comments/comment/title": [
+        {
+          "command": "changestack.editComment",
+          "group": "group@1",
+          "when": "commentController == changestack && comment == changestack"
+        },
+        {
+          "command": "changestack.deleteComment",
+          "group": "group@2",
+          "when": "commentController == changestack && comment == changestack"
+        }
+      ],
+      "comments/comment/context": [
+        {
+          "command": "changestack.saveComment",
+          "group": "inline@1",
+          "when": "commentController == changestack"
+        },
+        {
+          "command": "changestack.cancelComment",
+          "group": "inline@2",
+          "when": "commentController == changestack"
         }
       ]
     },
