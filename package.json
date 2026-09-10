@@ -1,7 +1,7 @@
 {
   "name": "change-stack",
   "displayName": "Change Stack",
-  "description": "Review a diff as an ordered stack of logical changes instead of an alphabetical list of files. AI organises and summarises; you judge.",
+  "description": "Review a diff as an ordered stack of logical changes, not an alphabetical list of files. A model groups and orders the change; you judge the code.",
   "version": "0.0.1",
   "publisher": "pridont",
   "license": "MIT",
