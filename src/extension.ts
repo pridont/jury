@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { findRepo, currentBranch, type Repo } from './git/repo.js';
+import { guardAgainstOrphans, killAll } from './util/exec.js';
 import { acquire } from './git/source.js';
 import { enrichSymbols } from './enrich.js';
 import { doctor, formatChecks } from './doctor.js';
@@ -67,6 +68,7 @@ export function activate(context: vscode.ExtensionContext): void {
     comments,
     activity,
     { dispose: () => queue.cancelAll() },
+    guardAgainstOrphans(),
 
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('changestack.providers')) applyProviderSettings(claude);
@@ -185,7 +187,9 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  // Everything a review allocates is owned by the session, which the context disposes.
+  // Subscriptions are disposed around this, which cancels the queue and takes the children
+  // with it. Doing it here as well costs nothing and covers a disposal that does not run.
+  killAll();
 }
 
 type Context = {

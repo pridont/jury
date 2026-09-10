@@ -1,4 +1,37 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+
+/**
+ * Every child this module has running.
+ *
+ * A spawned process outlives its parent on POSIX — measured, not assumed — so if the
+ * extension host goes away without disposing anything, a model call keeps running against
+ * the user's account with nobody left to read the answer. It would finish its request and
+ * exit on its own, but finishing a request nobody wants is exactly what cancellation is
+ * for.
+ */
+const live = new Set<ChildProcess>();
+
+/** Signal every running child. The backstop for a shutdown that skipped disposal. */
+export function killAll(): void {
+  for (const child of live) child.kill('SIGTERM');
+  live.clear();
+}
+
+/** Kill children when the extension host exits, and stop listening when we are unloaded. */
+export function guardAgainstOrphans(): { dispose: () => void } {
+  const onExit = () => killAll();
+  process.once('exit', onExit);
+  process.once('SIGTERM', onExit);
+  process.once('SIGINT', onExit);
+  return {
+    dispose: () => {
+      process.removeListener('exit', onExit);
+      process.removeListener('SIGTERM', onExit);
+      process.removeListener('SIGINT', onExit);
+      killAll();
+    },
+  };
+}
 
 export type RunResult = {
   code: number;
@@ -36,6 +69,8 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
       shell: false,
     });
 
+    live.add(child);
+
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -43,6 +78,7 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
     const finish = (fn: () => void) => {
       if (settled) return;
       settled = true;
+      live.delete(child);
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', onAbort);
       fn();

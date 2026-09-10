@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { run, runOk, isOnPath, RunError } from '../../src/util/exec.js';
+import { run, runOk, isOnPath, killAll, RunError } from '../../src/util/exec.js';
 
 describe('run', () => {
   it('collects stdout and the exit code', async () => {
@@ -35,6 +35,27 @@ describe('run', () => {
     const promise = run('node', ['-e', 'setTimeout(()=>{},5000)'], { signal: controller.signal });
     controller.abort();
     await expect(promise).rejects.toThrow(/cancelled/);
+  });
+});
+
+describe('killAll', () => {
+  it('signals a running child, so a shutdown that skipped disposal leaves nothing behind', async () => {
+    const running = run('node', ['-e', 'setTimeout(()=>{}, 30000)']);
+    // Let it actually start before pulling the rug.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    killAll();
+
+    const result = await running;
+    expect(result.code).not.toBe(0);
+  });
+
+  it('is harmless when nothing is running', () => {
+    expect(() => killAll()).not.toThrow();
+  });
+
+  it('forgets a child that already finished', async () => {
+    await run('node', ['-e', '0']);
+    expect(() => killAll()).not.toThrow();
   });
 });
 
