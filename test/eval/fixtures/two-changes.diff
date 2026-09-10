@@ -1,0 +1,624 @@
+diff --git a/doc/revstack.txt b/doc/revstack.txt
+index 968744b..db11b13 100644
+--- a/doc/revstack.txt
++++ b/doc/revstack.txt
+@@ -24,7 +24,9 @@ you are looking at, and a side-by-side diff shows one file pair at a time.
+ One key walks every hunk in reading order.
+ 
+ Unchanged parts of a file are folded away and labelled with how many lines
+-they hide; `zo` opens one.
++they hide; `zo` opens one. A file with nothing to compare against — one that
++was just added or just deleted — is shown in a single pane instead of a
++half-empty comparison.
+ 
+ Claude groups the diff and puts it in that order, summarises each file,
+ answers questions about the code, and looks for problems. All of it is
+diff --git a/docs/DESIGN.md b/docs/DESIGN.md
+index 8a584bf..cd10e1a 100644
+--- a/docs/DESIGN.md
++++ b/docs/DESIGN.md
+@@ -144,6 +144,12 @@ works, diagnostics show, and you can fix a typo in place without leaving the rev
+ `range` and `pr` reviews the right side is a read-only snapshot — the review tool does not
+ check out other people's branches behind your back.
+ 
++**One side, one pane.** When a side has no content — an added file, a deleted one, a file
++that was empty — the base pane is closed and the remaining content fills the width with diff
++mode off. Two panes, one of them blank, with every line painted as an addition, say nothing
++that one pane does not; reading a new file is just reading a file. The pane comes back the
++moment there is something to compare again.
++
+ Buffer pairs are built lazily and cached per file for the lifetime of the review, so moving
+ back and forth across an item is instant after the first visit.
+ 
+@@ -503,6 +509,12 @@ number clustering has to beat to be worth anything.
+ Answers are cached against the prompt text, so re-running an unchanged case is free and
+ editing a prompt invalidates exactly the answers it affects.
+ 
++An answer is only cached once the caller has accepted it. Schema-valid is not the same as
++usable: a clustering that organised nothing parses perfectly, and caching it meant replaying
++a known-bad result on every open until someone refreshed by hand. A cached answer is judged
++by the same standard when it is read back, so entries stored before a caller learned to
++reject them are forgotten and asked again rather than served forever.
++
+ At the time of writing, over two fixtures: grouping 95.5% against a 87.7% heuristic
+ baseline, order 90.8% against 85.1%. On the small, clean case the model is perfect on both.
+ On a real 31-hunk milestone diff its grouping beats the heuristic and its order does not —
+diff --git a/lua/revstack/agent/cache.lua b/lua/revstack/agent/cache.lua
+index 08b6e08..55ce46d 100644
+--- a/lua/revstack/agent/cache.lua
++++ b/lua/revstack/agent/cache.lua
+@@ -83,6 +83,23 @@ function M.put(repo, key, value, cb)
+   end)
+ end
+ 
++--- Forget one answer.
++---
++--- Used when an answer turns out to be unusable: leaving it on disk would mean
++--- replaying a known-bad result on every open until someone refreshes by hand.
++---@param repo revstack.Repo
++---@param key string
++---@param cb fun()?
++function M.forget(repo, key, cb)
++  cb = cb or function() end
++  vim.uv.fs_unlink(
++    path_for(repo, key),
++    vim.schedule_wrap(function()
++      cb()
++    end)
++  )
++end
++
+ --- Drop the oldest entries once the cache grows past its cap. Called once when
+ --- a review opens rather than on every write.
+ ---@param repo revstack.Repo
+diff --git a/lua/revstack/agent/cluster.lua b/lua/revstack/agent/cluster.lua
+index 0cce00d..9fc905a 100644
+--- a/lua/revstack/agent/cluster.lua
++++ b/lua/revstack/agent/cluster.lua
+@@ -30,6 +30,23 @@ function M.run(review, opts, cb)
+     max_chars = config.get("ai.max_digest_chars"),
+   })
+ 
++  ---@type revstack.ClusterResult?
++  local merged
++
++  ---@param value table
++  ---@return boolean
++  ---@return string?
++  local function accept(value)
++    local stacks, report = merge.apply(value, labels, review.parsed)
++    local useful, reason = merge.is_useful(stacks, report, review.parsed)
++    if not useful then
++      merged = nil
++      return false, reason
++    end
++    merged = { stacks = stacks, report = report }
++    return true, nil
++  end
++
+   return agent.request({
+     owner = opts.owner,
+     label = ("cluster %d hunks"):format(#review.parsed.order),
+@@ -37,6 +54,7 @@ function M.run(review, opts, cb)
+     system = prompt.system,
+     prompt = text,
+     schema = prompt.schema,
++    accept = accept,
+     repo = review.repo,
+     cache_key = cache.key({
+       "cluster.v" .. prompt.version,
+@@ -51,14 +69,13 @@ function M.run(review, opts, cb)
+     if not ok then
+       return cb(nil, job and job.error or "the model could not be reached")
+     end
+-
+-    local stacks, report = merge.apply(value, labels, review.parsed)
+-    local useful, reason = merge.is_useful(stacks, report, review.parsed)
+-    if not useful then
+-      return cb(nil, reason)
++    if not merged then
++      -- A cache hit returns the stored answer without running accept a second
++      -- time, so the reconciliation still has to happen here.
++      local stacks, report = merge.apply(value, labels, review.parsed)
++      merged = { stacks = stacks, report = report }
+     end
+-
+-    cb({ stacks = stacks, report = report }, nil)
++    cb(merged, nil)
+   end)
+ end
+ 
+diff --git a/lua/revstack/agent/init.lua b/lua/revstack/agent/init.lua
+index 7f9ae69..09d312e 100644
+--- a/lua/revstack/agent/init.lua
++++ b/lua/revstack/agent/init.lua
+@@ -16,6 +16,7 @@ local M = {}
+ ---@field system string? replaces the provider's own system prompt
+ ---@field tier "fast"|"smart"|"deep"
+ ---@field schema revstack.Schema? when set, the answer is parsed and validated as JSON
++---@field accept fun(value: table): boolean, string? decides whether an answer is usable at all; a rejected answer is neither cached nor returned
+ ---@field cache_key string?
+ ---@field repo revstack.Repo? required for caching
+ ---@field timeout_ms integer?
+@@ -168,6 +169,17 @@ local function dispatch(entry, attempt_prompt, repairing)
+     end
+ 
+     local value, parse_err = json.parse(result.text, entry.req.schema)
++    if value and entry.req.accept then
++      -- Schema-valid is not the same as usable. An answer the caller cannot use
++      -- must not be cached, or every later open replays it.
++      local usable, reason = entry.req.accept(value)
++      if not usable then
++        running = running - 1
++        finish(entry, reason or "the answer was not usable")
++        return pump()
++      end
++    end
++
+     if value then
+       running = running - 1
+       if entry.req.cache_key and entry.req.repo then
+@@ -312,14 +324,25 @@ function M.request(req, cb)
+     if job.state == "cancelled" then
+       return
+     end
+-    if value ~= nil then
+-      job.cached = true
+-      job.state = "done"
+-      job.started_at = job.queued_at
+-      job.finished_at = now_ms()
+-      return cb(true, value, job)
++    if value == nil then
++      return enqueue()
+     end
+-    enqueue()
++
++    -- A cached answer is judged by the same standard as a fresh one. One that
++    -- fails is forgotten and asked again, rather than being replayed until
++    -- someone thinks to refresh.
++    if req.accept then
++      local usable = req.accept(value)
++      if not usable then
++        return cache.forget(req.repo, req.cache_key, enqueue)
++      end
++    end
++
++    job.cached = true
++    job.state = "done"
++    job.started_at = job.queued_at
++    job.finished_at = now_ms()
++    cb(true, value, job)
+   end)
+ 
+   return job.id
+diff --git a/lua/revstack/ui/diffview.lua b/lua/revstack/ui/diffview.lua
+index 69687b3..3782eba 100644
+--- a/lua/revstack/ui/diffview.lua
++++ b/lua/revstack/ui/diffview.lua
+@@ -1,6 +1,7 @@
+ ---@brief The side-by-side diff: two buffers, one file pair at a time.
+ 
+ local enrich = require("revstack.enrich")
++local layout_manager = require("revstack.ui.layout")
+ local source = require("revstack.source")
+ 
+ local M = {}
+@@ -150,6 +151,19 @@ function DiffView:enrich_file(path, buf)
+   end
+ end
+ 
++---@param buf integer
++---@return boolean
++local function is_empty(buf)
++  if not buf or not vim.api.nvim_buf_is_valid(buf) then
++    return true
++  end
++  local count = vim.api.nvim_buf_line_count(buf)
++  if count > 1 then
++    return false
++  end
++  return (vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or "") == ""
++end
++
+ ---@param win integer
+ ---@param command string
+ local function win_cmd(win, command)
+@@ -178,9 +192,8 @@ function DiffView:show_placeholder(hunk)
+   win_cmd(self.layout.old, "diffoff")
+   win_cmd(self.layout.new, "diffoff")
+ 
+-  local buf = scratch("revstack://note/" .. hunk.id, lines, nil)
+-  vim.api.nvim_win_set_buf(self.layout.old, scratch("revstack://note/blank/" .. hunk.id, { "" }, nil))
+-  vim.api.nvim_win_set_buf(self.layout.new, buf)
++  layout_manager.collapse(self.layout)
++  vim.api.nvim_win_set_buf(self.layout.new, scratch("revstack://note/" .. hunk.id, lines, nil))
+   self.path = nil
+ end
+ 
+@@ -204,7 +217,10 @@ function DiffView:show(path, cb)
+     if failed then
+       return cb(false, failed)
+     end
+-    if not vim.api.nvim_win_is_valid(self.layout.old) or not vim.api.nvim_win_is_valid(self.layout.new) then
++    -- Only the changed side has to exist: the base side is deliberately absent
++    -- whenever the last file had nothing to compare against, and treating that
++    -- as a closed review left every file after the first one blank.
++    if not vim.api.nvim_win_is_valid(self.layout.new) then
+       -- The review was closed while git was still running. Nothing to show and
+       -- nothing worth telling the user about.
+       return cb(false, nil)
+@@ -216,6 +232,25 @@ function DiffView:show(path, cb)
+     win_cmd(self.layout.old, "diffoff")
+     win_cmd(self.layout.new, "diffoff")
+ 
++    -- One side or the other having no content means there is nothing to
++    -- compare: an added file, a deleted one, or a file that was empty. Two
++    -- panes, one of them blank, say nothing that one pane does not.
++    local only = nil
++    if is_empty(old_buf) then
++      only = new_buf
++    elseif is_empty(new_buf) then
++      only = old_buf
++    end
++
++    if only then
++      layout_manager.collapse(self.layout)
++      vim.api.nvim_win_set_buf(self.layout.new, only)
++      self.path = path
++      self:enrich_file(path, only)
++      return cb(true, nil)
++    end
++
++    layout_manager.expand(self.layout)
+     vim.api.nvim_win_set_buf(self.layout.old, old_buf)
+     vim.api.nvim_win_set_buf(self.layout.new, new_buf)
+     win_cmd(self.layout.old, "diffthis")
+diff --git a/lua/revstack/ui/layout.lua b/lua/revstack/ui/layout.lua
+index 443a11e..657783c 100644
+--- a/lua/revstack/ui/layout.lua
++++ b/lua/revstack/ui/layout.lua
+@@ -9,6 +9,7 @@ local M = {}
+ ---@field header integer window handle, spanning both diff sides
+ ---@field old integer window handle, the base side
+ ---@field new integer window handle, the changed side
++---@field single boolean whether the base side is collapsed for want of anything to compare
+ ---@field diffopt string the user's diffopt, restored on close
+ 
+ ---@param win integer
+@@ -48,6 +49,59 @@ local function apply_diffopt()
+   return original
+ end
+ 
++--- Options both diff sides carry.
++---
++--- Folds start closed so unchanged regions collapse into a band rather than
++--- making the reviewer scroll through a whole file to find the change.
++---@type table<string, any>
++M.diff_win_options = {
++  wrap = false,
++  cursorbind = true,
++  foldlevel = 0,
++  foldcolumn = "0",
++  foldtext = "v:lua.require'revstack.ui.fold'.text()",
++  fillchars = "fold: ,diff: ",
++}
++
++--- Collapse the base side.
++---
++--- A file that was just added has nothing on the left: two panes, one of them
++--- blank, with every line on the right painted as an addition, says nothing
++--- that one pane does not. Reading a new file is just reading a file.
++---@param layout revstack.Layout
++function M.collapse(layout)
++  if layout.single then
++    return
++  end
++  if vim.api.nvim_win_is_valid(layout.old) then
++    pcall(vim.api.nvim_win_close, layout.old, true)
++  end
++  -- An invalid handle rather than nil, so every existing validity check keeps
++  -- working without a nil branch of its own.
++  layout.old = -1
++  layout.single = true
++end
++
++--- Bring the base side back.
++---@param layout revstack.Layout
++function M.expand(layout)
++  if not layout.single then
++    return
++  end
++  if not vim.api.nvim_win_is_valid(layout.new) then
++    return
++  end
++
++  local win = vim.api.nvim_open_win(placeholder(), false, { split = "left", win = layout.new })
++  set_win_options(win, M.diff_win_options)
++  layout.old = win
++  layout.single = false
++
++  vim.api.nvim_win_call(win, function()
++    vim.cmd("wincmd =")
++  end)
++end
++
+ --- Open the review layout on a new tabpage.
+ ---@param opts { width: integer, position: "left"|"right" }
+ ---@return revstack.Layout
+@@ -97,16 +151,7 @@ function M.open(opts)
+   })
+ 
+   for _, win in ipairs({ old_win, new_win }) do
+-    set_win_options(win, {
+-      wrap = false,
+-      cursorbind = true,
+-      -- Closed, not open: unchanged regions collapse into a band rather than
+-      -- making the reviewer scroll through the whole file to find the change.
+-      foldlevel = 0,
+-      foldcolumn = "0",
+-      foldtext = "v:lua.require'revstack.ui.fold'.text()",
+-      fillchars = "fold: ,diff: ",
+-    })
++    set_win_options(win, M.diff_win_options)
+   end
+ 
+   -- The sidebar is winfixwidth, so equalising only balances the two diff sides.
+@@ -114,7 +159,15 @@ function M.open(opts)
+     vim.cmd("wincmd =")
+   end)
+ 
+-  return { tab = tab, sidebar = sidebar, header = header, old = old_win, new = new_win, diffopt = diffopt }
++  return {
++    tab = tab,
++    sidebar = sidebar,
++    header = header,
++    old = old_win,
++    new = new_win,
++    single = false,
++    diffopt = diffopt,
++  }
+ end
+ 
+ --- Put the sidebar back after it was hidden.
+diff --git a/lua/revstack/ui/session.lua b/lua/revstack/ui/session.lua
+index e886f6a..7db9756 100644
+--- a/lua/revstack/ui/session.lua
++++ b/lua/revstack/ui/session.lua
+@@ -310,8 +310,11 @@ function Session:show_current()
+     if self.closing or not vim.api.nvim_win_is_valid(self.layout.new) then
+       return
+     end
+-    require("revstack.ui.keys").attach(self, vim.api.nvim_win_get_buf(self.layout.old))
+-    require("revstack.ui.keys").attach(self, vim.api.nvim_win_get_buf(self.layout.new))
++    for _, win in ipairs({ self.layout.old, self.layout.new }) do
++      if vim.api.nvim_win_is_valid(win) then
++        require("revstack.ui.keys").attach(self, vim.api.nvim_win_get_buf(win))
++      end
++    end
+     require("revstack.ui.comment").render(self)
+ 
+     -- Summarise the hunk now on screen, if it is worth a call.
+diff --git a/tests/agent_spec.lua b/tests/agent_spec.lua
+index a1d1972..5394e9b 100644
+--- a/tests/agent_spec.lua
++++ b/tests/agent_spec.lua
+@@ -286,6 +286,103 @@ describe("agent cache", function()
+     assert.is_true(job.cached)
+   end)
+ 
++  it("does not keep an answer the caller cannot use", function()
++    local provider = fake_provider({ replies = { '{"summary":"nothing usable"}' } })
++    use(provider, { ai = { cache = true } })
++
++    local cache = require("revstack.agent.cache")
++    local repo = { common_dir = helpers.temp_dir() }
++
++    local ok, _, job = helpers.await(function(cb)
++      agent.request({
++        owner = "t",
++        label = "one",
++        prompt = "x",
++        schema = { summary = "string" },
++        accept = function(value)
++          return value.summary ~= "nothing usable", "the model organised nothing"
++        end,
++        repo = repo,
++        cache_key = "reject-me",
++      }, cb)
++    end)
++
++    assert.is_false(ok)
++    assert.equals("the model organised nothing", job.error)
++
++    local kept = helpers.await(function(cb)
++      cache.get(repo, "reject-me", cb)
++    end)
++    assert.is_nil(kept, "an unusable answer must not be replayed on the next open")
++  end)
++
++  it("forgets a cached answer that turns out to be unusable, and asks again", function()
++    local provider = fake_provider({ replies = { '{"summary":"good"}' } })
++    use(provider, { ai = { cache = true } })
++
++    local cache = require("revstack.agent.cache")
++    local repo = { common_dir = helpers.temp_dir() }
++
++    -- An answer stored before the caller learned to reject it.
++    helpers.await(function(cb)
++      cache.put(repo, "stale", { summary = "nothing usable" }, cb)
++    end)
++
++    local request = {
++      owner = "t",
++      label = "one",
++      prompt = "x",
++      schema = { summary = "string" },
++      accept = function(value)
++        return value.summary ~= "nothing usable", "the model organised nothing"
++      end,
++      repo = repo,
++      cache_key = "stale",
++    }
++
++    local ok, value = helpers.await(function(cb)
++      agent.request(vim.deepcopy(request), cb)
++    end)
++
++    assert.is_true(ok)
++    assert.equals("good", value.summary, "the stale answer must not be handed back")
++    assert.equals(1, #provider.calls, "and the model has to be asked again")
++
++    local kept = helpers.await(function(cb)
++      cache.get(repo, "stale", cb)
++    end)
++    assert.same({ summary = "good" }, kept, "the answer that worked replaces it")
++  end)
++
++  it("keeps an answer the caller accepts", function()
++    local provider = fake_provider({ replies = { '{"summary":"usable"}' } })
++    use(provider, { ai = { cache = true } })
++
++    local repo = { common_dir = helpers.temp_dir() }
++    local request = {
++      owner = "t",
++      label = "one",
++      prompt = "x",
++      schema = { summary = "string" },
++      accept = function()
++        return true, nil
++      end,
++      repo = repo,
++      cache_key = "accept-me",
++    }
++
++    helpers.await(function(cb)
++      agent.request(vim.deepcopy(request), cb)
++    end)
++    local _, value, job = helpers.await(function(cb)
++      agent.request(vim.deepcopy(request), cb)
++    end)
++
++    assert.equals("usable", value.summary)
++    assert.is_true(job.cached)
++    assert.equals(1, #provider.calls)
++  end)
++
+   it("misses when the key changes", function()
+     local provider = fake_provider({ replies = { '{"summary":"one"}', '{"summary":"two"}' } })
+     use(provider, { ai = { cache = true } })
+diff --git a/tests/cluster_spec.lua b/tests/cluster_spec.lua
+index a7a5d21..7a139b1 100644
+--- a/tests/cluster_spec.lua
++++ b/tests/cluster_spec.lua
+@@ -137,6 +137,34 @@ describe("cluster.run", function()
+     assert.is_truthy(err:find("one change", 1, true))
+   end)
+ 
++  it("does not cache an answer it declined", function()
++    local provider = fake_provider({
++      vim.json.encode({ stacks = { { title = "Everything", hunks = { "h1", "h2", "h3" } } } }),
++      GOOD_REPLY,
++    })
++    config.setup({
++      provider = "fake",
++      providers = { fake = { cmd = "fake", models = { smart = "fake-smart" } } },
++      ai = { enabled = true, cache = true, summaries = "off", clustering = "auto" },
++    })
++
++    local review = make_review()
++
++    local first, err = helpers.await(function(cb)
++      cluster.run(review, { owner = "t" }, cb)
++    end)
++    assert.is_nil(first)
++    assert.is_truthy(err)
++
++    -- Asking again reaches the model rather than replaying what was refused.
++    local second = helpers.await(function(cb)
++      cluster.run(review, { owner = "t" }, cb)
++    end)
++    assert.is_truthy(second, "the second attempt should have been made")
++    assert.equals(2, #provider.calls)
++    assert.equals(3, #second.stacks)
++  end)
++
+   it("declines when the model cannot be reached", function()
+     local provider = { name = "fake" }
+     provider.available = function()
+diff --git a/tests/ui_spec.lua b/tests/ui_spec.lua
+index a7957b5..8670215 100644
+--- a/tests/ui_spec.lua
++++ b/tests/ui_spec.lua
+@@ -298,6 +298,72 @@ describe("review UI", function()
+     })
+   end)
+ 
++  it("shows one pane for a file with nothing to compare against", function()
++    local dir = helpers.temp_repo()
++    helpers.write(dir, "lua/existing.lua", "local M = {}\n\nfunction M.thing()\n  return 1\nend\n\nreturn M\n")
++    helpers.write(dir, "lua/doomed.lua", "return 'this file is about to go'\n")
++    helpers.commit(dir, "baseline")
++
++    helpers.write(dir, "lua/existing.lua", "local M = {}\n\nfunction M.thing()\n  return 2\nend\n\nreturn M\n")
++    helpers.write(dir, "lua/brand_new.lua", "local M = {}\n\nfunction M.added()\n  return true\nend\n\nreturn M\n")
++    vim.fn.delete(dir .. "/lua/doomed.lua")
++    vim.uv.chdir(dir)
++
++    local session = helpers.open_review()
++
++    ---@param path string
++    local function go_to(path)
++      for index, item in ipairs(session.review.items) do
++        for hunk_index, hunk in ipairs(item.hunks) do
++          if hunk.path == path then
++            session:goto_position(index, hunk_index)
++            helpers.settle(session)
++            return
++          end
++        end
++      end
++      error("no hunk for " .. path)
++    end
++
++    go_to("lua/brand_new.lua")
++    assert.is_true(session.layout.single, "an added file has nothing on the left")
++    assert.equals(3, #vim.api.nvim_tabpage_list_wins(session.layout.tab))
++    assert.is_false(vim.wo[session.layout.new].diff, "nor anything to paint as a difference")
++    local shown = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(session.layout.new), 0, -1, false)
++    assert.is_truthy(table.concat(shown, "\n"):find("M.added", 1, true))
++
++    go_to("lua/existing.lua")
++    assert.is_false(session.layout.single, "a modified file is a comparison again")
++    assert.equals(4, #vim.api.nvim_tabpage_list_wins(session.layout.tab))
++    assert.is_true(vim.wo[session.layout.new].diff)
++    assert.is_true(vim.wo[session.layout.old].diff)
++
++    go_to("lua/doomed.lua")
++    assert.is_true(session.layout.single, "a deleted file has nothing on the right")
++    local removed = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(session.layout.new), 0, -1, false)
++    assert.is_truthy(
++      table.concat(removed, "\n"):find("about to go", 1, true),
++      "the one pane shows the side that has content"
++    )
++  end)
++
++  it("keeps its keys working in the single pane", function()
++    local dir = helpers.temp_repo()
++    helpers.write(dir, "lua/existing.lua", "return 1\n")
++    helpers.commit(dir, "baseline")
++    helpers.write(dir, "lua/brand_new.lua", "local M = {}\nreturn M\n")
++    vim.uv.chdir(dir)
++
++    local session = helpers.open_review()
++    helpers.settle(session)
++    assert.is_true(session.layout.single)
++
++    local buf = vim.api.nvim_win_get_buf(session.layout.new)
++    vim.api.nvim_buf_call(buf, function()
++      assert.equals(1, vim.fn.maparg("]h", "n", false, true).buffer)
++    end)
++  end)
++
+   it("reports an empty diff instead of opening an empty review", function()
+     local dir = helpers.temp_repo()
+     helpers.write(dir, "f.txt", "unchanged\n")

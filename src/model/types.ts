@@ -42,6 +42,8 @@ export type Layer = {
   title: string;
   summary: string;
   hunkIds: string[];
+  /** The files this layer touches. A layer routinely spans several; the title need not. */
+  paths: string[];
 };
 
 export type CohortKind =

@@ -17,6 +17,8 @@ import { ClaudeProvider } from './agent/providers/claude.js';
 import { Cache } from './agent/cache.js';
 import { Queue } from './agent/queue.js';
 import { summariseFiles } from './agent/summaries.js';
+import { clusterChange } from './agent/cluster.js';
+import { showWalkthrough } from './ui/walkthrough.js';
 import { stateDir } from './git/repo.js';
 import { buildOrder } from './model/order.js';
 import { heuristicCohorts } from './model/heuristic.js';
@@ -127,6 +129,10 @@ export function activate(context: vscode.ExtensionContext): void {
       if (node?.type === 'orphan') comments.discard(node.comment);
     }),
     vscode.commands.registerCommand('changestack.export', () => exportReview(host)),
+    vscode.commands.registerCommand('changestack.walkthrough', () => {
+      if (host.active) void showWalkthrough(host.active);
+    }),
+    vscode.commands.registerCommand('changestack.recluster', () => recluster(host, ctx())),
 
     vscode.commands.registerCommand('changestack.nextHunk', () => nav.next()),
     vscode.commands.registerCommand('changestack.prevHunk', () => nav.previous()),
@@ -268,6 +274,7 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
 
   ctx.queue.cancel(session.id);
   const previous = session.files.flatMap((file) => file.hunks);
+  session.clustered = false;
   session.loading = true;
   session.error = null;
   ctx.blobs.clear();
@@ -353,45 +360,113 @@ async function load(session: Session, ctx: Context): Promise<void> {
   await enrichSymbols(session.files, (file) => uriForFile(session, file));
   ctx.tree.refresh();
 
-  void summarise(session, ctx);
+  void organise(session, ctx);
 }
 
 /**
- * Pass 1, after the review is already usable.
+ * Passes 1 and 2, after the review is already usable.
  *
- * Deliberately not awaited by `load`: the heuristic stack is on screen and navigable before
- * a single request is sent, and every summary that arrives makes it slightly better. If the
- * provider is missing, unauthenticated or simply wrong, the review stays exactly as it was.
+ * The heuristic stack is on screen and navigable before a single request is sent. Summaries
+ * arrive one at a time and make it slightly better; clustering arrives once and replaces it.
+ * If anything here fails, the review is exactly what it was.
  */
-async function summarise(session: Session, ctx: Context): Promise<void> {
-  const config = vscode.workspace.getConfiguration('changestack');
-  if (!config.get<boolean>('ai.enabled', true)) return;
-
-  const provider = providers.get(config.get<string>('provider', 'claude'));
+async function organise(session: Session, ctx: Context): Promise<void> {
+  const provider = await activeProvider();
   if (!provider) return;
 
-  const { ok, reason } = await provider.available();
-  if (!ok) {
-    log.appendLine(`  ${provider.id} unavailable: ${reason ?? 'unknown'} — summaries skipped`);
-    announceUnavailable(provider.id, reason);
+  const cache = new Cache(path.join(stateDir(session.repo), 'cache'));
+  const deps = { provider, queue: ctx.queue, cache, owner: session.id, log: (line: string) => log.appendLine(line) };
+
+  await summarise(session, ctx, deps);
+  await cluster(session, ctx, deps);
+}
+
+type AgentDeps = Parameters<typeof clusterChange>[0];
+
+/**
+ * Pass 2 lands once, and says so.
+ *
+ * The stack reorganises exactly one time, with an announcement, and never again unasked: a
+ * view that rearranges itself under the reader is worse than one that never improves. The
+ * hunk being read stays selected across the change.
+ */
+async function cluster(session: Session, ctx: Context, deps: AgentDeps): Promise<void> {
+  if (session.clustered) return;
+
+  const reading = ctx.nav.current?.hunk.id;
+  const result = await clusterChange(deps, session.files, session.summaries);
+
+  if (!result.ok) {
+    if (result.reason !== 'cancelled') {
+      log.appendLine(`  clustering did not replace the stack: ${result.reason}`);
+    }
     return;
   }
 
-  const started = Date.now();
-  const tally = await summariseFiles(
-    {
-      provider,
-      queue: ctx.queue,
-      cache: new Cache(path.join(stateDir(session.repo), 'cache')),
-      owner: session.id,
-      log: (line) => log.appendLine(line),
-    },
-    session.files,
-    (event) => {
-      if (event.kind === 'summary') session.summaries.set(event.path, event.summary);
-      ctx.tree.refresh();
-    },
+  session.cohorts = result.merged.cohorts;
+  session.overview = result.merged.summary;
+  session.notes = result.merged.notes;
+  session.clustered = true;
+
+  ctx.nav.setOrder(buildOrder(session.cohorts, session.files));
+  ctx.comments.render();
+  ctx.tree.refresh();
+  updateBadge(ctx.view, ctx.nav, { active: session } as SessionHost);
+  if (reading) void ctx.nav.goToHunk(reading);
+
+  const count = session.cohorts.filter((cohort) => cohort.kind !== 'scaffolding').length;
+  vscode.window.setStatusBarMessage(
+    `Change Stack: reorganised into ${count} change${count === 1 ? '' : 's'}${result.cached ? ' (cached)' : ''}`,
+    6000,
   );
+
+  if (vscode.workspace.getConfiguration('changestack').get<boolean>('walkthrough.autoOpen', true)) {
+    await showWalkthrough(session);
+  }
+}
+
+/** Ask again after a refresh, or when the order looks wrong. */
+async function recluster(host: SessionHost, ctx: Context): Promise<void> {
+  const session = host.active;
+  if (!session) return;
+
+  const provider = await activeProvider();
+  if (!provider) return;
+
+  session.clustered = false;
+  await cluster(session, ctx, {
+    provider,
+    queue: ctx.queue,
+    cache: new Cache(path.join(stateDir(session.repo), 'cache')),
+    owner: session.id,
+    log: (line: string) => log.appendLine(line),
+  });
+}
+
+/** The configured provider, if the user wants one and it can actually answer. */
+async function activeProvider() {
+  const config = vscode.workspace.getConfiguration('changestack');
+  if (!config.get<boolean>('ai.enabled', true)) return null;
+
+  const provider = providers.get(config.get<string>('provider', 'claude'));
+  if (!provider) return null;
+
+  const { ok, reason } = await provider.available();
+  if (!ok) {
+    log.appendLine(`  ${provider.id} unavailable: ${reason ?? 'unknown'} — nothing was organised`);
+    announceUnavailable(provider.id, reason);
+    return null;
+  }
+  return provider;
+}
+
+/** Pass 1: a sentence per file, appearing as each lands. */
+async function summarise(session: Session, ctx: Context, deps: AgentDeps): Promise<void> {
+  const started = Date.now();
+  const tally = await summariseFiles(deps, session.files, (event) => {
+    if (event.kind === 'summary') session.summaries.set(event.path, event.summary);
+    ctx.tree.refresh();
+  });
 
   log.appendLine(
     `  summaries: ${tally.summarised} written, ${tally.cached} cached, ${tally.failed} failed, ` +

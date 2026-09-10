@@ -215,10 +215,27 @@
         "title": "Show Log",
         "category": "Change Stack",
         "icon": "$(output)"
+      },
+      {
+        "command": "changestack.walkthrough",
+        "title": "Show Walkthrough",
+        "category": "Change Stack",
+        "icon": "$(book)"
+      },
+      {
+        "command": "changestack.recluster",
+        "title": "Reorganise the Stack",
+        "category": "Change Stack",
+        "icon": "$(sparkle)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "changestack.walkthrough",
+          "when": "view == changestack.stack && changestack.active",
+          "group": "navigation@0"
+        },
         {
           "command": "changestack.export",
           "when": "view == changestack.stack && changestack.active",
@@ -238,6 +255,11 @@
           "command": "changestack.showLog",
           "when": "view == changestack.stack",
           "group": "1_log@1"
+        },
+        {
+          "command": "changestack.recluster",
+          "when": "view == changestack.stack && changestack.active",
+          "group": "1_log@0"
         }
       ],
       "view/item/context": [
@@ -366,6 +388,14 @@
         {
           "command": "changestack.export",
           "when": "changestack.active"
+        },
+        {
+          "command": "changestack.walkthrough",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.recluster",
+          "when": "changestack.active"
         }
       ],
       "comments/commentThread/context": [
@@ -457,6 +487,11 @@
           },
           "default": [],
           "description": "Extra globs treated as scaffolding. Prefix with ! to force a path back into the review."
+        },
+        "changestack.walkthrough.autoOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the walkthrough when the model finishes organising the change. It is the thing to read before any code."
         }
       }
     },
@@ -495,6 +530,11 @@
         "command": "changestack.focusMode",
         "key": "alt+z",
         "when": "changestack.active"
+      },
+      {
+        "command": "changestack.walkthrough",
+        "key": "alt+s",
+        "when": "changestack.active"
       }
     ]
   },
@@ -505,7 +545,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "vscode:prepublish": "npm run check && node esbuild.mjs --production",
-    "package": "npx --yes @vscode/vsce package"
+    "package": "npx --yes @vscode/vsce package",
+    "eval": "vitest run --config vitest.eval.config.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -86,6 +86,7 @@ function toCohort(group: Group): Cohort {
     title: file.path,
     summary: describe(file),
     hunkIds: file.hunks.map((hunk) => hunk.id),
+    paths: [file.path],
   }));
 
   const lead = group.files[0]!;
@@ -139,6 +140,7 @@ function scaffoldingCohort(files: FileChange[]): Cohort {
       title: file.path,
       summary: file.hunks[0]?.scaffolding?.reason ?? 'generated',
       hunkIds: file.hunks.map((hunk) => hunk.id),
+      paths: [file.path],
     })),
     origin: 'heuristic',
   };

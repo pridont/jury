@@ -4,10 +4,10 @@ Review a diff in VS Code as an **ordered stack of logical changes** instead of a
 alphabetical list of files. A model groups and orders the change and writes the summaries;
 you judge the code.
 
-> Status: **V5 — a complete review, now with per-file summaries.** Open a diff, walk every
-> hunk in reading order with one key, tick what you have read, leave notes, export them, and
-> refresh after the author pushes again. Grouping is still heuristic; the model-driven
-> ordering that justifies the tool is V6. See [docs/PLAN.md](docs/PLAN.md).
+> Status: **V6 — the reordering works.** Open a diff and a model groups it into cohorts by
+> intent and puts them in dependency-first reading order, with a walkthrough to read first.
+> Walk every hunk with one key, tick what you have read, leave notes, export them, and
+> refresh after the author pushes again. See [docs/PLAN.md](docs/PLAN.md).
 
 ```
 Change Stack: Review Working Tree     uncommitted work, untracked files included
@@ -36,6 +36,26 @@ needed it, then the plumbing, then the tests.
 
 Everything renders in VS Code's own surfaces: the built-in diff editor, the Comments API,
 the tree view. Real syntax highlighting, real LSP, real go-to-definition, your keybindings.
+
+## Is the ordering any good?
+
+`npm run eval` answers that with a number instead of an opinion. It scores two things over
+pairs of hunks against a hand-written expectation — **grouping** (do the two agree these
+belong together) and **order** (are hunks in different cohorts read in the expected
+sequence) — and prints both next to the heuristic, which is what clustering has to beat to
+be worth anything.
+
+| | auth-clock | two-changes |
+|---|---|---|
+| grouping (model) | 90.0% | 91.3% |
+| grouping (heuristic) | 80.0% | 60.9% |
+| order (model) | 100.0% | 100.0% |
+| order (heuristic) | 77.8% | 100.0% |
+
+Two fixtures is thin evidence. The harness exists so the next prompt change is measured
+rather than argued about — and it has already earned that: keeping a documentation hunk with
+the change it documents, rather than in a docs cohort of its own, moved `two-changes`
+grouping from 87.0% to 91.3%.
 
 ## Design principles
 

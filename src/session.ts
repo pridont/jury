@@ -42,6 +42,12 @@ export class Session implements vscode.Disposable {
   comments: Comment[] = [];
   /** Per-file summaries as they land, by path. Empty until pass 1 answers, or forever. */
   summaries = new Map<string, string>();
+  /** The model's account of the whole change set. Empty until clustering lands. */
+  overview = '';
+  /** Things worth attention that belong to no single cohort. */
+  notes: string[] = [];
+  /** True once clustering has replaced the heuristic stack — which happens exactly once. */
+  clustered = false;
   /** The record on disk. Written after every change the reviewer makes. */
   stored: StoredReview;
 

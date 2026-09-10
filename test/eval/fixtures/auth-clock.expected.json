@@ -1,0 +1,9 @@
+{
+  "why": "A bug fix that needed a new abstraction. Read the port before the fix that uses it, the fix before the plumbing that threads it through, and the tests last. The lockfile is scaffolding and is not part of the expectation.",
+  "groups": [
+    ["h1"],
+    ["h2"],
+    ["h3", "h4"],
+    ["h5"]
+  ]
+}

@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### V6 — clustering
+- Pass 2: the change set grouped into cohorts by intent and put in dependency-first reading
+  order — introduce a thing, then the code that uses it, then the plumbing, then the tests.
+  This is the reorganisation the extension exists for.
+- The stack reorganises **exactly once**, with an announcement, and the hunk being read stays
+  selected across the change. A view that rearranges itself under the reader is worse than
+  one that never improves.
+- `merge.ts` disposes of what the model proposes. Invented labels are dropped, repeats keep
+  their first home, empty layers and cohorts go, whatever went unplaced lands in a trailing
+  "Unclassified" cohort, and generated and docs cohorts move to the end regardless of what
+  was asked for. Any output, however malformed, either yields a complete partition of the
+  hunk set or is declined outright.
+- Declined: everything in one cohort, one cohort per file, or most of the diff left unplaced.
+  A wrong answer that looks like an answer is worse than no answer, so the heuristic stack
+  stays and nothing is written to the cache. A cached clustering is judged again on the way
+  out, so an entry stored before a caller learned to reject it is asked again.
+- The digest sheds detail — samples shrink, then go — but never structure. A hunk the model
+  never sees is a hunk it cannot place. Labels are `h1`, `h2`: short to write back, and an
+  invented one is obviously invalid rather than plausibly real. Any that leak into prose are
+  replaced by the file they stand for before a reader sees them.
+- The walkthrough: what the change set is, before any code.
+- `npm run eval` scores grouping and order over pairs of hunks against a hand-written
+  expectation, next to the heuristic baseline. A fixture can mark two cohorts as unordered
+  when their relative order is a coin flip, so the order figure measures dependencies rather
+  than arbitrary choices. Answers are cached, so re-running an unchanged prompt is free and
+  editing one invalidates exactly the answers it affects.
+
 ### V5 — provider layer, Claude, per-file summaries
 - A `Provider` interface with declared capabilities, and the Claude CLI as its first
   implementation. Prompts are prose and a JSON shape with no provider dialect in them, and

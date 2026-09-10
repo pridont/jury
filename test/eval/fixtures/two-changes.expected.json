@@ -1,0 +1,38 @@
+{
+  "why": "Two independent pieces of work, merged into one range. The grouping is not a judgement call: it is exactly the two commits this diff is made of. 30db0bb gave files with nothing to compare a single pane (layout, diffview, session, its test, and the docs hunk about diff panes); 2611f7e stopped caching an answer the caller cannot use (agent/init, cache, cluster, their tests, and the docs hunk about clustering). Their order relative to each other is arbitrary \u2014 they touch nothing in common \u2014 so that pair is marked unordered and excluded from the order figure, which then measures only what it can: whether dependencies inside a cohort are read in the right sequence.",
+  "groups": [
+    [
+      "h16",
+      "h17",
+      "h18",
+      "h19",
+      "h11",
+      "h12",
+      "h13",
+      "h14",
+      "h15",
+      "h20",
+      "h23",
+      "h1",
+      "h2"
+    ],
+    [
+      "h8",
+      "h9",
+      "h10",
+      "h4",
+      "h5",
+      "h6",
+      "h7",
+      "h21",
+      "h22",
+      "h3"
+    ]
+  ],
+  "unordered": [
+    [
+      0,
+      1
+    ]
+  ]
+}

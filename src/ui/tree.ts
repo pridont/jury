@@ -52,9 +52,11 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         );
 
         const hunks = node.cohort.layers.reduce((n, layer) => n + layer.hunkIds.length, 0);
-        const where = only ? directory(only.title) : `${node.cohort.layers.length} files`;
+        const onlyPath = only?.paths.length === 1 ? only.paths[0] : undefined;
+        const where = onlyPath ? directory(onlyPath) : `${node.cohort.layers.length} files`;
         item.description = `${where ? `${where} · ` : ''}${hunks} hunk${hunks === 1 ? '' : 's'}`;
-        const prose = only ? (session?.summaries.get(only.title) ?? node.cohort.summary) : node.cohort.summary;
+        const prose =
+          node.cohort.summary || (onlyPath ? (session?.summaries.get(onlyPath) ?? '') : '') || node.cohort.title;
         item.tooltip = new vscode.MarkdownString(
           prose + (node.cohort.riskReason ? `\n\n**Risk:** ${node.cohort.riskReason}` : ''),
         );
@@ -64,7 +66,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         item.contextValue = scaffolding ? 'cohort-scaffolding' : 'cohort';
 
         if (only) {
-          item.resourceUri = vscode.Uri.file(only.title);
+          if (onlyPath) item.resourceUri = vscode.Uri.file(onlyPath);
           item.checkboxState =
             session && only.hunkIds.every((id) => session.marks.has(id))
               ? vscode.TreeItemCheckboxState.Checked
@@ -103,13 +105,20 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
       }
 
       case 'layer': {
-        const item = new vscode.TreeItem(name(node.layer.title), vscode.TreeItemCollapsibleState.None);
+        // A heuristic layer is a file; a model's layer is a step that may span several. Use
+        // the paths it recorded rather than reading the title as if it were one.
+        const single = node.layer.paths.length === 1 ? node.layer.paths[0] : undefined;
+        const label = single ? name(single) : node.layer.title;
+        const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
         const marked = session ? node.layer.hunkIds.every((id) => session.marks.has(id)) : false;
         const notes = session
           ? session.comments.filter((comment) => !comment.orphaned && node.layer.hunkIds.includes(comment.hunkId))
               .length
           : 0;
-        const where = directory(node.layer.title);
+        const summary = single ? session?.summaries.get(single) : undefined;
+        const where = single
+          ? directory(single)
+          : `${node.layer.paths.length} file${node.layer.paths.length === 1 ? '' : 's'}`;
         // Notes first: in a narrow view the tail is what gets truncated, and "there is
         // something written here" matters more than the hunk count it would push off.
         item.description = [
@@ -120,10 +129,9 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           .filter(Boolean)
           .join(' · ');
         // The model's sentence when there is one, the heuristic's description otherwise.
-        item.tooltip = new vscode.MarkdownString(
-          session?.summaries.get(node.layer.title) ?? node.layer.summary,
-        );
-        item.resourceUri = vscode.Uri.file(node.layer.title);
+        item.tooltip = new vscode.MarkdownString(node.layer.summary || summary || label);
+        if (single) item.resourceUri = vscode.Uri.file(single);
+        else item.iconPath = new vscode.ThemeIcon('layers');
         item.checkboxState = marked
           ? vscode.TreeItemCheckboxState.Checked
           : vscode.TreeItemCheckboxState.Unchecked;

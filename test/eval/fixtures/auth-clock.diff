@@ -1,0 +1,85 @@
+diff --git a/auth/clock.ts b/auth/clock.ts
+new file mode 100644
+index 0000000..180e070
+--- /dev/null
++++ b/auth/clock.ts
+@@ -0,0 +1,7 @@
++export interface Clock {
++  now(): number;
++}
++
++export const systemClock: Clock = {
++  now: () => Math.floor(Date.now() / 1000),
++};
+diff --git a/auth/token.ts b/auth/token.ts
+index dc23827..07a6d21 100644
+--- a/auth/token.ts
++++ b/auth/token.ts
+@@ -1,7 +1,9 @@
+-export function isExpired(exp: number): boolean {
++import { systemClock, type Clock } from './clock';
++
++export function isExpired(exp: number, clock: Clock = systemClock): boolean {
+   if (exp === undefined) return true;
+-  const now = Math.floor(Date.now() / 1000);
+-  return exp < now;
++  const now = clock.now();
++  return exp <= now;
+ }
+ 
+ export function decode(raw: string): { exp: number } {
+diff --git a/http/middleware.ts b/http/middleware.ts
+index 7f378f2..102c96c 100644
+--- a/http/middleware.ts
++++ b/http/middleware.ts
+@@ -1,7 +1,8 @@
+ import { decode, isExpired } from '../auth/token';
++import { systemClock, type Clock } from '../auth/clock';
+ 
+-export function authenticate(raw: string) {
++export function authenticate(raw: string, clock: Clock = systemClock) {
+   const token = decode(raw);
+-  if (isExpired(token.exp)) return null;
++  if (isExpired(token.exp, clock)) return null;
+   return token;
+ }
+diff --git a/http/server.ts b/http/server.ts
+index 06e8c5a..be9b107 100644
+--- a/http/server.ts
++++ b/http/server.ts
+@@ -1,7 +1,8 @@
+ import { authenticate } from './middleware';
++import { systemClock, type Clock } from '../auth/clock';
+ 
+-export function handle(request: { token: string }) {
+-  const session = authenticate(request.token);
++export function handle(request: { token: string }, clock: Clock = systemClock) {
++  const session = authenticate(request.token, clock);
+   if (!session) throw new Error('unauthorized');
+   return session;
+ }
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 1698078..b17b3a2 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1 +1,3 @@
+ lockfileVersion: 6.0
++packages:
++  clock: 1
+diff --git a/test/token.test.ts b/test/token.test.ts
+index a5d2f3a..9f37405 100644
+--- a/test/token.test.ts
++++ b/test/token.test.ts
+@@ -1,5 +1,11 @@
+ import { isExpired } from '../auth/token';
+ 
++const at = (t: number) => ({ now: () => t });
++
+ it('rejects an expired token', () => {
+-  expect(isExpired(0)).toBe(true);
++  expect(isExpired(0, at(100))).toBe(true);
++});
++
++it('rejects a token expiring exactly now', () => {
++  expect(isExpired(100, at(100))).toBe(true);
+ });
