@@ -85,7 +85,11 @@ export type Comment = {
   orphaned: boolean;
   moved: boolean;
   createdAt: number;
-  github?: { reviewCommentId: number };
+  /**
+   * Set once this note has been posted to GitHub. The hash is of the body that was sent, so
+   * editing a note after posting makes it new again rather than silently never being sent.
+   */
+  posted?: { reviewId: number; bodyHash: string; at: number };
 };
 
 export type Review = {

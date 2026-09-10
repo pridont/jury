@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { run } from '../util/exec.js';
 import type { Repo } from '../git/repo.js';
 import type { Comment, Hunk } from '../model/types.js';
@@ -11,7 +12,14 @@ export type InlineComment = {
   line: number;
   side: 'LEFT' | 'RIGHT';
   body: string;
+  /** Which stored note this came from, so a successful post can be recorded against it. */
+  commentId: string;
 };
+
+/** What was actually sent, so the same note is not sent twice. */
+export function bodyHash(body: string): string {
+  return createHash('sha1').update(body).digest('hex').slice(0, 16);
+}
 
 export type Submission = {
   event: ReviewEvent;
@@ -42,6 +50,12 @@ export function prepare(
   const skipped: { body: string; reason: string }[] = [];
 
   for (const comment of comments) {
+    if (comment.posted && comment.posted.bodyHash === bodyHash(comment.body)) {
+      // Already on the pull request, unchanged. Posting it again would put a second copy in
+      // front of the author, who has no way to tell it is the same note.
+      skipped.push({ body: comment.body, reason: 'already posted, and unchanged since' });
+      continue;
+    }
     if (comment.orphaned) {
       skipped.push({ body: comment.body, reason: 'the code it was about is no longer in the diff' });
       continue;
@@ -60,7 +74,10 @@ export function prepare(
       path: hunk.path,
       line: commentLine(hunk, comment),
       side: comment.side === 'old' ? 'LEFT' : 'RIGHT',
-      body: comment.moved ? `${comment.body}\n\n_(position is approximate — the code moved since this was written)_` : comment.body,
+      body: comment.moved
+        ? `${comment.body}\n\n_(position is approximate — the code moved since this was written)_`
+        : comment.body,
+      commentId: comment.id,
     });
   }
 
@@ -103,7 +120,11 @@ function verb(event: ReviewEvent): string {
  * comment bodies are arbitrary text, and shell-shaped argument building is how a comment
  * containing a quote turns into a malformed request.
  */
-export async function submit(repo: Repo, pr: PullRequest, submission: Submission): Promise<string> {
+export async function submit(
+  repo: Repo,
+  pr: PullRequest,
+  submission: Submission,
+): Promise<{ url: string; reviewId: number }> {
   const payload = {
     commit_id: pr.headOid,
     body: submission.body,
@@ -128,6 +149,18 @@ export async function submit(repo: Repo, pr: PullRequest, submission: Submission
     throw new GhError(/auth|login|token/i.test(detail) ? 'not-authenticated' : 'failed', detail);
   }
 
-  const parsed = JSON.parse(result.stdout) as { html_url?: string };
-  return parsed.html_url ?? pr.url;
+  const parsed = JSON.parse(result.stdout) as { html_url?: string; id?: number };
+  return { url: parsed.html_url ?? pr.url, reviewId: Number(parsed.id ?? 0) };
+}
+
+/** Record what was posted, so the next submission does not send it again. */
+export function recordPosted(comments: Comment[], submission: Submission, reviewId: number): void {
+  const sent = new Map(submission.comments.map((comment) => [comment.commentId, comment.body]));
+  const at = Date.now();
+
+  for (const comment of comments) {
+    const body = sent.get(comment.id);
+    if (body === undefined) continue;
+    comment.posted = { reviewId, bodyHash: bodyHash(comment.body), at };
+  }
 }

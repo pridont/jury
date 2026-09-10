@@ -114,6 +114,103 @@ describe('classifyFile', () => {
   });
 });
 
+describe('the shape of the content', () => {
+  const generated = (path: string, lines: string[]): FileChange => {
+    const f = file(path, { status: 'added' });
+    f.hunks[0]!.lines = lines.map((line) => `+${line}`);
+    f.stats = { added: lines.length, removed: 0 };
+    return f;
+  };
+
+  it('catches a large file that repeats itself the way generated data does', () => {
+    const rows = Array.from({ length: 400 }, (_, i) => (i % 20 === 0 ? `  unique ${i}` : '  "value": 1,'));
+    expect(classifyFile(generated('src/data.ts', rows), plain)).toMatchObject({
+      scaffolding: true,
+      reason: 'repeats itself the way generated data does',
+    });
+  });
+
+  it('catches a line no one would write by hand', () => {
+    const rows = Array.from({ length: 250 }, (_, i) => `const x${i} = ${i};`);
+    rows[0] = 'a'.repeat(3000);
+    expect(classifyFile(generated('src/bundle.ts', rows), plain).scaffolding).toBe(true);
+  });
+
+  it('leaves a large hand-written file alone', () => {
+    const rows = Array.from({ length: 400 }, (_, i) => `export function handler${i}(request: Request) {`);
+    expect(classifyFile(generated('src/routes.ts', rows), plain).scaffolding).toBe(false);
+  });
+
+  it('leaves a small repetitive file alone, since size is half the signal', () => {
+    const rows = Array.from({ length: 60 }, () => '  "value": 1,');
+    expect(classifyFile(generated('src/small.ts', rows), plain).scaffolding).toBe(false);
+  });
+
+  it('never claims a file that had anything removed', () => {
+    const rows = Array.from({ length: 400 }, () => '  "value": 1,');
+    const edited = generated('src/data.ts', rows);
+    edited.status = 'modified';
+    edited.stats = { added: 400, removed: 3 };
+    expect(classifyFile(edited, plain).scaffolding).toBe(false);
+  });
+});
+
+describe('the shape of a scaffolded directory', () => {
+  const added = (path: string) => file(path, { status: 'added' });
+  const inputsFor = (files: FileChange[]) =>
+    new Map(files.map((f) => [f.path, plain] as const));
+
+  it('claims the config a generator wrote, and not the code beside it', () => {
+    const files = [
+      added('libs/tokens/project.json'),
+      added('libs/tokens/tsconfig.lib.json'),
+      added('libs/tokens/jest.config.ts'),
+      added('libs/tokens/src/index.ts'),
+    ];
+    const verdicts = classifyAll(files, inputsFor(files));
+
+    expect(verdicts.get('libs/tokens/project.json')!.scaffolding).toBe(true);
+    expect(verdicts.get('libs/tokens/jest.config.ts')!.scaffolding).toBe(true);
+    // The code inside a new library is exactly what the reviewer is there to read.
+    expect(verdicts.get('libs/tokens/src/index.ts')!.scaffolding).toBe(false);
+  });
+
+  it('does not fire on one config file added by a person', () => {
+    const files = [added('src/feature/tsconfig.json'), added('src/feature/index.ts'), added('src/feature/a.ts')];
+    const verdicts = classifyAll(files, inputsFor(files));
+    expect(verdicts.get('src/feature/tsconfig.json')!.scaffolding).toBe(false);
+  });
+
+  it('leaves a new library\'s README alone, boilerplate or not', () => {
+    const files = [
+      added('libs/x/project.json'),
+      added('libs/x/tsconfig.lib.json'),
+      added('libs/x/README.md'),
+      added('libs/x/src/index.ts'),
+    ];
+    const verdicts = classifyAll(files, inputsFor(files));
+    expect(verdicts.get('libs/x/README.md')!.scaffolding).toBe(false);
+  });
+
+  it('does not fire on a directory with nothing but config in it', () => {
+    const files = [added('config/tsconfig.json'), added('config/.eslintrc.json')];
+    const verdicts = classifyAll(files, inputsFor(files));
+    expect(verdicts.get('config/tsconfig.json')!.scaffolding).toBe(false);
+  });
+
+  it('still obeys a reviewer who says otherwise', () => {
+    const files = [
+      added('libs/x/project.json'),
+      added('libs/x/tsconfig.lib.json'),
+      added('libs/x/src/index.ts'),
+    ];
+    const inputs = new Map(
+      files.map((f) => [f.path, { ...plain, overrides: new Set(['libs/x/project.json']) }] as const),
+    );
+    expect(classifyAll(files, inputs).get('libs/x/project.json')!.scaffolding).toBe(false);
+  });
+});
+
 describe('classifyAll', () => {
   const inputs = (paths: string[], input: ClassifyInput) => new Map(paths.map((p) => [p, input]));
 

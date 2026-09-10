@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prepare, preview } from '../../src/github/submit.js';
+import { bodyHash, prepare, preview, recordPosted } from '../../src/github/submit.js';
 import { newComment } from '../../src/model/comments.js';
 import type { Hunk } from '../../src/model/types.js';
 import type { PullRequest } from '../../src/github/pr.js';
@@ -39,7 +39,7 @@ describe('prepare', () => {
     const { comments } = prepare([note], hunks, 'COMMENT', '');
 
     expect(comments).toEqual([
-      { path: 'src/auth.ts', line: 42, side: 'RIGHT', body: 'off by one?' },
+      { path: 'src/auth.ts', line: 42, side: 'RIGHT', body: 'off by one?', commentId: note.id },
     ]);
   });
 
@@ -80,6 +80,49 @@ describe('prepare', () => {
   it('carries the event and the summary through', () => {
     const { event, body } = prepare([], hunks, 'REQUEST_CHANGES', 'Two things to fix.');
     expect({ event, body }).toEqual({ event: 'REQUEST_CHANGES', body: 'Two things to fix.' });
+  });
+});
+
+describe('not sending the same note twice', () => {
+  it('skips a note already posted and unchanged', () => {
+    const note = newComment('h1', 0, 'new', 'off by one?');
+    const first = prepare([note], hunks, 'COMMENT', '');
+    recordPosted([note], first, 99);
+
+    const second = prepare([note], hunks, 'COMMENT', '');
+    expect(second.comments).toHaveLength(0);
+    expect(second.skipped[0]!.reason).toBe('already posted, and unchanged since');
+  });
+
+  it('sends it again once the reviewer edits it', () => {
+    const note = newComment('h1', 0, 'new', 'off by one?');
+    recordPosted([note], prepare([note], hunks, 'COMMENT', ''), 99);
+
+    note.body = 'off by one, and the test asserts the wrong side';
+    const again = prepare([note], hunks, 'COMMENT', '');
+    expect(again.comments).toHaveLength(1);
+  });
+
+  it('records only what was actually sent', () => {
+    const sent = newComment('h1', 0, 'new', 'this one goes');
+    const orphaned = { ...newComment('h1', 0, 'new', 'this one does not'), orphaned: true };
+    const submission = prepare([sent, orphaned], hunks, 'COMMENT', '');
+
+    recordPosted([sent, orphaned], submission, 42);
+    expect(sent.posted).toMatchObject({ reviewId: 42 });
+    expect(orphaned.posted).toBeUndefined();
+  });
+
+  it('hashes the body it sent, not the body it had', () => {
+    // A moved note is sent with an extra line; what is hashed must be the reviewer's text,
+    // or the note would look edited the moment it stops being moved.
+    const note = { ...newComment('h1', 0, 'new', 'still true?'), moved: true };
+    const submission = prepare([note], hunks, 'COMMENT', '');
+    recordPosted([note], submission, 7);
+
+    expect(note.posted!.bodyHash).toBe(bodyHash('still true?'));
+    const settled = { ...note, moved: false };
+    expect(prepare([settled], hunks, 'COMMENT', '').comments).toHaveLength(0);
   });
 });
 

@@ -3,6 +3,24 @@
 ## Unreleased
 
 ### Unreleased
+- Submitting a review twice sent every note twice. GitHub had no way to tell the copies
+  apart, and neither did the author reading them. A posted note now records what was sent,
+  and is skipped next time — listed in the preview as already posted. Editing it after
+  posting makes it new again, because the hash is of the body that was actually sent, not of
+  the note as it stands.
+- Scaffolding detection gained the two signals held back until the first four were measured.
+  **Scaffold shape**: a directory arriving whole, with two or more generator-shaped config
+  files among at least three new ones — a generated library is recognisable by its
+  silhouette even when no single file is suspicious. Only the config is claimed; the code
+  inside a new library is exactly what the reviewer is there to read, and so is its README.
+  **Content shape**: a file that is all additions, over two hundred lines, and either
+  repeats itself past what anyone writes by hand or carries a line thousands of characters
+  long. Every test has to hold at once — a false positive hides real code, which is the one
+  failure of this feature that matters.
+- CI on Linux and macOS across Node 20 and 22, plus a packaging job. Windows runs too but
+  does not gate: `git rev-parse --show-toplevel` answers in forward slashes while
+  `fs.realpath` answers in backslashes, several tests compare the two, and nobody has read
+  what it says about that yet.
 - The repair retry did not repair anything. It re-sent the whole digest with an error
   message appended, so the model never saw the answer it had got wrong — the same question
   at the same price, with no better odds. A repair now sends the broken answer back and asks

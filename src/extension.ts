@@ -36,7 +36,7 @@ import { describeSpec } from './model/types.js';
 import { fetchHead, listOpen, resolve, viewedFiles, GhError, type PullRequest } from './github/pr.js';
 import { defaultBranch, listRefs, recentCommits, type Ref } from './git/refs.js';
 import { pickOrType } from './ui/pick.js';
-import { prepare, preview, submit, type ReviewEvent } from './github/submit.js';
+import { prepare, preview, recordPosted, submit, type ReviewEvent } from './github/submit.js';
 
 let log: vscode.OutputChannel;
 
@@ -961,7 +961,13 @@ async function submitReview(host: SessionHost): Promise<void> {
   if (confirmed !== 'Send') return;
 
   try {
-    const url = await submit(session.repo, session.pr, submission);
+    const { url, reviewId } = await submit(session.repo, session.pr, submission);
+
+    // Recorded before anything else can go wrong: a note that reached GitHub and is not
+    // marked as sent will be sent again, and the author gets two copies of it.
+    recordPosted(session.comments, submission, reviewId);
+    await persist(session);
+
     log.appendLine(`  review posted: ${url}`);
     const open = await vscode.window.showInformationMessage('Change Stack: review posted.', 'Open on GitHub');
     if (open === 'Open on GitHub') await vscode.env.openExternal(vscode.Uri.parse(url));

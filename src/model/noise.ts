@@ -94,6 +94,23 @@ export type WorkspaceHints = {
   monorepo: boolean;
 };
 
+/** Files a generator writes beside the code it scaffolds, by shape rather than by workspace. */
+const GENERATED_SHAPE = new GlobSet([
+  'project.json',
+  'tsconfig.json',
+  'tsconfig.*.json',
+  'jest.config.*',
+  'vite.config.*',
+  'vitest.config.*',
+  '.eslintrc.*',
+  'eslint.config.*',
+  '.babelrc',
+  'karma.conf.js',
+  '.browserslistrc',
+  // Not README.md. A generator writes one, but so does the first person with something to
+  // say about the library, and hiding documentation costs more than showing boilerplate.
+]);
+
 export type ClassifyInput = {
   /** git attributes for this path, from `git check-attr`. */
   attributes?: ReadonlySet<string>;
@@ -138,7 +155,40 @@ export function classifyFile(file: FileChange, input: ClassifyInput): Verdict {
     return yes('workspace project config');
   }
 
+  // 6. The shape of the content, last and weakest. A file that is all additions, large, and
+  // barely repeats itself in the way only a machine writes.
+  const shape = machineWritten(file);
+  if (shape) return yes(shape);
+
   return NOT;
+}
+
+/**
+ * Catch the generated artefact nobody thought to name.
+ *
+ * Deliberately hard to trigger: every test here has to hold at once, and the thresholds are
+ * set where hand-written code does not go. A false positive hides real code, which is the
+ * one failure of this whole feature that matters.
+ */
+function machineWritten(file: FileChange): string | null {
+  if (file.status !== 'added' && file.stats.removed > 0) return null;
+
+  const added: string[] = [];
+  for (const hunk of file.hunks) {
+    if (hunk.kind !== 'text') return null;
+    for (const line of hunk.lines) {
+      if (line.startsWith('+')) added.push(line.slice(1));
+    }
+  }
+  if (added.length < 200) return null;
+
+  const longest = added.reduce((n, line) => Math.max(n, line.length), 0);
+  if (longest > 2000) return 'a line no one would write by hand';
+
+  const distinct = new Set(added.map((line) => line.trim())).size;
+  if (distinct / added.length < 0.15) return 'repeats itself the way generated data does';
+
+  return null;
 }
 
 /**
@@ -157,6 +207,33 @@ export function classifyAll(files: FileChange[], inputs: Map<string, ClassifyInp
     const verdict = input ? classifyFile(file, input) : NOT;
     verdicts.set(file.path, verdict);
     if (verdict.scaffolding) generated += 1;
+  }
+
+  // 5. Scaffold shape: a directory that did not exist before, arriving whole. A generated
+  // library is recognisable by its silhouette even when no single file is suspicious — but
+  // only its config files are claimed. The code inside a new library is exactly what the
+  // reviewer is there to read.
+  const byDirectory = new Map<string, FileChange[]>();
+  for (const file of files) {
+    if (file.status !== 'added') continue;
+    const at = file.path.lastIndexOf('/');
+    if (at === -1) continue;
+    const dir = file.path.slice(0, at);
+    byDirectory.set(dir, [...(byDirectory.get(dir) ?? []), file]);
+  }
+
+  for (const [, siblings] of byDirectory) {
+    const shaped = siblings.filter((file) => GENERATED_SHAPE.matches(file.path));
+    // Two config files arriving together with other new files is a generator's signature;
+    // one is somebody adding a config file.
+    if (shaped.length < 2 || siblings.length < 3) continue;
+
+    for (const file of shaped) {
+      if (verdicts.get(file.path)?.scaffolding) continue;
+      if (inputs.get(file.path)?.overrides?.has(file.path)) continue;
+      verdicts.set(file.path, yes('config a generator wrote with the rest of this directory'));
+      generated += 1;
+    }
   }
 
   if (generated > 0) {
