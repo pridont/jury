@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { Session } from '../session.js';
 import { describeSpec } from '../model/types.js';
+import type { Documents } from './documents.js';
 
 /** The extension that teaches VS Code's markdown preview to draw mermaid. */
 const MERMAID_EXTENSION = 'bierner.markdown-mermaid';
@@ -13,12 +14,8 @@ const MERMAID_EXTENSION = 'bierner.markdown-mermaid';
  * question the tree cannot: what does the software do now that it did not, and in what order
  * does the argument for it make sense.
  */
-export async function showWalkthrough(session: Session): Promise<void> {
-  const document = await vscode.workspace.openTextDocument({
-    content: render(session),
-    language: 'markdown',
-  });
-  await vscode.window.showTextDocument(document, { preview: true, preserveFocus: false });
+export async function showWalkthrough(session: Session, documents: Documents): Promise<void> {
+  await documents.show('Walkthrough.md', render(session));
   await vscode.commands.executeCommand('markdown.showPreview');
 }
 

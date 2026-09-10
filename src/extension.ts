@@ -24,6 +24,7 @@ import { clusterChange } from './agent/cluster.js';
 import { showWalkthrough } from './ui/walkthrough.js';
 import { Activity } from './ui/activity.js';
 import { forgetSessions, registerChat } from './ui/chat.js';
+import { Documents, DOC_SCHEME, offerToSave } from './ui/documents.js';
 import { stateDir } from './git/repo.js';
 import { buildOrder } from './model/order.js';
 import { heuristicCohorts } from './model/heuristic.js';
@@ -68,6 +69,7 @@ export function activate(context: vscode.ExtensionContext): void {
   providers.register(vscodeLm);
   const queue = new Queue(4);
   const activity = new Activity(view);
+  const documents = new Documents();
 
   context.subscriptions.push(
     log,
@@ -88,6 +90,8 @@ export function activate(context: vscode.ExtensionContext): void {
       if (host.active) void persist(host.active);
     }),
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, blobs),
+    vscode.workspace.registerTextDocumentContentProvider(DOC_SCHEME, documents),
+    documents,
 
     view.onDidChangeCheckboxState((event) => {
       const session = host.active;
@@ -121,7 +125,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('changestack.reviewStaged', () => open(host, { kind: 'staged' }, ctx())),
     vscode.commands.registerCommand('changestack.reviewBase', () => reviewBase(host, ctx())),
     vscode.commands.registerCommand('changestack.reviewPr', () => reviewPr(host, ctx())),
-    vscode.commands.registerCommand('changestack.submitReview', () => submitReview(host)),
+    vscode.commands.registerCommand('changestack.submitReview', () => submitReview(host, documents)),
     vscode.commands.registerCommand('changestack.refresh', () => refresh(host, ctx())),
     vscode.commands.registerCommand('changestack.close', () => {
       // A review that is gone must not leave a subprocess behind talking to the account.
@@ -148,7 +152,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('changestack.discardComment', (node?: Node) => {
       if (node?.type === 'orphan') comments.discard(node.comment);
     }),
-    vscode.commands.registerCommand('changestack.export', () => exportReview(host)),
+    vscode.commands.registerCommand('changestack.export', () => exportReview(host, documents)),
     vscode.commands.registerCommand('changestack.ask', () =>
       vscode.commands.executeCommand('workbench.action.chat.open', { query: '@changestack ' }),
     ),
@@ -156,7 +160,7 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand('workbench.action.chat.open', { query: '@changestack /step ' }),
     ),
     vscode.commands.registerCommand('changestack.walkthrough', () => {
-      if (host.active) void showWalkthrough(host.active);
+      if (host.active) void showWalkthrough(host.active, documents);
     }),
     vscode.commands.registerCommand('changestack.recluster', () => recluster(host, ctx())),
 
@@ -203,7 +207,7 @@ export function activate(context: vscode.ExtensionContext): void {
   void restoreLast(host, ctx());
 
   function ctx(): Context {
-    return { tree, nav, view, blobs, comments, queue, activity };
+    return { tree, nav, view, blobs, comments, queue, activity, documents };
   }
 }
 
@@ -221,6 +225,7 @@ type Context = {
   comments: Comments;
   queue: Queue;
   activity: Activity;
+  documents: Documents;
 };
 
 async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<void> {
@@ -471,7 +476,7 @@ async function cluster(session: Session, ctx: Context, deps: AgentDeps): Promise
   );
 
   if (vscode.workspace.getConfiguration('changestack').get<boolean>('walkthrough.autoOpen', true)) {
-    await showWalkthrough(session);
+    await showWalkthrough(session, ctx.documents);
   }
 }
 
@@ -823,7 +828,7 @@ async function repin(host: SessionHost, comments: Comments, node?: Node): Promis
 }
 
 /** Write the review as markdown and open it, so it can be read before it is sent anywhere. */
-async function exportReview(host: SessionHost): Promise<void> {
+async function exportReview(host: SessionHost, documents: Documents): Promise<void> {
   const session = host.active;
   if (!session) return;
 
@@ -837,8 +842,8 @@ async function exportReview(host: SessionHost): Promise<void> {
     marks: session.marks,
   });
 
-  const document = await vscode.workspace.openTextDocument({ content: markdown, language: 'markdown' });
-  await vscode.window.showTextDocument(document, { preview: false });
+  await documents.show('Review.md', markdown, { preview: false });
+  await offerToSave(markdown, 'review.md');
 }
 
 /**
@@ -916,7 +921,7 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
  * payload — every comment, every position, and everything that will *not* be sent — is put
  * in front of the reviewer first.
  */
-async function submitReview(host: SessionHost): Promise<void> {
+async function submitReview(host: SessionHost, documents: Documents): Promise<void> {
   const session = host.active;
   if (!session?.pr) {
     vscode.window.showInformationMessage('Change Stack: open a pull request review first.');
@@ -947,11 +952,7 @@ async function submitReview(host: SessionHost): Promise<void> {
   const hunks = new Map(session.files.flatMap((file) => file.hunks).map((hunk) => [hunk.id, hunk]));
   const submission = prepare(session.comments, hunks, choice.event, body);
 
-  const document = await vscode.workspace.openTextDocument({
-    content: preview(session.pr, submission),
-    language: 'markdown',
-  });
-  await vscode.window.showTextDocument(document, { preview: true });
+  await documents.show(`Review of #${session.pr.number}.md`, preview(session.pr, submission));
 
   const confirmed = await vscode.window.showWarningMessage(
     `Send this review to ${session.pr.nameWithOwner}#${session.pr.number}?`,
