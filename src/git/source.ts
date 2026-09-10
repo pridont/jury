@@ -61,8 +61,15 @@ export async function acquire(repo: Repo, spec: ReviewSpec, contextLines = 3): P
       return { base, head, files: parseDiff(text) };
     }
 
-    case 'pr':
-      throw new Error('pull request review is not implemented yet');
+    case 'pr': {
+      // The head is already fetched into a ref of our own by the caller; nothing is checked
+      // out, and both sides of the diff are read straight from git.
+      const text = await runOk('git', [...DIFF_ARGS, ...unified, spec.base, spec.head], {
+        cwd: repo.root,
+        timeoutMs: 60_000,
+      });
+      return { base: spec.base, head: spec.head, files: parseDiff(text) };
+    }
   }
 }
 

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### V8 — pull requests
+- `Review a Pull Request…` — by number, or empty for the one on this branch. The head is
+  fetched into `refs/changestack/pr-<n>` and compared against the **merge base** of its
+  target branch: what the author asked to have merged, not a comparison with whatever that
+  branch has done since. Nothing is checked out and the working tree is not touched.
+- Both sides of the diff are read-only blobs served from git.
+- GitHub's "viewed" state is read on open, so a review carries on where it was left on the
+  web rather than starting from nothing.
+- `Submit Review to GitHub…` posts the notes as inline comments, as Comment, Approve or
+  Request changes. Positions use `line` + `side` rather than the diff-`position` arithmetic
+  GitHub's older API wanted, which is wrong the moment the diff differs from what it was
+  computed against.
+- The whole payload is shown first — every comment, every position, and everything that will
+  *not* be sent — and then confirmed in a modal. Posting to someone else's repository is not
+  something to do on a keystroke.
+- A note whose position is a guess is still sent, and says so in its own text. A note whose
+  code is gone is not sent, and is listed rather than dropped silently. Notes on binary
+  changes are reported as unplaceable instead of failing the whole submission.
+- The payload goes as one JSON body on stdin: comment bodies are arbitrary text, and
+  argument-shaped building is how a comment containing a quote becomes a malformed request.
+
 ### V7 — ask, and the second provider
 - `@changestack` in the chat view answers questions about the change under the cursor, or
   about the whole step with `/step`. Streaming, follow-ups, markdown, code links and

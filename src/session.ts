@@ -4,6 +4,7 @@ import type { FileChange } from './git/parse.js';
 import type { Cohort, Comment, Review, ReviewSpec } from './model/types.js';
 import { describeSpec } from './model/types.js';
 import { emptyReview, reviewId, save, type StoredReview } from './state/store.js';
+import type { PullRequest } from './github/pr.js';
 
 /**
  * The one review that is open, if any.
@@ -48,6 +49,8 @@ export class Session implements vscode.Disposable {
   notes: string[] = [];
   /** Mermaid source, when the change had a shape worth drawing. Usually empty. */
   diagram = '';
+  /** Set for a pull request review, and what makes submitting possible. */
+  pr: PullRequest | null = null;
   /** True once clustering has replaced the heuristic stack — which happens exactly once. */
   clustered = false;
   /** The record on disk. Written after every change the reviewer makes. */
@@ -109,6 +112,7 @@ export class SessionHost implements vscode.Disposable {
     this.close();
     this.current = session;
     void vscode.commands.executeCommand('setContext', 'changestack.active', true);
+    void vscode.commands.executeCommand('setContext', 'changestack.pr', session.spec.kind === 'pr');
     this.changed.fire(session);
     return session;
   }
@@ -118,6 +122,7 @@ export class SessionHost implements vscode.Disposable {
     this.current.dispose();
     this.current = null;
     void vscode.commands.executeCommand('setContext', 'changestack.active', false);
+    void vscode.commands.executeCommand('setContext', 'changestack.pr', false);
     this.changed.fire(null);
   }
 

@@ -3,7 +3,8 @@ export type ReviewSpec =
   | { kind: 'worktree' }
   | { kind: 'staged' }
   | { kind: 'range'; base: string; head: string; threeDot: boolean }
-  | { kind: 'pr'; number: number };
+  /** `base` and `head` are resolved commits: a pull request review compares exact objects. */
+  | { kind: 'pr'; number: number; base: string; head: string; title?: string };
 
 export function describeSpec(spec: ReviewSpec): string {
   switch (spec.kind) {
@@ -14,7 +15,7 @@ export function describeSpec(spec: ReviewSpec): string {
     case 'range':
       return `${spec.base}${spec.threeDot ? '...' : '..'}${spec.head}`;
     case 'pr':
-      return `pull request #${spec.number}`;
+      return spec.title ? `#${spec.number} — ${spec.title}` : `pull request #${spec.number}`;
   }
 }
 

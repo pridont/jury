@@ -54,7 +54,7 @@
     "viewsWelcome": [
       {
         "view": "changestack.stack",
-        "contents": "No review is open.\n[Review working tree](command:changestack.review)\n[Review staged changes](command:changestack.reviewStaged)\n[Review this branch](command:changestack.reviewBase)\n[Resume last review](command:changestack.resume)\n",
+        "contents": "No review is open.\n[Review working tree](command:changestack.review)\n[Review staged changes](command:changestack.reviewStaged)\n[Review this branch](command:changestack.reviewBase)\n[Review a pull request](command:changestack.reviewPr)\n[Resume last review](command:changestack.resume)\n",
         "when": "!changestack.active"
       }
     ],
@@ -74,6 +74,17 @@
         "command": "changestack.reviewBase",
         "title": "Review This Branch\u2026",
         "category": "Change Stack"
+      },
+      {
+        "command": "changestack.reviewPr",
+        "title": "Review a Pull Request\u2026",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.submitReview",
+        "title": "Submit Review to GitHub\u2026",
+        "category": "Change Stack",
+        "icon": "$(github)"
       },
       {
         "command": "changestack.refresh",
@@ -282,6 +293,11 @@
           "command": "changestack.recluster",
           "when": "view == changestack.stack && changestack.active",
           "group": "1_log@0"
+        },
+        {
+          "command": "changestack.submitReview",
+          "when": "view == changestack.stack && changestack.pr",
+          "group": "1_log@2"
         }
       ],
       "view/item/context": [
@@ -444,6 +460,10 @@
         {
           "command": "changestack.askStep",
           "when": "changestack.active"
+        },
+        {
+          "command": "changestack.submitReview",
+          "when": "changestack.pr"
         }
       ],
       "comments/commentThread/context": [

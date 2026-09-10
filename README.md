@@ -13,7 +13,14 @@ you judge the code.
 Change Stack: Review Working Tree     uncommitted work, untracked files included
 Change Stack: Review Staged Changes   the index
 Change Stack: Review This Branch…     what this branch introduced, against a merge base
+Change Stack: Review a Pull Request…  by number, or the one on this branch
 ```
+
+A pull request is fetched into a ref of its own and reviewed against the merge base of its
+target branch. Nothing is checked out; your working tree is not touched. GitHub's "viewed"
+state comes across, so a review carries on where you left it on the web, and
+`Submit Review to GitHub…` posts your notes back as inline comments — after showing you the
+entire payload, including what it will not send, and asking.
 
 `alt+j` walks every hunk in the review, crossing files, layers and cohorts on its own.
 `alt+m` ticks the hunk under the cursor, `alt+shift+m` the whole layer. `alt+z` hides

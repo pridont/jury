@@ -33,6 +33,8 @@ import type { FileChange } from './git/parse.js';
 import { load as loadStored, list as listStored, reviewId } from './state/store.js';
 import { describeRefresh, reconcileMarks } from './state/reconcile.js';
 import { describeSpec } from './model/types.js';
+import { fetchHead, resolve, viewedFiles, GhError, type PullRequest } from './github/pr.js';
+import { prepare, preview, submit, type ReviewEvent } from './github/submit.js';
 
 let log: vscode.OutputChannel;
 
@@ -116,6 +118,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('changestack.review', () => open(host, { kind: 'worktree' }, ctx())),
     vscode.commands.registerCommand('changestack.reviewStaged', () => open(host, { kind: 'staged' }, ctx())),
     vscode.commands.registerCommand('changestack.reviewBase', () => reviewBase(host, ctx())),
+    vscode.commands.registerCommand('changestack.reviewPr', () => reviewPr(host, ctx())),
+    vscode.commands.registerCommand('changestack.submitReview', () => submitReview(host)),
     vscode.commands.registerCommand('changestack.refresh', () => refresh(host, ctx())),
     vscode.commands.registerCommand('changestack.close', () => {
       // A review that is gone must not leave a subprocess behind talking to the account.
@@ -787,6 +791,125 @@ async function exportReview(host: SessionHost): Promise<void> {
 
   const document = await vscode.workspace.openTextDocument({ content: markdown, language: 'markdown' });
   await vscode.window.showTextDocument(document, { preview: false });
+}
+
+/**
+ * Review a pull request without checking it out.
+ *
+ * The head is fetched into a ref of our own and compared against the merge base of its
+ * target branch — what the author asked to have merged, not a comparison with whatever that
+ * branch has done since. The working tree is not touched.
+ */
+async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
+  const repo = await resolveRepo();
+  if (!repo) return;
+
+  const typed = await vscode.window.showInputBox({
+    title: 'Review a pull request',
+    prompt: 'Pull request number, or empty for the one on this branch',
+    placeHolder: 'e.g. 141',
+    validateInput: (value) => (value === '' || /^\d+$/.test(value.trim()) ? null : 'A number, or nothing'),
+  });
+  if (typed === undefined) return;
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Change Stack: fetching the pull request' },
+    async () => {
+      try {
+        const number = typed.trim() ? Number(typed.trim()) : undefined;
+        const pr = await resolve(repo, number);
+        const { base, head } = await fetchHead(repo, pr);
+        log.appendLine(`  #${pr.number} ${pr.title} — ${base.slice(0, 12)}..${head.slice(0, 12)}`);
+
+        await open(host, { kind: 'pr', number: pr.number, base, head, title: pr.title }, ctx);
+
+        const session = host.active;
+        if (session) {
+          session.pr = pr;
+          // What GitHub already thinks was read. Marks stay ours — this only starts the
+          // review where the reviewer left it on the web.
+          const viewed = await viewedFiles(repo, pr);
+          for (const file of session.files) {
+            if (!viewed.has(file.path)) continue;
+            for (const hunk of file.hunks) session.marks.add(hunk.id);
+          }
+          if (viewed.size > 0) {
+            log.appendLine(`  ${viewed.size} files were already marked viewed on GitHub`);
+            await persist(session);
+            ctx.tree.refresh();
+            updateBadge(ctx.view, ctx.nav, host);
+          }
+        }
+      } catch (error) {
+        const message = error instanceof GhError ? error.message : String(error);
+        vscode.window.showErrorMessage(`Change Stack: ${message}`);
+        log.appendLine(`  pull request review failed: ${message}`);
+      }
+    },
+  );
+}
+
+/**
+ * Send the review to GitHub, after showing exactly what will be sent.
+ *
+ * Posting to someone else's repository is not something to do on a keystroke, so the whole
+ * payload — every comment, every position, and everything that will *not* be sent — is put
+ * in front of the reviewer first.
+ */
+async function submitReview(host: SessionHost): Promise<void> {
+  const session = host.active;
+  if (!session?.pr) {
+    vscode.window.showInformationMessage('Change Stack: open a pull request review first.');
+    return;
+  }
+
+  const choice = await vscode.window.showQuickPick(
+    [
+      { label: 'Comment', detail: 'Leave the notes without approving or blocking', event: 'COMMENT' as ReviewEvent },
+      { label: 'Approve', detail: 'Approve the pull request', event: 'APPROVE' as ReviewEvent },
+      {
+        label: 'Request changes',
+        detail: 'Block the pull request until the notes are addressed',
+        event: 'REQUEST_CHANGES' as ReviewEvent,
+      },
+    ],
+    { title: `Submit review of #${session.pr.number}`, placeHolder: 'How should this review be submitted?' },
+  );
+  if (!choice) return;
+
+  const body = await vscode.window.showInputBox({
+    title: 'Review summary',
+    prompt: 'A sentence or two for the review as a whole. Optional.',
+    value: session.overview.split('. ').slice(0, 2).join('. '),
+  });
+  if (body === undefined) return;
+
+  const hunks = new Map(session.files.flatMap((file) => file.hunks).map((hunk) => [hunk.id, hunk]));
+  const submission = prepare(session.comments, hunks, choice.event, body);
+
+  const document = await vscode.workspace.openTextDocument({
+    content: preview(session.pr, submission),
+    language: 'markdown',
+  });
+  await vscode.window.showTextDocument(document, { preview: true });
+
+  const confirmed = await vscode.window.showWarningMessage(
+    `Send this review to ${session.pr.nameWithOwner}#${session.pr.number}?`,
+    { modal: true, detail: `${submission.comments.length} inline comments will be posted to GitHub.` },
+    'Send',
+  );
+  if (confirmed !== 'Send') return;
+
+  try {
+    const url = await submit(session.repo, session.pr, submission);
+    log.appendLine(`  review posted: ${url}`);
+    const open = await vscode.window.showInformationMessage('Change Stack: review posted.', 'Open on GitHub');
+    if (open === 'Open on GitHub') await vscode.env.openExternal(vscode.Uri.parse(url));
+  } catch (error) {
+    const message = error instanceof GhError ? error.message : String(error);
+    log.appendLine(`  submitting failed: ${message}`);
+    vscode.window.showErrorMessage(`Change Stack: the review was not posted — ${message}`);
+  }
 }
 
 async function runDoctor(): Promise<void> {
