@@ -39,6 +39,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     switch (node.type) {
       case 'message': {
         const item = new vscode.TreeItem(node.text, vscode.TreeItemCollapsibleState.None);
+        item.id = 'message';
         item.contextValue = 'message';
         if (node.icon) item.iconPath = new vscode.ThemeIcon(node.icon);
         return item;
@@ -59,6 +60,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
               : vscode.TreeItemCollapsibleState.Expanded,
         );
 
+        item.id = `co:${node.cohort.id}`;
         const hunks = node.cohort.layers.reduce((n, layer) => n + layer.hunkIds.length, 0);
         const onlyPath = only?.paths.length === 1 ? only.paths[0] : undefined;
         const files = new Set(node.cohort.layers.flatMap((layer) => layer.paths)).size;
@@ -95,6 +97,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           'Notes whose code is gone',
           vscode.TreeItemCollapsibleState.Expanded,
         );
+        item.id = 'orphans';
         item.description = `${count}`;
         item.iconPath = new vscode.ThemeIcon('unverified', new vscode.ThemeColor('list.warningForeground'));
         item.tooltip = new vscode.MarkdownString(
@@ -107,6 +110,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
       case 'orphan': {
         const first = node.comment.body.split('\n')[0] ?? '';
         const item = new vscode.TreeItem(first, vscode.TreeItemCollapsibleState.None);
+        item.id = `orphan:${node.comment.id}`;
         item.tooltip = new vscode.MarkdownString(node.comment.body);
         item.iconPath = new vscode.ThemeIcon('comment');
         item.contextValue = 'orphan';
@@ -115,6 +119,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
 
       case 'layerFile': {
         const item = new vscode.TreeItem(name(node.path), vscode.TreeItemCollapsibleState.None);
+        item.id = fileId(node.cohort, node.layer, node.path);
         const hunks = hunksIn(session, node.layer, node.path);
         const notes = session
           ? session.comments.filter((c) => !c.orphaned && hunks.some((id) => id === c.hunkId)).length
@@ -152,6 +157,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           label,
           single ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed,
         );
+        item.id = layerId(node.cohort, node.layer);
         const marked = session ? node.layer.hunkIds.every((id) => session.marks.has(id)) : false;
         const notes = session
           ? session.comments.filter((comment) => !comment.orphaned && node.layer.hunkIds.includes(comment.hunkId))
@@ -250,13 +256,30 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     return { type: 'cohort', cohort: node.cohort, index: node.cohortIndex };
   }
 
-  /** The tree node for a position in the reading order, so navigation can select it. */
-  nodeForLayer(cohortIndex: number, layerIndex: number): Node | undefined {
+  /**
+   * The row that stands for a position in the reading order.
+   *
+   * A step that spans files is selected at the file being read, not at the step: on a step
+   * touching twenty files, highlighting the parent says almost nothing about where you are.
+   */
+  nodeForPosition(cohortIndex: number, layerIndex: number, path: string): Node | undefined {
     const cohort = this.host.active?.cohorts[cohortIndex];
     const layer = cohort?.layers[layerIndex];
     if (!cohort || !layer) return undefined;
+
+    if (layer.paths.length > 1 && layer.paths.includes(path)) {
+      return { type: 'layerFile', cohortIndex, layerIndex, cohort, layer, path };
+    }
     return { type: 'layer', cohortIndex, layerIndex, cohort, layer };
   }
+}
+
+function layerId(cohort: Cohort, layer: Layer): string {
+  return `co:${cohort.id}/la:${layer.id}`;
+}
+
+function fileId(cohort: Cohort, layer: Layer, path: string): string {
+  return `${layerId(cohort, layer)}/f:${path}`;
 }
 
 function name(path: string): string {

@@ -170,8 +170,9 @@ export function activate(context: vscode.ExtensionContext): void {
   nav.onDidChange((entry) => {
     updateBadge(view, nav, host);
     if (!entry) return;
-    const node = tree.nodeForLayer(entry.cohortIndex, entry.layerIndex);
-    if (node && view.visible) void view.reveal(node, { select: true, focus: false });
+    const node = tree.nodeForPosition(entry.cohortIndex, entry.layerIndex, entry.file.path);
+    // `expand` so a file row inside a collapsed step is actually visible when selected.
+    if (node && view.visible) void view.reveal(node, { select: true, focus: false, expand: true });
   });
 
   applyProviderSettings(claude);
