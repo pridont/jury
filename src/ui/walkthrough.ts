@@ -2,12 +2,16 @@ import * as vscode from 'vscode';
 import type { Session } from '../session.js';
 import { describeSpec } from '../model/types.js';
 
+/** The extension that teaches VS Code's markdown preview to draw mermaid. */
+const MERMAID_EXTENSION = 'bierner.markdown-mermaid';
+
 /**
- * What the change set is, before any code.
+ * What this change is, before any of it.
  *
- * A markdown document rather than a webview: it renders diagrams and links, opens beside the
- * review, and there is nothing to maintain. This is the thing to read first, and the reason
- * the ordering exists — the stack without the walkthrough is a list.
+ * Not an outline of the tree — the tree is right there, and saying the same thing twice in a
+ * worse medium wastes the one moment a reviewer is willing to read prose. This answers the
+ * question the tree cannot: what does the software do now that it did not, and in what order
+ * does the argument for it make sense.
  */
 export async function showWalkthrough(session: Session): Promise<void> {
   const document = await vscode.workspace.openTextDocument({
@@ -18,14 +22,16 @@ export async function showWalkthrough(session: Session): Promise<void> {
   await vscode.commands.executeCommand('markdown.showPreview');
 }
 
-export function render(session: Session): string {
-  const reviewable = session.files.flatMap((file) => file.hunks).filter((hunk) => !hunk.scaffolding);
+export function render(session: Session, canDrawMermaid = hasMermaid()): string {
   const cohorts = session.cohorts.filter((cohort) => cohort.kind !== 'scaffolding');
   const scaffolding = session.cohorts.find((cohort) => cohort.kind === 'scaffolding');
+  const hunks = session.files.flatMap((file) => file.hunks).filter((hunk) => !hunk.scaffolding).length;
 
   const lines: string[] = [
-    `# ${describeSpec(session.spec)} — ${cohorts.length} change${cohorts.length === 1 ? '' : 's'}, ` +
-      `${reviewable.length} hunk${reviewable.length === 1 ? '' : 's'}, ${session.files.length} files`,
+    `# ${describeSpec(session.spec)}`,
+    '',
+    `${cohorts.length} change${cohorts.length === 1 ? '' : 's'} · ${hunks} hunk${hunks === 1 ? '' : 's'} · ` +
+      `${session.files.length} file${session.files.length === 1 ? '' : 's'}`,
     '',
   ];
 
@@ -33,22 +39,29 @@ export function render(session: Session): string {
     lines.push(session.overview, '');
   } else {
     lines.push(
-      '_Grouped by file, in the order git produced them. A model has not organised this ' +
-        'change set — that is what the reading order below would otherwise be._',
+      '_Grouped by file, in the order git produced them — no model has organised this._',
       '',
     );
   }
 
-  lines.push('## Review order', '');
-  cohorts.forEach((cohort, index) => {
-    const risk = cohort.risk === 'low' ? '' : ` **${cohort.risk} risk**`;
-    lines.push(`${index + 1}. **${cohort.title}**${risk} — ${cohort.summary || 'no summary'}`);
-    if (cohort.riskReason) lines.push(`   - ${cohort.riskReason}`);
-    if (cohort.layers.length > 1) {
-      for (const layer of cohort.layers) {
-        lines.push(`   - ${layer.title} — ${layer.paths.join(', ')}`);
-      }
+  if (session.diagram) {
+    if (canDrawMermaid) {
+      lines.push('```mermaid', session.diagram, '```', '');
+    } else {
+      lines.push(
+        `_A diagram of this change is available, but nothing here can draw it. ` +
+          `Install [Markdown Preview Mermaid Support](command:workbench.extensions.search?%22${MERMAID_EXTENSION}%22) ` +
+          `and reopen this._`,
+        '',
+      );
     }
+  }
+
+  lines.push('## Read in this order', '');
+  cohorts.forEach((cohort, index) => {
+    const risk = cohort.risk === 'low' ? '' : ` **(${cohort.risk} risk)**`;
+    lines.push(`${index + 1}. **${cohort.title}**${risk} — ${cohort.summary || 'no summary'}`);
+    if (cohort.riskReason) lines.push(`   ${cohort.riskReason}`);
   });
   lines.push('');
 
@@ -59,8 +72,13 @@ export function render(session: Session): string {
   }
 
   if (scaffolding) {
-    lines.push(`_${scaffolding.summary}_`, '');
+    const files = scaffolding.layers.length;
+    lines.push(`_${files} generated file${files === 1 ? '' : 's'} are not part of the review._`, '');
   }
 
   return lines.join('\n');
+}
+
+function hasMermaid(): boolean {
+  return vscode.extensions.getExtension(MERMAID_EXTENSION) !== undefined;
 }

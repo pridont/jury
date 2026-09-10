@@ -46,6 +46,8 @@ export class Session implements vscode.Disposable {
   overview = '';
   /** Things worth attention that belong to no single cohort. */
   notes: string[] = [];
+  /** Mermaid source, when the change had a shape worth drawing. Usually empty. */
+  diagram = '';
   /** True once clustering has replaced the heuristic stack — which happens exactly once. */
   clustered = false;
   /** The record on disk. Written after every change the reviewer makes. */

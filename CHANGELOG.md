@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Unreleased fixes
+- The walkthrough was the tree written out as prose — the same information in a worse medium,
+  spent on the one moment a reviewer will read prose. It now answers what the tree cannot:
+  what the software does now that it did not, and why the reading order is what it is. No
+  file lists, no layer outlines.
+- The model may return a mermaid diagram, and is told that omitting it is the normal answer:
+  a picture earns its place only when the change has a shape prose does not show — a request
+  crossing components, a state machine, a data model. A `diagram` field that is not actually
+  a diagram is dropped, because prose there renders as a broken block rather than as nothing.
+  When no mermaid renderer is installed, the walkthrough says so and links to one.
+- Clicking a step that spans files opened one of them, and next-hunk would not cross to the
+  rest: reveal used `activeTextEditor`, which after `vscode.diff` is not reliably the editor
+  just opened. A step now opens whole and expands to its files in the tree.
+- Navigation selected the step rather than the file being read, and tree items had no stable
+  ids — so reveal was unreliable and expansion state reset on every refresh, which happens
+  once per summary as pass 1 lands.
+- Risk icons were VS Code's diagnostics vocabulary. A red error cross says *this code is
+  broken*; risk means *read this carefully*, which is a different claim.
+- Dimming in the diff meant both "did not change" and "belongs to another step". It now means
+  only the first; the step being read is marked with a border.
+- Both model passes now say what they are doing while they do it.
+
 ### V6 — clustering
 - Pass 2: the change set grouped into cohorts by intent and put in dependency-first reading
   order — introduce a thing, then the code that uses it, then the plumbing, then the tests.

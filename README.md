@@ -47,15 +47,16 @@ be worth anything.
 
 | | auth-clock | two-changes |
 |---|---|---|
-| grouping (model) | 90.0% | 91.3% |
+| grouping (model) | 100.0% | 100.0% |
 | grouping (heuristic) | 80.0% | 60.9% |
 | order (model) | 100.0% | 100.0% |
 | order (heuristic) | 77.8% | 100.0% |
 
-Two fixtures is thin evidence. The harness exists so the next prompt change is measured
-rather than argued about — and it has already earned that: keeping a documentation hunk with
-the change it documents, rather than in a docs cohort of its own, moved `two-changes`
-grouping from 87.0% to 91.3%.
+Two fixtures is thin evidence, and each figure is one sample. The harness exists so the next
+prompt change is measured rather than argued about, and it has already earned that twice:
+keeping a documentation hunk with the change it documents moved `two-changes` grouping from
+87.0% to 91.3%, and tightening what the overview is asked for took both fixtures to 100%.
+Whether that second move was the prompt or the variance, a single run cannot say.
 
 ## Design principles
 

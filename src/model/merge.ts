@@ -5,12 +5,15 @@ export type ClusterOutput = {
   summary?: unknown;
   cohorts?: unknown;
   notes?: unknown;
+  diagram?: unknown;
 };
 
 export type Merged = {
   cohorts: Cohort[];
   summary: string;
   notes: string[];
+  /** Mermaid source, when the model judged the change had a shape worth drawing. */
+  diagram: string;
 };
 
 export type MergeResult = { ok: true; merged: Merged } | { ok: false; reason: string };
@@ -160,6 +163,7 @@ export function merge(
       notes: (Array.isArray(output.notes) ? output.notes : [])
         .filter((note): note is string => typeof note === 'string')
         .map((note) => unlabel(note, names)),
+      diagram: diagramOf(output.diagram),
     },
   };
 }
@@ -221,6 +225,24 @@ function pathNames(labels: ReadonlyMap<string, Hunk>): Map<string, string> {
 function pathsOf(hunkIds: readonly string[], labels: ReadonlyMap<string, Hunk>): string[] {
   const byId = new Map([...labels.values()].map((hunk) => [hunk.id, hunk.path]));
   return [...new Set(hunkIds.map((id) => byId.get(id)).filter((path): path is string => path !== undefined))];
+}
+
+const DIAGRAM_TYPES =
+  /^(sequenceDiagram|flowchart|graph|stateDiagram(-v2)?|erDiagram|classDiagram|journey|gantt|mindmap|timeline)\b/;
+
+/**
+ * Accept a diagram only if it is one.
+ *
+ * A model that answers this field with prose would put that prose where a picture goes, and
+ * the preview would render a broken code block instead of saying nothing — which is worse
+ * than the omission the field is supposed to default to.
+ */
+function diagramOf(value: unknown): string {
+  const source = text(value)
+    .replace(/^```(?:mermaid)?\s*\n?/i, '')
+    .replace(/\n?```$/, '')
+    .trim();
+  return DIAGRAM_TYPES.test(source) ? source : '';
 }
 
 function text(value: unknown): string {

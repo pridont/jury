@@ -427,6 +427,7 @@ async function cluster(session: Session, ctx: Context, deps: AgentDeps): Promise
   session.cohorts = result.merged.cohorts;
   session.overview = result.merged.summary;
   session.notes = result.merged.notes;
+  session.diagram = result.merged.diagram;
   session.clustered = true;
   ctx.activity.stop();
 
