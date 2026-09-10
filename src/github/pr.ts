@@ -111,6 +111,50 @@ export async function fetchHead(repo: Repo, pr: PullRequest): Promise<{ base: st
   throw new GhError('failed', `could not find the merge base of ${pr.baseRef} and #${pr.number}`);
 }
 
+export type PullRequestSummary = {
+  number: number;
+  title: string;
+  author: string;
+  headRef: string;
+  draft: boolean;
+  updatedAt: string;
+};
+
+/** Open pull requests, most recently updated first, for picking one without typing a number. */
+export async function listOpen(repo: Repo, limit = 30): Promise<PullRequestSummary[]> {
+  const result = await run(
+    'gh',
+    ['pr', 'list', '--limit', String(limit), '--json', 'number,title,author,headRefName,isDraft,updatedAt'],
+    { cwd: repo.root, timeoutMs: 30_000 },
+  ).catch(() => null);
+  if (!result || result.code !== 0) return [];
+
+  try {
+    const parsed = JSON.parse(result.stdout) as {
+      number?: number;
+      title?: string;
+      author?: { login?: string };
+      headRefName?: string;
+      isDraft?: boolean;
+      updatedAt?: string;
+    }[];
+
+    return parsed
+      .filter((entry) => typeof entry.number === 'number')
+      .map((entry) => ({
+        number: entry.number!,
+        title: entry.title ?? '',
+        author: entry.author?.login ?? '',
+        headRef: entry.headRefName ?? '',
+        draft: entry.isDraft === true,
+        updatedAt: entry.updatedAt ?? '',
+      }))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  } catch {
+    return [];
+  }
+}
+
 /** Which files GitHub already thinks this reviewer has looked at. */
 export async function viewedFiles(repo: Repo, pr: PullRequest): Promise<Set<string>> {
   const [owner, name] = pr.nameWithOwner.split('/');

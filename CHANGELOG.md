@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Unreleased
+- Picking what to review is a list now, not a blank box. `Review This Branch…` offers the
+  repository's trunk first, then every branch, remote branch and tag ordered by how recently
+  it moved, then recent commits — each with its date and subject line, because "8 weeks ago"
+  and "feat: blog and news" are what answer "is this the one I mean". The branch you are
+  standing on is left out: it is never the answer to what that branch added.
+- `Review a Pull Request…` lists the open pull requests, the one for your current branch
+  first, with author, draft state and head branch.
+- Both still accept anything typed — a tag you remember the name of, a SHA, a number — as
+  the first entry in the list rather than by abandoning it for another command.
+
 ### V8 — pull requests
 - `Review a Pull Request…` — by number, or empty for the one on this branch. The head is
   fetched into `refs/changestack/pr-<n>` and compared against the **merge base** of its

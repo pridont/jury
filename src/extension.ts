@@ -33,7 +33,9 @@ import type { FileChange } from './git/parse.js';
 import { load as loadStored, list as listStored, reviewId } from './state/store.js';
 import { describeRefresh, reconcileMarks } from './state/reconcile.js';
 import { describeSpec } from './model/types.js';
-import { fetchHead, resolve, viewedFiles, GhError, type PullRequest } from './github/pr.js';
+import { fetchHead, listOpen, resolve, viewedFiles, GhError, type PullRequest } from './github/pr.js';
+import { defaultBranch, listRefs, recentCommits, type Ref } from './git/refs.js';
+import { pickOrType } from './ui/pick.js';
 import { prepare, preview, submit, type ReviewEvent } from './github/submit.js';
 
 let log: vscode.OutputChannel;
@@ -740,16 +742,43 @@ async function reviewBase(host: SessionHost, ctx: Context): Promise<void> {
   const repo = await resolveRepo();
   if (!repo) return;
 
-  const branch = await currentBranch(repo);
-  const base = await vscode.window.showInputBox({
+  const [refs, commits, trunk, branch] = await Promise.all([
+    listRefs(repo),
+    recentCommits(repo),
+    defaultBranch(repo),
+    currentBranch(repo),
+  ]);
+
+  // The trunk first, then everything by how recently it moved, then commits. The branch you
+  // are standing on is never the answer to "what did this branch add".
+  const offered = [
+    ...refs.filter((ref) => ref.name === trunk),
+    ...refs.filter((ref) => ref.name !== trunk && ref.name !== branch),
+    ...commits,
+  ];
+
+  const base = await pickOrType<string>({
     title: 'Review this branch',
-    prompt: 'Review what this branch introduced, against which base?',
-    value: 'main',
-    placeHolder: branch ? `merge-base of main and ${branch}` : 'main',
+    placeholder: branch
+      ? `What did ${branch} add? Pick a base, or type any revision`
+      : 'Pick a base, or type any revision',
+    choices: offered.map((ref) => ({
+      label: ref.name,
+      description: ref.name === trunk ? `${describeRef(ref)} · default` : describeRef(ref),
+      detail: ref.subject,
+      value: ref.name,
+    })),
+    fromText: (text) => ({ label: text, value: text }),
   });
   if (!base) return;
 
   await open(host, { kind: 'range', base, head: 'HEAD', threeDot: true }, ctx);
+}
+
+function describeRef(ref: Ref): string {
+  const kind =
+    ref.kind === 'commit' ? 'commit' : ref.kind === 'tag' ? 'tag' : ref.kind === 'remote' ? 'remote' : 'branch';
+  return `${kind} · ${ref.when}`;
 }
 
 /** Put an orphaned note back on a hunk the reviewer picks out of the reading order. */
@@ -804,19 +833,31 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
   const repo = await resolveRepo();
   if (!repo) return;
 
-  const typed = await vscode.window.showInputBox({
+  const [open_, branch] = await Promise.all([listOpen(repo), currentBranch(repo)]);
+
+  const number = await pickOrType<number>({
     title: 'Review a pull request',
-    prompt: 'Pull request number, or empty for the one on this branch',
-    placeHolder: 'e.g. 141',
-    validateInput: (value) => (value === '' || /^\d+$/.test(value.trim()) ? null : 'A number, or nothing'),
+    placeholder: open_.length > 0 ? 'Pick a pull request, or type a number' : 'Type a pull request number',
+    // The one for the branch you are on first, since that is usually the one meant.
+    choices: [...open_]
+      .sort((a, b) => Number(b.headRef === branch) - Number(a.headRef === branch))
+      .map((pull) => ({
+        label: `#${pull.number}  ${pull.title}`,
+        description: [pull.draft ? 'draft' : '', pull.author, pull.headRef === branch ? 'this branch' : '']
+          .filter(Boolean)
+          .join(' · '),
+        detail: pull.headRef,
+        value: pull.number,
+      })),
+    fromText: (text) =>
+      /^#?\d+$/.test(text) ? { label: `#${text.replace('#', '')}`, value: Number(text.replace('#', '')) } : null,
   });
-  if (typed === undefined) return;
+  if (number === undefined) return;
 
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'Change Stack: fetching the pull request' },
     async () => {
       try {
-        const number = typed.trim() ? Number(typed.trim()) : undefined;
         const pr = await resolve(repo, number);
         const { base, head } = await fetchHead(repo, pr);
         log.appendLine(`  #${pr.number} ${pr.title} — ${base.slice(0, 12)}..${head.slice(0, 12)}`);
