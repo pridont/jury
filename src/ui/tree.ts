@@ -7,7 +7,15 @@ export type Node =
   | { type: 'orphans' }
   | { type: 'orphan'; comment: Comment }
   | { type: 'cohort'; cohort: Cohort; index: number }
-  | { type: 'layer'; cohortIndex: number; layerIndex: number; cohort: Cohort; layer: Layer };
+  | { type: 'layer'; cohortIndex: number; layerIndex: number; cohort: Cohort; layer: Layer }
+  | {
+      type: 'layerFile';
+      cohortIndex: number;
+      layerIndex: number;
+      cohort: Cohort;
+      layer: Layer;
+      path: string;
+    };
 
 /**
  * The shape of the review and nothing else: cohorts, and what each is made of.
@@ -53,7 +61,8 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
 
         const hunks = node.cohort.layers.reduce((n, layer) => n + layer.hunkIds.length, 0);
         const onlyPath = only?.paths.length === 1 ? only.paths[0] : undefined;
-        const where = onlyPath ? directory(onlyPath) : `${node.cohort.layers.length} files`;
+        const files = new Set(node.cohort.layers.flatMap((layer) => layer.paths)).size;
+        const where = onlyPath ? directory(onlyPath) : `${files} file${files === 1 ? '' : 's'}`;
         item.description = `${where ? `${where} · ` : ''}${hunks} hunk${hunks === 1 ? '' : 's'}`;
         const prose =
           node.cohort.summary || (onlyPath ? (session?.summaries.get(onlyPath) ?? '') : '') || node.cohort.title;
@@ -104,12 +113,45 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         return item;
       }
 
+      case 'layerFile': {
+        const item = new vscode.TreeItem(name(node.path), vscode.TreeItemCollapsibleState.None);
+        const hunks = hunksIn(session, node.layer, node.path);
+        const notes = session
+          ? session.comments.filter((c) => !c.orphaned && hunks.some((id) => id === c.hunkId)).length
+          : 0;
+        item.description = [
+          notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
+          directory(node.path),
+          `${hunks.length} hunk${hunks.length === 1 ? '' : 's'}`,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        item.resourceUri = vscode.Uri.file(node.path);
+        item.tooltip = new vscode.MarkdownString(session?.summaries.get(node.path) ?? node.path);
+        item.checkboxState =
+          session && hunks.length > 0 && hunks.every((id) => session.marks.has(id))
+            ? vscode.TreeItemCheckboxState.Checked
+            : vscode.TreeItemCheckboxState.Unchecked;
+        item.contextValue = 'layerFile';
+        item.command = {
+          command: 'changestack.openLayerFile',
+          title: 'Open',
+          arguments: [node.cohortIndex, node.layerIndex, node.path],
+        };
+        return item;
+      }
+
       case 'layer': {
         // A heuristic layer is a file; a model's layer is a step that may span several. Use
         // the paths it recorded rather than reading the title as if it were one.
         const single = node.layer.paths.length === 1 ? node.layer.paths[0] : undefined;
         const label = single ? name(single) : node.layer.title;
-        const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+        // A step that spans files opens as those files; it also expands to them, so what it
+        // touches is visible without opening anything.
+        const item = new vscode.TreeItem(
+          label,
+          single ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed,
+        );
         const marked = session ? node.layer.hunkIds.every((id) => session.marks.has(id)) : false;
         const notes = session
           ? session.comments.filter((comment) => !comment.orphaned && node.layer.hunkIds.includes(comment.hunkId))
@@ -168,6 +210,18 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         .map((comment) => ({ type: 'orphan', comment }) as Node);
     }
 
+    if (node.type === 'layer') {
+      if (node.layer.paths.length <= 1) return [];
+      return node.layer.paths.map((path) => ({
+        type: 'layerFile',
+        cohortIndex: node.cohortIndex,
+        layerIndex: node.layerIndex,
+        cohort: node.cohort,
+        layer: node.layer,
+        path,
+      }));
+    }
+
     if (node.type === 'cohort') {
       if (node.cohort.layers.length === 1) return [];
       return node.cohort.layers.map((layer, layerIndex) => ({
@@ -183,6 +237,15 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
   }
 
   getParent(node: Node): Node | undefined {
+    if (node.type === 'layerFile') {
+      return {
+        type: 'layer',
+        cohortIndex: node.cohortIndex,
+        layerIndex: node.layerIndex,
+        cohort: node.cohort,
+        layer: node.layer,
+      };
+    }
     if (node.type !== 'layer') return undefined;
     return { type: 'cohort', cohort: node.cohort, index: node.cohortIndex };
   }
@@ -206,13 +269,33 @@ function directory(path: string): string {
   return at === -1 ? '' : path.slice(0, at);
 }
 
+/**
+ * Risk is not a diagnostic.
+ *
+ * A red error cross and a yellow warning triangle are what VS Code uses everywhere else to
+ * say *this code is broken*, and a reviewer reading that tree would reasonably conclude the
+ * extension had found errors. It has not: it is saying "read this one carefully". A flame,
+ * in chart colours rather than problem colours, makes that claim instead.
+ */
 function riskIcon(risk: Risk): vscode.ThemeIcon | undefined {
   switch (risk) {
     case 'low':
       return undefined;
     case 'medium':
-      return new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'));
+      return new vscode.ThemeIcon('flame', new vscode.ThemeColor('charts.yellow'));
     case 'high':
-      return new vscode.ThemeIcon('error', new vscode.ThemeColor('list.errorForeground'));
+      return new vscode.ThemeIcon('flame', new vscode.ThemeColor('charts.red'));
   }
+}
+
+/** The hunks of one layer that live in one file. */
+function hunksIn(
+  session: { files: { path: string; hunks: { id: string }[] }[] } | null,
+  layer: Layer,
+  path: string,
+): string[] {
+  const file = session?.files.find((candidate) => candidate.path === path);
+  if (!file) return [];
+  const own = new Set(file.hunks.map((hunk) => hunk.id));
+  return layer.hunkIds.filter((id) => own.has(id));
 }

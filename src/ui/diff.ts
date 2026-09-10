@@ -71,7 +71,16 @@ export async function openFileDiff(session: Session, file: FileChange): Promise<
     preview: true,
     preserveFocus: false,
   });
-  return vscode.window.activeTextEditor;
+
+  // `activeTextEditor` is not reliably the editor the command just opened, and revealing in
+  // the wrong one puts the cursor back in the file being left — which then syncs the
+  // position back and makes the next-hunk key look broken.
+  return editorFor(after) ?? editorFor(before) ?? vscode.window.activeTextEditor;
+}
+
+function editorFor(uri: vscode.Uri): vscode.TextEditor | undefined {
+  const key = uri.toString();
+  return vscode.window.visibleTextEditors.find((editor) => editor.document.uri.toString() === key);
 }
 
 /**
@@ -83,6 +92,10 @@ export async function openFileDiff(session: Session, file: FileChange): Promise<
  */
 export async function openMultiDiff(session: Session, title: string, files: FileChange[]): Promise<boolean> {
   if (files.length === 0) return false;
+  if (files.length === 1) {
+    await openFileDiff(session, files[0]!);
+    return true;
+  }
 
   const resources = files.map((file) => {
     const { before, after } = sidesFor(session, file);

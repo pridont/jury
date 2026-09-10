@@ -227,6 +227,17 @@
         "title": "Reorganise the Stack",
         "category": "Change Stack",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "changestack.openLayerFile",
+        "title": "Open File",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.openLayerFiles",
+        "title": "Open All Files in This Step",
+        "category": "Change Stack",
+        "icon": "$(diff-multiple)"
       }
     ],
     "menus": {
@@ -302,6 +313,16 @@
           "command": "changestack.discardComment",
           "when": "view == changestack.stack && viewItem == orphan",
           "group": "inline@2"
+        },
+        {
+          "command": "changestack.openLayerFiles",
+          "when": "view == changestack.stack && viewItem == layer",
+          "group": "inline@1"
+        },
+        {
+          "command": "changestack.openLayerFiles",
+          "when": "view == changestack.stack && viewItem == layer",
+          "group": "navigation@0"
         }
       ],
       "commandPalette": [
@@ -396,6 +417,14 @@
         {
           "command": "changestack.recluster",
           "when": "changestack.active"
+        },
+        {
+          "command": "changestack.openLayerFile",
+          "when": "false"
+        },
+        {
+          "command": "changestack.openLayerFiles",
+          "when": "false"
         }
       ],
       "comments/commentThread/context": [

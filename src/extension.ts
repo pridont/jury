@@ -82,13 +82,16 @@ export function activate(context: vscode.ExtensionContext): void {
       const session = host.active;
       if (!session) return;
       for (const [node, state] of event.items) {
-        // A cohort of one layer is rendered as that layer, so it carries the tick too.
+        // A cohort of one layer is rendered as that layer, so it carries the tick too, and a
+        // file row ticks only the hunks of that layer that live in that file.
         const hunkIds =
           node.type === 'layer'
             ? node.layer.hunkIds
             : node.type === 'cohort'
               ? node.cohort.layers.flatMap((layer) => layer.hunkIds)
-              : [];
+              : node.type === 'layerFile'
+                ? hunksOf(session, node.layer.hunkIds, node.path)
+                : [];
         const checked = state === vscode.TreeItemCheckboxState.Checked;
         for (const id of hunkIds) {
           if (checked) session.marks.add(id);
@@ -145,6 +148,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('changestack.openLayer', (cohortIndex: number, layerIndex: number) =>
       nav.goToLayer(cohortIndex, layerIndex),
     ),
+    vscode.commands.registerCommand(
+      'changestack.openLayerFile',
+      (cohortIndex: number, layerIndex: number, path: string) => nav.goToLayerFile(cohortIndex, layerIndex, path),
+    ),
+    vscode.commands.registerCommand('changestack.openLayerFiles', (node?: Node) => openLayerFiles(host, node)),
     vscode.commands.registerCommand('changestack.openCohort', (node?: Node) => openCohort(host, node)),
     vscode.commands.registerCommand('changestack.markCohortReviewed', (node?: Node) =>
       markCohort(host, node, ctx()),
@@ -539,6 +547,26 @@ async function classify(session: Session): Promise<void> {
     overrides: session.notScaffolding,
     fromDisk: session.spec.kind === 'worktree',
   });
+}
+
+/** The hunks of a layer that live in one file. */
+function hunksOf(session: Session, hunkIds: readonly string[], path: string): string[] {
+  const file = session.files.find((candidate) => candidate.path === path);
+  if (!file) return [];
+  const own = new Set(file.hunks.map((hunk) => hunk.id));
+  return hunkIds.filter((id) => own.has(id));
+}
+
+/** Open every file of one layer together — the cohort action, at the scope of a step. */
+async function openLayerFiles(host: SessionHost, node?: Node): Promise<void> {
+  const session = host.active;
+  if (!session || node?.type !== 'layer') return;
+
+  const files = node.layer.paths
+    .map((path) => session.files.find((file) => file.path === path))
+    .filter((file): file is FileChange => file !== undefined);
+  const multi = await openMultiDiff(session, node.layer.title, files);
+  if (!multi) log.appendLine('  multi-file diff editor unavailable; opened files individually');
 }
 
 async function openCohort(host: SessionHost, node?: Node): Promise<void> {
