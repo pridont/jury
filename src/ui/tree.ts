@@ -54,8 +54,9 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const hunks = node.cohort.layers.reduce((n, layer) => n + layer.hunkIds.length, 0);
         const where = only ? directory(only.title) : `${node.cohort.layers.length} files`;
         item.description = `${where ? `${where} · ` : ''}${hunks} hunk${hunks === 1 ? '' : 's'}`;
+        const prose = only ? (session?.summaries.get(only.title) ?? node.cohort.summary) : node.cohort.summary;
         item.tooltip = new vscode.MarkdownString(
-          node.cohort.summary + (node.cohort.riskReason ? `\n\n**Risk:** ${node.cohort.riskReason}` : ''),
+          prose + (node.cohort.riskReason ? `\n\n**Risk:** ${node.cohort.riskReason}` : ''),
         );
 
         const icon = riskIcon(node.cohort.risk);
@@ -109,10 +110,19 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
               .length
           : 0;
         const where = directory(node.layer.title);
-        item.description = `${where ? `${where} · ` : ''}${node.layer.hunkIds.length} hunk${
-          node.layer.hunkIds.length === 1 ? '' : 's'
-        }${notes > 0 ? ` · ${notes} note${notes === 1 ? '' : 's'}` : ''}`;
-        item.tooltip = new vscode.MarkdownString(node.layer.summary);
+        // Notes first: in a narrow view the tail is what gets truncated, and "there is
+        // something written here" matters more than the hunk count it would push off.
+        item.description = [
+          notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
+          where,
+          `${node.layer.hunkIds.length} hunk${node.layer.hunkIds.length === 1 ? '' : 's'}`,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        // The model's sentence when there is one, the heuristic's description otherwise.
+        item.tooltip = new vscode.MarkdownString(
+          session?.summaries.get(node.layer.title) ?? node.layer.summary,
+        );
         item.resourceUri = vscode.Uri.file(node.layer.title);
         item.checkboxState = marked
           ? vscode.TreeItemCheckboxState.Checked

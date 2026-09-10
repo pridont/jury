@@ -51,9 +51,22 @@ export function diffTitle(file: FileChange): string {
   return `${name} (${file.status})`;
 }
 
-/** Open one file's diff and return the editor showing the new side, when there is one. */
+/**
+ * Open one file's diff and return the editor showing it.
+ *
+ * When a side has no content — an added file, a deleted one — the pane for it is dropped and
+ * the file opens on its own. Two panes, one of them blank, with every line painted as an
+ * addition, say nothing that one pane does not: reading a new file is just reading a file.
+ */
 export async function openFileDiff(session: Session, file: FileChange): Promise<vscode.TextEditor | undefined> {
   const { before, after } = sidesFor(session, file);
+
+  if (file.status === 'added' || file.status === 'deleted') {
+    const only = file.status === 'added' ? after : before;
+    const document = await vscode.workspace.openTextDocument(only);
+    return vscode.window.showTextDocument(document, { preview: true, preserveFocus: false });
+  }
+
   await vscode.commands.executeCommand('vscode.diff', before, after, diffTitle(file), {
     preview: true,
     preserveFocus: false,

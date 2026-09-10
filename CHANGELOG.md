@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### V5 — provider layer, Claude, per-file summaries
+- A `Provider` interface with declared capabilities, and the Claude CLI as its first
+  implementation. Prompts are prose and a JSON shape with no provider dialect in them, and
+  tools are named by capability rather than by product, so a second adapter is a new file
+  and not a rewrite.
+- Claude runs through the CLI you are already signed in to — no API key. `--setting-sources ""`
+  keeps your settings, your hooks and the reviewed repository's `CLAUDE.md` out of every
+  call: a repository under review is not a source of instructions this extension obeys.
+- Pass 1: one or two sentences per file, in parallel, appearing as each lands. Not awaited —
+  the review is on screen and navigable before a single request is sent.
+- Answers are cached on disk under `.git/`, keyed by prompt version, model and input, so
+  reopening a review costs nothing and starts no subprocess. An answer is only cached once
+  the caller has accepted it: a schema-valid non-answer cached is a known-bad result replayed
+  on every open.
+- One repair retry quoting the parse error, then the heuristic description stands. Model
+  output is fence-stripped first, because models fence JSON even when told not to.
+- Closing or refreshing a review cancels every request it started, queued or running.
+- Scaffolding is never summarised. `Doctor` reports each provider's models and capabilities;
+  an unavailable one is announced once per window, not once per review.
+
 ### V4 — comments and export
 - Review notes as native comment threads on the diff. The gutter only invites a note where
   there is a hunk: a note left on unchanged context is one nobody finds again.

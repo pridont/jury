@@ -4,10 +4,10 @@ Review a diff in VS Code as an **ordered stack of logical changes** instead of a
 alphabetical list of files. A model groups and orders the change and writes the summaries;
 you judge the code.
 
-> Status: **V4 — a complete review, with no AI at all.** Open a diff, walk every hunk in
-> reading order with one key, tick what you have read, leave notes, export them, and refresh
-> after the author pushes again. Grouping is still heuristic; the model-driven ordering that
-> justifies the tool is V6. See [docs/PLAN.md](docs/PLAN.md).
+> Status: **V5 — a complete review, now with per-file summaries.** Open a diff, walk every
+> hunk in reading order with one key, tick what you have read, leave notes, export them, and
+> refresh after the author pushes again. Grouping is still heuristic; the model-driven
+> ordering that justifies the tool is V6. See [docs/PLAN.md](docs/PLAN.md).
 
 ```
 Change Stack: Review Working Tree     uncommitted work, untracked files included

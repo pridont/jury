@@ -67,6 +67,9 @@ export class Comments implements vscode.Disposable {
     session.comments.push(comment);
 
     reply.thread.comments = [this.toRendered(comment)];
+    // The draft thread is labelled "Start discussion"; once there is a note, that label is
+    // describing something that already happened.
+    (reply.thread as { label?: string | undefined }).label = undefined;
     reply.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     this.threads.set(comment.id, reply.thread);
     this.changed.fire();

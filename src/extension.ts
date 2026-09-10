@@ -12,6 +12,12 @@ import { Navigator } from './ui/nav.js';
 import { Comments } from './ui/comments.js';
 import { reconcileComments } from './model/comments.js';
 import { toMarkdown } from './export.js';
+import * as providers from './agent/provider.js';
+import { ClaudeProvider } from './agent/providers/claude.js';
+import { Cache } from './agent/cache.js';
+import { Queue } from './agent/queue.js';
+import { summariseFiles } from './agent/summaries.js';
+import { stateDir } from './git/repo.js';
 import { buildOrder } from './model/order.js';
 import { heuristicCohorts } from './model/heuristic.js';
 import { classifyScaffolding } from './model/classify.js';
@@ -45,6 +51,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const nav = new Navigator(new Session({ root: '', commonDir: '', linkedWorktree: false }, { kind: 'worktree' }));
   const comments = new Comments();
+  const claude = new ClaudeProvider();
+  providers.register(claude);
+  const queue = new Queue(4);
 
   context.subscriptions.push(
     log,
@@ -52,6 +61,11 @@ export function activate(context: vscode.ExtensionContext): void {
     view,
     nav,
     comments,
+    { dispose: () => queue.cancelAll() },
+
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('changestack.providers')) applyProviderSettings(claude);
+    }),
 
     comments.onDidChange(() => {
       tree.refresh();
@@ -89,10 +103,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('changestack.reviewBase', () => reviewBase(host, ctx())),
     vscode.commands.registerCommand('changestack.refresh', () => refresh(host, ctx())),
     vscode.commands.registerCommand('changestack.close', () => {
+      // A review that is gone must not leave a subprocess behind talking to the account.
+      if (host.active) queue.cancel(host.active.id);
       blobs.clear();
       host.close();
       void windowState.update(LAST_REVIEW, undefined);
     }),
+    vscode.commands.registerCommand('changestack.clearCache', () => clearCache(host)),
+    vscode.commands.registerCommand('changestack.showLog', () => log.show(true)),
     vscode.commands.registerCommand('changestack.resume', () => resume(host, ctx())),
     vscode.commands.registerCommand('changestack.list', () => pickReview(host, ctx())),
     vscode.commands.registerCommand('changestack.doctor', () => runDoctor()),
@@ -138,11 +156,12 @@ export function activate(context: vscode.ExtensionContext): void {
     if (node && view.visible) void view.reveal(node, { select: true, focus: false });
   });
 
+  applyProviderSettings(claude);
   void vscode.commands.executeCommand('setContext', 'changestack.active', false);
   void restoreLast(host, ctx());
 
   function ctx(): Context {
-    return { tree, nav, view, blobs, comments };
+    return { tree, nav, view, blobs, comments, queue };
   }
 }
 
@@ -156,12 +175,14 @@ type Context = {
   view: vscode.TreeView<Node>;
   blobs: BlobProvider;
   comments: Comments;
+  queue: Queue;
 };
 
 async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<void> {
   const repo = await resolveRepo();
   if (!repo) return;
 
+  if (host.active) ctx.queue.cancel(host.active.id);
   ctx.blobs.clear();
   const session = new Session(repo, spec);
 
@@ -245,6 +266,7 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   const session = host.active;
   if (!session) return;
 
+  ctx.queue.cancel(session.id);
   const previous = session.files.flatMap((file) => file.hunks);
   session.loading = true;
   session.error = null;
@@ -330,6 +352,84 @@ async function load(session: Session, ctx: Context): Promise<void> {
   // Best-effort labelling; a missing language server costs a label, never the review.
   await enrichSymbols(session.files, (file) => uriForFile(session, file));
   ctx.tree.refresh();
+
+  void summarise(session, ctx);
+}
+
+/**
+ * Pass 1, after the review is already usable.
+ *
+ * Deliberately not awaited by `load`: the heuristic stack is on screen and navigable before
+ * a single request is sent, and every summary that arrives makes it slightly better. If the
+ * provider is missing, unauthenticated or simply wrong, the review stays exactly as it was.
+ */
+async function summarise(session: Session, ctx: Context): Promise<void> {
+  const config = vscode.workspace.getConfiguration('changestack');
+  if (!config.get<boolean>('ai.enabled', true)) return;
+
+  const provider = providers.get(config.get<string>('provider', 'claude'));
+  if (!provider) return;
+
+  const { ok, reason } = await provider.available();
+  if (!ok) {
+    log.appendLine(`  ${provider.id} unavailable: ${reason ?? 'unknown'} — summaries skipped`);
+    announceUnavailable(provider.id, reason);
+    return;
+  }
+
+  const started = Date.now();
+  const tally = await summariseFiles(
+    {
+      provider,
+      queue: ctx.queue,
+      cache: new Cache(path.join(stateDir(session.repo), 'cache')),
+      owner: session.id,
+      log: (line) => log.appendLine(line),
+    },
+    session.files,
+    (event) => {
+      if (event.kind === 'summary') session.summaries.set(event.path, event.summary);
+      ctx.tree.refresh();
+    },
+  );
+
+  log.appendLine(
+    `  summaries: ${tally.summarised} written, ${tally.cached} cached, ${tally.failed} failed, ` +
+      `$${tally.costUsd.toFixed(4)}, ${Date.now() - started}ms`,
+  );
+}
+
+/** Say a provider is missing once per window, not once per review. */
+let announced = false;
+function announceUnavailable(id: string, reason: string | undefined): void {
+  if (announced) return;
+  announced = true;
+  void vscode.window
+    .showInformationMessage(
+      `Change Stack: ${id} is unavailable — ${reason ?? 'unknown'}. The review works without it, grouped by file.`,
+      'Show log',
+    )
+    .then((choice) => {
+      if (choice === 'Show log') log.show(true);
+    });
+}
+
+function applyProviderSettings(claude: ClaudeProvider): void {
+  const settings = vscode.workspace
+    .getConfiguration('changestack')
+    .get<Record<string, { command?: string; models?: Record<string, string> }>>('providers', {});
+  const own = settings['claude'];
+  if (own?.command) claude.configure({ command: own.command });
+  if (own?.models) claude.configure({ models: own.models });
+}
+
+async function clearCache(host: SessionHost): Promise<void> {
+  const repo = host.active?.repo ?? (await resolveRepo());
+  if (!repo) return;
+  const cache = new Cache(path.join(stateDir(repo), 'cache'));
+  const size = await cache.size();
+  await cache.clear();
+  vscode.window.showInformationMessage(`Change Stack: cleared ${size} cached answers.`);
 }
 
 /** Read the user's settings, then classify. */

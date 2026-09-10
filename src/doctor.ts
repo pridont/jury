@@ -1,5 +1,6 @@
 import { run } from './util/exec.js';
 import { findRepo } from './git/repo.js';
+import { all } from './agent/provider.js';
 
 export type Check = {
   name: string;
@@ -73,14 +74,34 @@ async function checkClaude(): Promise<Check> {
   return { name: 'claude', ok: true, detail: `${v} (sign-in verified on first call)`, required: false };
 }
 
+/** What each registered provider can do, so an unavailable one is a fact, not a silence. */
+async function checkProviders(): Promise<Check[]> {
+  return Promise.all(
+    all().map(async (provider) => {
+      const { ok, reason } = await provider.available();
+      const can = provider.capabilities();
+      const models = Object.entries(can.models)
+        .map(([tier, model]) => `${tier}=${model}`)
+        .join(' ');
+      return {
+        name: `provider ${provider.id}`,
+        ok,
+        detail: ok ? `${models}${can.repoTools ? ' · repo tools' : ''}` : (reason ?? 'unavailable'),
+        required: false,
+      };
+    }),
+  );
+}
+
 export async function doctor(cwd: string | undefined): Promise<Check[]> {
-  return Promise.all([checkGit(), checkRepo(cwd), checkGh(), checkClaude()]);
+  const core = await Promise.all([checkGit(), checkRepo(cwd), checkGh(), checkClaude()]);
+  return [...core, ...(await checkProviders())];
 }
 
 export function formatChecks(checks: Check[]): string {
   const lines = checks.map((c) => {
     const mark = c.ok ? '✓' : c.required ? '✗' : '·';
-    return `${mark} ${c.name.padEnd(11)} ${c.detail}`;
+    return `${mark} ${c.name.padEnd(18)} ${c.detail}`;
   });
   return lines.join('\n');
 }

@@ -31,7 +31,7 @@ describe('doctor', () => {
   });
 
   it('formats one line per check', async () => {
-    const text = formatChecks(await doctor(process.cwd()));
-    expect(text.split('\n')).toHaveLength(4);
+    const checks = await doctor(process.cwd());
+    expect(formatChecks(checks).split('\n')).toHaveLength(checks.length);
   });
 });

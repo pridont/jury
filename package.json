@@ -204,6 +204,17 @@
         "title": "Export Review as Markdown",
         "category": "Change Stack",
         "icon": "$(markdown)"
+      },
+      {
+        "command": "changestack.clearCache",
+        "title": "Clear Model Answer Cache",
+        "category": "Change Stack"
+      },
+      {
+        "command": "changestack.showLog",
+        "title": "Show Log",
+        "category": "Change Stack",
+        "icon": "$(output)"
       }
     ],
     "menus": {
@@ -222,6 +233,11 @@
           "command": "changestack.close",
           "when": "view == changestack.stack && changestack.active",
           "group": "navigation@2"
+        },
+        {
+          "command": "changestack.showLog",
+          "when": "view == changestack.stack",
+          "group": "1_log@1"
         }
       ],
       "view/item/context": [

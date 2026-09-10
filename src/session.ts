@@ -40,6 +40,8 @@ export class Session implements vscode.Disposable {
   notScaffolding = new Set<string>();
   /** Review notes. The output of the review, and the thing that gets exported or posted. */
   comments: Comment[] = [];
+  /** Per-file summaries as they land, by path. Empty until pass 1 answers, or forever. */
+  summaries = new Map<string, string>();
   /** The record on disk. Written after every change the reviewer makes. */
   stored: StoredReview;
 
