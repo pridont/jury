@@ -8,6 +8,13 @@
   and is skipped next time — listed in the preview as already posted. Editing it after
   posting makes it new again, because the hash is of the body that was actually sent, not of
   the note as it stands.
+- A generated README is hidden, and a written one is not. Two signals, because there are two
+  kinds: a scaffold's README says "This library was generated with Nx" and is caught by what
+  it says about itself, while a house template leaves a title, a `**Type:**` line and a tag
+  list with no sentence under them — caught by having nothing in it. Measured over a real
+  88-README workspace: 71 hidden, 17 kept, and every one kept has a sentence, a usage example
+  or a TODO in it. Only for an added file; modifying a README means somebody had something to
+  say, and the diff of a modified one carries the new lines rather than the document.
 - Scaffolding detection gained the two signals held back until the first four were measured.
   **Scaffold shape**: a directory arriving whole, with two or more generator-shaped config
   files among at least three new ones — a generated library is recognisable by its

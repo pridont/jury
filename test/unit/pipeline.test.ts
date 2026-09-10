@@ -52,7 +52,13 @@ async function nxGeneratorRun(): Promise<void> {
   await write('libs/tokens/tsconfig.lib.json', '{ "extends": "./tsconfig.json" }\n');
   await write('libs/tokens/jest.config.ts', "export default { displayName: 'tokens' };\n");
   await write('libs/tokens/.eslintrc.json', '{ "extends": ["../../.eslintrc.json"] }\n');
-  await write('libs/tokens/README.md', '# tokens\n');
+  // Two READMEs, to pin the distinction: one is the title a generator leaves behind, the
+  // other is a person explaining something.
+  await write('libs/tokens/README.md', '# tokens\n\n**Type:** util\n\n## Tags\n\ntype:util, scope:shared\n');
+  await write(
+    'libs/tokens/USAGE.md',
+    '# Using tokens\n\nImport from the barrel, never from lib: the deep path is not part of the public API.\n',
+  );
   await write('libs/tokens/src/index.ts', "export * from './lib/tokens';\n");
   await write('libs/tokens/src/lib/tokens.ts', 'export const TOKENS = 1;\n');
 
@@ -77,7 +83,10 @@ describe('a generator run does not bury the change', () => {
     expect(scaffolded).not.toContain('apps/web/src/auth.spec.ts');
     expect(scaffolded).not.toContain('libs/tokens/src/index.ts');
     expect(scaffolded).not.toContain('libs/tokens/src/lib/tokens.ts');
-    expect(scaffolded).not.toContain('libs/tokens/README.md');
+    // A README that is a heading and a tag table has nothing in it to read.
+    expect(scaffolded).toContain('libs/tokens/README.md');
+    // One with a sentence in it is documentation, and stays.
+    expect(scaffolded).not.toContain('libs/tokens/USAGE.md');
 
     // Recall: the config noise and the lockfile are out of the way.
     expect(scaffolded).toContain('libs/tokens/project.json');

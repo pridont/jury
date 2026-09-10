@@ -155,6 +155,65 @@ describe('the shape of the content', () => {
   });
 });
 
+describe('a new document with nothing in it', () => {
+  const doc = (path: string, body: string): FileChange => {
+    const lines = body.split('\n');
+    const f = file(path, { status: 'added' });
+    f.hunks[0]!.lines = lines.map((line) => `+${line}`);
+    f.stats = { added: lines.length, removed: 0 };
+    return f;
+  };
+
+  it('hides a README that is a heading and a metadata table', () => {
+    const verdict = classifyFile(
+      doc('libs/payments/types/README.md', '# payments\n\n**Type:** types\n\n## Tags\n\ntype:types, scope:server\n'),
+      plain,
+    );
+    expect(verdict).toMatchObject({
+      scaffolding: true,
+      reason: 'a heading and metadata, with nothing written under them',
+    });
+  });
+
+  it('hides one that is nothing but a title', () => {
+    expect(classifyFile(doc('libs/auth/types/README.md', '# auth\n'), plain).scaffolding).toBe(true);
+  });
+
+  it('keeps one the moment somebody writes a sentence in it', () => {
+    const verdict = classifyFile(
+      doc('libs/auth/core/README.md', '# auth\n\n**Type:** core\n\n## Description\n\nAuth library for core functionality.\n'),
+      plain,
+    );
+    expect(verdict.scaffolding).toBe(false);
+  });
+
+  it('counts a usage example as something worth reading', () => {
+    const verdict = classifyFile(
+      doc('libs/x/README.md', '# x\n\n## Usage\n\n```ts\nimport { X } from "@x";\n```\n'),
+      plain,
+    );
+    expect(verdict.scaffolding).toBe(false);
+  });
+
+  it('keeps even a TODO, because a note is not nothing', () => {
+    expect(classifyFile(doc('docs/scss/README.md', '# Best practices\n\nTODO: add\n'), plain).scaffolding).toBe(
+      false,
+    );
+  });
+
+  it('never touches a README somebody edited', () => {
+    const edited = doc('libs/x/README.md', '# x\n\n**Type:** ui\n');
+    edited.status = 'modified';
+    // In a modified file the diff carries the new lines, not the document: an empty-looking
+    // change may be one line added to something substantial.
+    expect(classifyFile(edited, plain).scaffolding).toBe(false);
+  });
+
+  it('leaves code alone, however terse', () => {
+    expect(classifyFile(doc('src/index.ts', 'export {};\n'), plain).scaffolding).toBe(false);
+  });
+});
+
 describe('the shape of a scaffolded directory', () => {
   const added = (path: string) => file(path, { status: 'added' });
   const inputsFor = (files: FileChange[]) =>
