@@ -19,6 +19,7 @@ import { Queue } from './agent/queue.js';
 import { summariseFiles } from './agent/summaries.js';
 import { clusterChange } from './agent/cluster.js';
 import { showWalkthrough } from './ui/walkthrough.js';
+import { Activity } from './ui/activity.js';
 import { stateDir } from './git/repo.js';
 import { buildOrder } from './model/order.js';
 import { heuristicCohorts } from './model/heuristic.js';
@@ -56,6 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const claude = new ClaudeProvider();
   providers.register(claude);
   const queue = new Queue(4);
+  const activity = new Activity(view);
 
   context.subscriptions.push(
     log,
@@ -63,6 +65,7 @@ export function activate(context: vscode.ExtensionContext): void {
     view,
     nav,
     comments,
+    activity,
     { dispose: () => queue.cancelAll() },
 
     vscode.workspace.onDidChangeConfiguration((event) => {
@@ -107,6 +110,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('changestack.close', () => {
       // A review that is gone must not leave a subprocess behind talking to the account.
       if (host.active) queue.cancel(host.active.id);
+      activity.stop();
       blobs.clear();
       host.close();
       void windowState.update(LAST_REVIEW, undefined);
@@ -167,7 +171,7 @@ export function activate(context: vscode.ExtensionContext): void {
   void restoreLast(host, ctx());
 
   function ctx(): Context {
-    return { tree, nav, view, blobs, comments, queue };
+    return { tree, nav, view, blobs, comments, queue, activity };
   }
 }
 
@@ -182,6 +186,7 @@ type Context = {
   blobs: BlobProvider;
   comments: Comments;
   queue: Queue;
+  activity: Activity;
 };
 
 async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<void> {
@@ -189,6 +194,7 @@ async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<
   if (!repo) return;
 
   if (host.active) ctx.queue.cancel(host.active.id);
+  ctx.activity.stop();
   ctx.blobs.clear();
   const session = new Session(repo, spec);
 
@@ -377,8 +383,12 @@ async function organise(session: Session, ctx: Context): Promise<void> {
   const cache = new Cache(path.join(stateDir(session.repo), 'cache'));
   const deps = { provider, queue: ctx.queue, cache, owner: session.id, log: (line: string) => log.appendLine(line) };
 
-  await summarise(session, ctx, deps);
-  await cluster(session, ctx, deps);
+  try {
+    await summarise(session, ctx, deps);
+    await cluster(session, ctx, deps);
+  } finally {
+    ctx.activity.stop();
+  }
 }
 
 type AgentDeps = Parameters<typeof clusterChange>[0];
@@ -393,10 +403,12 @@ type AgentDeps = Parameters<typeof clusterChange>[0];
 async function cluster(session: Session, ctx: Context, deps: AgentDeps): Promise<void> {
   if (session.clustered) return;
 
+  ctx.activity.start('Organising the change set');
   const reading = ctx.nav.current?.hunk.id;
   const result = await clusterChange(deps, session.files, session.summaries);
 
   if (!result.ok) {
+    ctx.activity.stop();
     if (result.reason !== 'cancelled') {
       log.appendLine(`  clustering did not replace the stack: ${result.reason}`);
     }
@@ -407,6 +419,7 @@ async function cluster(session: Session, ctx: Context, deps: AgentDeps): Promise
   session.overview = result.merged.summary;
   session.notes = result.merged.notes;
   session.clustered = true;
+  ctx.activity.stop();
 
   ctx.nav.setOrder(buildOrder(session.cohorts, session.files));
   ctx.comments.render();
@@ -434,13 +447,17 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
   if (!provider) return;
 
   session.clustered = false;
-  await cluster(session, ctx, {
-    provider,
-    queue: ctx.queue,
-    cache: new Cache(path.join(stateDir(session.repo), 'cache')),
-    owner: session.id,
-    log: (line: string) => log.appendLine(line),
-  });
+  try {
+    await cluster(session, ctx, {
+      provider,
+      queue: ctx.queue,
+      cache: new Cache(path.join(stateDir(session.repo), 'cache')),
+      owner: session.id,
+      log: (line: string) => log.appendLine(line),
+    });
+  } finally {
+    ctx.activity.stop();
+  }
 }
 
 /** The configured provider, if the user wants one and it can actually answer. */
@@ -463,8 +480,14 @@ async function activeProvider() {
 /** Pass 1: a sentence per file, appearing as each lands. */
 async function summarise(session: Session, ctx: Context, deps: AgentDeps): Promise<void> {
   const started = Date.now();
+  const worth = session.files.filter(
+    (file) => !file.binary && file.hunks.some((hunk) => hunk.kind === 'text' && !hunk.scaffolding),
+  ).length;
+  ctx.activity.start('Reading the change', worth);
+
   const tally = await summariseFiles(deps, session.files, (event) => {
     if (event.kind === 'summary') session.summaries.set(event.path, event.summary);
+    ctx.activity.step();
     ctx.tree.refresh();
   });
 
