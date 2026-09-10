@@ -63,12 +63,12 @@ export async function summariseFiles(
           let usage = answer.usage;
 
           if (!parsed.ok) {
-            // One repair, quoting the parse error. A second failure is a failure.
+            // One repair: the broken answer back, fixed. A second failure is a failure.
             const retry = await deps.provider.structured(
               {
                 tier: 'fast',
-                system: summaryPrompt.system,
-                input: `${input}\n\n${repairPrompt(parsed.error)}`,
+                system: 'You fix malformed JSON. Return only the corrected object.',
+                input: repairPrompt(parsed.error, answer.text),
               },
               signal,
             );

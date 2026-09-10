@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { parse, repairPrompt, stripFence } from '../../src/agent/json.js';
+import { parse, repairPrompt, salvage, stripFence } from '../../src/agent/json.js';
 import { Cache } from '../../src/agent/cache.js';
 import { Queue } from '../../src/agent/queue.js';
 import { describeFile, summariseFiles } from '../../src/agent/summaries.js';
@@ -54,8 +54,38 @@ describe('parse', () => {
     expect(parse('{"a":{},"b":{}}', { a: 'array', b: 'object' })).toMatchObject({ ok: false });
   });
 
-  it('builds a repair prompt that quotes the problem', () => {
-    expect(repairPrompt('missing field "summary"')).toContain('missing field "summary"');
+  it('builds a repair prompt that carries both the problem and the broken answer', () => {
+    const prompt = repairPrompt('missing field "summary"', '{"oops":');
+    expect(prompt).toContain('missing field "summary"');
+    // Without the answer itself this is not a repair, it is the same question again.
+    expect(prompt).toContain('{"oops":');
+  });
+});
+
+describe('salvage', () => {
+  it('escapes a raw newline inside a string, which is how a diagram usually arrives', () => {
+    const broken = '{"diagram":"flowchart TD\n  A --> B"}';
+    expect(() => JSON.parse(broken)).toThrow();
+    expect(JSON.parse(salvage(broken))).toEqual({ diagram: 'flowchart TD\n  A --> B' });
+  });
+
+  it('drops a trailing comma', () => {
+    expect(JSON.parse(salvage('{"a":[1,2,],}'))).toEqual({ a: [1, 2] });
+  });
+
+  it('leaves a correctly escaped string exactly as it was', () => {
+    const fine = '{"a":"line\\nline","b":"a \\" quote"}';
+    expect(salvage(fine)).toBe(fine);
+  });
+
+  it('does not touch newlines between tokens, only inside strings', () => {
+    const pretty = '{\n  "a": 1\n}';
+    expect(salvage(pretty)).toBe(pretty);
+  });
+
+  it('is reached by parse, so a salvageable answer costs no second call', () => {
+    const result = parse<{ summary: string }>('{"summary":"one\ntwo"}', { summary: 'string' });
+    expect(result).toMatchObject({ ok: true });
   });
 });
 
@@ -293,9 +323,12 @@ describe('summariseFiles', () => {
 
   it('repairs one bad answer, then accepts the second', async () => {
     let call = 0;
-    deps.provider = stub(() => {
+    const seenOnRepair: string[] = [];
+    deps.provider = stub((request) => {
       call += 1;
-      return call === 1 ? 'sorry, here is some prose' : '{"summary":"recovered"}';
+      if (call === 1) return 'sorry, {"summary": "half' ;
+      seenOnRepair.push(request.input);
+      return '{"summary":"recovered"}';
     });
 
     const seen: string[] = [];
@@ -306,6 +339,9 @@ describe('summariseFiles', () => {
     expect(call).toBe(2);
     expect(seen).toEqual(['recovered']);
     expect(tally.summarised).toBe(1);
+    // The repair carries the broken answer, not the original question.
+    expect(seenOnRepair[0]).toContain('half');
+    expect(seenOnRepair[0]).not.toContain('File: a.ts');
   });
 
   it('gives up after one repair rather than looping', async () => {

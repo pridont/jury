@@ -60,11 +60,15 @@ export async function clusterChange(
       let verdict = accept(answer.text, digest);
 
       if (!verdict.ok && verdict.parseError) {
+        // A repair sends the broken answer back, not the whole digest again: the task was
+        // done, only the JSON is wrong, and re-sending the question costs the same as the
+        // first call for no better odds.
+        deps.log(`  clustering answer did not parse (${verdict.parseError}); asking for it back, fixed`);
         const retry = await deps.provider.structured(
           {
             tier: 'smart',
-            system: clusterPrompt.system,
-            input: `${digest.text}\n\n${repairPrompt(verdict.parseError)}`,
+            system: 'You fix malformed JSON. Return only the corrected object.',
+            input: repairPrompt(verdict.parseError, answer.text),
           },
           signal,
         );

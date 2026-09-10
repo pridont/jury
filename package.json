@@ -569,6 +569,12 @@
           "type": "boolean",
           "default": true,
           "description": "Open the walkthrough when the model finishes organising the change. It is the thing to read before any code."
+        },
+        "changestack.ai.summariseUpTo": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "markdownDescription": "Skip per-file summaries on a change touching more than this many files. Summaries are one model call each \u2014 on a 180-file pull request that is a real amount of money and several minutes \u2014 and the larger the change, the less of each summary survives into the digest that grouping actually reads. Grouping still runs. Set to `0` to never summarise."
         }
       }
     },

@@ -417,7 +417,7 @@ async function organise(session: Session, ctx: Context): Promise<void> {
   const write = (line: string) => log.appendLine(line);
 
   try {
-    const summariser = await providerFor('summaries');
+    const summariser = worthSummarising(session) ? await providerFor('summaries') : null;
     if (summariser) await summarise(session, ctx, { provider: summariser, queue: ctx.queue, cache, owner, log: write });
 
     const clusterer = await providerFor('clustering');
@@ -498,6 +498,25 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
 }
 
 
+
+/**
+ * Whether a change is small enough for per-file summaries to be worth their price.
+ *
+ * Each is a model call. On a 180-file pull request that is real money and several minutes,
+ * and the bigger the change the less of each summary survives into the digest that grouping
+ * actually reads — so the cost rises exactly as the benefit falls. Grouping runs either way.
+ */
+function worthSummarising(session: Session): boolean {
+  const limit = vscode.workspace.getConfiguration('changestack').get<number>('ai.summariseUpTo', 60);
+  const files = session.files.filter(
+    (file) => !file.binary && file.hunks.some((hunk) => hunk.kind === 'text' && !hunk.scaffolding),
+  ).length;
+
+  if (limit === 0 || files <= limit) return limit !== 0;
+
+  log.appendLine(`  ${files} files is over the summary limit of ${limit}; grouping only`);
+  return false;
+}
 
 /** Pass 1: a sentence per file, appearing as each lands. */
 async function summarise(session: Session, ctx: Context, deps: AgentDeps): Promise<void> {

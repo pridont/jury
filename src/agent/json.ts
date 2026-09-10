@@ -21,6 +21,45 @@ export function stripFence(text: string): string {
 }
 
 /**
+ * Fix the malformations a model actually produces, before spending a call on asking it to.
+ *
+ * Two are common enough to be worth handling mechanically: a raw newline inside a string —
+ * which is how a multi-line summary or a mermaid diagram usually arrives — and a trailing
+ * comma before a closing brace. Both are unambiguous to repair. Anything subtler is left
+ * alone rather than guessed at.
+ */
+export function salvage(text: string): string {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+
+  for (const char of text) {
+    if (escaped) {
+      out += char;
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && inString) {
+      out += char;
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      out += char;
+      continue;
+    }
+    if (inString && (char === '\n' || char === '\r' || char === '\t')) {
+      out += char === '\t' ? '\\t' : char === '\r' ? '' : '\\n';
+      continue;
+    }
+    out += char;
+  }
+
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
+/**
  * Parse and shape-check model output.
  *
  * Raw model text never reaches a structured code path: either it parses and matches the
@@ -28,11 +67,16 @@ export function stripFence(text: string): string {
  * request.
  */
 export function parse<T>(text: string, shape: Shape): ParseResult<T> {
+  const stripped = stripFence(text);
   let value: unknown;
   try {
-    value = JSON.parse(stripFence(text));
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'could not be parsed as JSON' };
+    value = JSON.parse(stripped);
+  } catch (first) {
+    try {
+      value = JSON.parse(salvage(stripped));
+    } catch {
+      return { ok: false, error: first instanceof Error ? first.message : 'could not be parsed as JSON' };
+    }
   }
 
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -51,13 +95,26 @@ export function parse<T>(text: string, shape: Shape): ParseResult<T> {
   return { ok: true, value: record as T };
 }
 
-/** What to send back when the first answer did not parse. */
-export function repairPrompt(error: string): string {
+/**
+ * Ask for the broken answer back, fixed.
+ *
+ * The answer itself has to be in the request or this is not a repair, it is the same
+ * question asked again at the same price — with an error message attached that the model
+ * has no way to connect to anything it said.
+ */
+export function repairPrompt(error: string, broken: string): string {
   return [
-    'That reply could not be used:',
+    'The JSON below could not be parsed:',
+    '',
     error,
     '',
-    'Send the JSON object again, on its own, with no prose and no code fence.',
+    'Here is exactly what was sent:',
+    '',
+    broken.slice(0, 60_000),
+    '',
+    'Return the same object with that fixed, and nothing else. Keep every field and every',
+    'value as they are — only the JSON itself is wrong. No prose, no code fence. Newlines',
+    'inside a string must be written \\n.',
   ].join('\n');
 }
 

@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Unreleased
+- The repair retry did not repair anything. It re-sent the whole digest with an error
+  message appended, so the model never saw the answer it had got wrong — the same question
+  at the same price, with no better odds. A repair now sends the broken answer back and asks
+  for it corrected, which is both cheaper and the only version that can work.
+- Two malformations are fixed locally before a call is spent asking: a raw newline inside a
+  string, which is how a multi-line summary or a mermaid diagram usually arrives, and a
+  trailing comma. Both are unambiguous. Anything subtler is still sent back to the model
+  rather than guessed at.
+- Per-file summaries are skipped on a change touching more than `changestack.ai.summariseUpTo`
+  files (60 by default). Each summary is a model call: 182 of them cost $0.46 and four
+  minutes, and the larger the change the less of each survives into the digest that grouping
+  actually reads — the cost rises exactly as the benefit falls. Grouping runs either way.
 - Picking what to review is a list now, not a blank box. `Review This Branch…` offers the
   repository's trunk first, then every branch, remote branch and tag ordered by how recently
   it moved, then recent commits — each with its date and subject line, because "8 weeks ago"
