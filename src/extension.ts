@@ -153,11 +153,19 @@ export function activate(context: vscode.ExtensionContext): void {
       if (node?.type === 'orphan') comments.discard(node.comment);
     }),
     vscode.commands.registerCommand('changestack.export', () => exportReview(host, documents)),
+    // `isPartialQuery` is the difference between opening the chat with the participant
+    // already typed and sending an empty question the moment the key is pressed.
     vscode.commands.registerCommand('changestack.ask', () =>
-      vscode.commands.executeCommand('workbench.action.chat.open', { query: '@changestack ' }),
+      vscode.commands.executeCommand('workbench.action.chat.open', {
+        query: '@changestack ',
+        isPartialQuery: true,
+      }),
     ),
     vscode.commands.registerCommand('changestack.askStep', () =>
-      vscode.commands.executeCommand('workbench.action.chat.open', { query: '@changestack /step ' }),
+      vscode.commands.executeCommand('workbench.action.chat.open', {
+        query: '@changestack /step ',
+        isPartialQuery: true,
+      }),
     ),
     vscode.commands.registerCommand('changestack.walkthrough', () => {
       if (host.active) void showWalkthrough(host.active, documents);

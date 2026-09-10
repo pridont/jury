@@ -45,6 +45,11 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
       return;
     }
 
+    if (!request.prompt.trim()) {
+      stream.markdown('Ask a question about the change under the cursor.');
+      return;
+    }
+
     const wide = request.command === 'step';
     const resume = continuing(context) ? sessions.get(session.id) : undefined;
     if (!resume) sessions.delete(session.id);
@@ -55,22 +60,37 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
     token.onCancellationRequested(() => controller.abort());
 
     try {
-      const answer = await provider.stream(
-        {
-          tier: 'smart',
-          system: askPrompt.system,
-          input: resume ? request.prompt : `${context_(entry, wide)}\n\nQuestion: ${request.prompt}`,
-          // Read-only by design: a review tool must never edit the code it is reviewing.
-          tools: provider.capabilities().repoTools ? ['readFile', 'search', 'listFiles'] : [],
-          cwd: session.repo.root,
-          ...(resume ? { session: { id: resume, resume: true } } : {}),
-        },
-        controller.signal,
-        (chunk: Chunk) => {
-          if (chunk.kind === 'text') stream.markdown(chunk.text);
-          else stream.progress(chunk.label);
-        },
-      );
+      const ask = (resumeFrom: string | undefined) =>
+        provider.stream!(
+          {
+            tier: 'smart',
+            system: askPrompt.system,
+            input: resumeFrom ? request.prompt : `${context_(entry, wide)}\n\nQuestion: ${request.prompt}`,
+            // Read-only by design: a review tool must never edit the code it is reviewing.
+            tools: provider.capabilities().repoTools ? ['readFile', 'search', 'listFiles'] : [],
+            cwd: session.repo.root,
+            ...(resumeFrom ? { session: { id: resumeFrom, resume: true } } : {}),
+          },
+          controller.signal,
+          (chunk: Chunk) => {
+            if (chunk.kind === 'text') stream.markdown(chunk.text);
+            else stream.progress(chunk.label);
+          },
+        );
+
+      let answer;
+      try {
+        answer = await ask(resume);
+      } catch (error) {
+        // A conversation can end somewhere it cannot be picked up from — mid tool call, or
+        // simply too long ago. That is the provider's business, not the reviewer's: forget
+        // the handle and ask the question properly, from the diff, rather than showing them
+        // an error about session internals.
+        if (!resume || (error instanceof ProviderError && error.kind === 'cancelled')) throw error;
+        deps.log(`  ask could not resume (${error instanceof Error ? error.message : error}); asking fresh`);
+        sessions.delete(session.id);
+        answer = await ask(undefined);
+      }
 
       if (answer.session) sessions.set(session.id, answer.session);
       deps.log(
