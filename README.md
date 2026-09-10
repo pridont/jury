@@ -72,12 +72,36 @@ Whether that second move was the prompt or the variance, a single run cannot say
   marked `@generated` are collected out of the reading order and out of the token budget —
   always with the reason shown, and always one click from coming back.
 
+## Ask
+
+`@changestack` in the chat view answers questions about the change under the cursor — or the
+whole step, with `/step`. It reads the repository to answer, and shows you when it does, so
+a pause has a visible reason:
+
+```
+› Grep hunkId
+Yes. hunkId() is called in src/git/parse.ts, outside identity.ts.
+```
+
+Read-only, always: a review tool must never edit the code it is reviewing. Follow-ups resume
+the same conversation rather than resending the diff — 10,353 input tokens for the first
+question, 10 for the next.
+
 ## Providers
 
-v1 speaks to Claude through the `claude` CLI you are already signed in to — no API key.
-Everything model-specific sits behind one provider interface, so a Copilot, Codex, Gemini or
-local-model subscription can be pointed at it instead. Choosing a provider is choosing where
-the code under review is sent, and the setting says so.
+Two, so far. **claude** goes through the CLI you are already signed in to — no API key — and
+can read the repository while answering. **vscode-lm** uses your editor's own chat models
+(Copilot and anything else installed): no subprocess, no PATH, but it cannot read the
+repository yet, so Ask answers from the diff alone and says so.
+
+Passes route independently — summaries are many small calls, clustering is the one call that
+decides the reading order:
+
+```jsonc
+"changestack.passes": { "summaries": "vscode-lm", "clustering": "claude" }
+```
+
+Choosing a provider is choosing where the code under review is sent, and the setting says so.
 
 ## Development
 

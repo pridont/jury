@@ -1,11 +1,14 @@
-import { run, isOnPath } from '../../util/exec.js';
+import { run, runStreaming, isOnPath } from '../../util/exec.js';
 import {
   ProviderError,
   type Answer,
   type Capabilities,
+  type Chunk,
   type Provider,
   type Request,
   type Tier,
+  type ToolCapability,
+  type Usage,
 } from '../provider.js';
 
 export type ClaudeSettings = {
@@ -143,7 +146,175 @@ export class ClaudeProvider implements Provider {
       },
     };
   }
+
+  /**
+   * The streaming tier, where reading the surrounding repository is the point.
+   *
+   * The tool set is read-only by design — a review tool must never edit the code it is
+   * reviewing — and `--add-dir` scopes it to the repository under review. Thinking is left
+   * on here, unlike the structured tier: the questions asked of this one are the hard ones.
+   *
+   * A follow-up resumes rather than restates. The first question carries the diff and the
+   * session id comes back with the answer; every question after it sends only the question,
+   * so the diff stays in the provider's own cache instead of being paid for again.
+   */
+  async stream(request: Request, signal: AbortSignal, onChunk: (chunk: Chunk) => void): Promise<Answer> {
+    const model = this.settings.models[request.tier] ?? 'sonnet';
+    const tools = (request.tools ?? []).map((tool) => TOOLS[tool]).filter(Boolean);
+
+    const args = [
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--include-partial-messages',
+      // Not optional: the CLI refuses stream-json without it.
+      '--verbose',
+      '--model',
+      model,
+      '--setting-sources',
+      '',
+      '--strict-mcp-config',
+    ];
+
+    if (tools.length > 0) {
+      args.push('--tools', tools.join(','), '--permission-mode', 'dontAsk');
+      if (request.cwd) args.push('--add-dir', request.cwd);
+    } else {
+      args.push('--tools', '');
+    }
+
+    if (request.session?.resume) args.push('--resume', request.session.id);
+    else args.push('--system-prompt', request.system);
+
+    args.push(...(this.settings.extraArgs ?? []));
+
+    let text = '';
+    let session = request.session?.id ?? '';
+    let usage: Usage = { inputTokens: 0, outputTokens: 0, costUsd: 0, durationMs: 0 };
+    let failure = '';
+
+    // Tool input arrives as JSON fragments; hold them until the block closes so the label
+    // can name what the tool was actually asked for.
+    const openTools = new Map<number, { name: string; json: string }>();
+
+    const started = Date.now();
+    const result = await runStreaming(this.settings.command, args, {
+      stdin: request.input,
+      ...(request.cwd ? { cwd: request.cwd } : {}),
+      timeoutMs: this.settings.timeoutMs ?? DEFAULTS.timeoutMs!,
+      signal,
+      onLine: (line) => {
+        let parsed: StreamLine;
+        try {
+          parsed = JSON.parse(line) as StreamLine;
+        } catch {
+          return;
+        }
+
+        if (parsed.type === 'system' && parsed.subtype === 'init' && parsed.session_id) {
+          session = parsed.session_id;
+          return;
+        }
+
+        if (parsed.type === 'result') {
+          if (parsed.is_error || (parsed.subtype && parsed.subtype !== 'success')) {
+            failure = parsed.result ?? parsed.subtype ?? 'the request failed';
+          }
+          if (parsed.session_id) session = parsed.session_id;
+          usage = {
+            inputTokens: parsed.usage?.input_tokens ?? 0,
+            outputTokens: parsed.usage?.output_tokens ?? 0,
+            costUsd: parsed.total_cost_usd ?? 0,
+            durationMs: parsed.duration_ms ?? Date.now() - started,
+          };
+          return;
+        }
+
+        const event = parsed.event;
+        if (parsed.type !== 'stream_event' || !event) return;
+
+        if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+          openTools.set(event.index ?? 0, { name: event.content_block.name ?? 'tool', json: '' });
+          return;
+        }
+
+        if (event.type === 'content_block_delta') {
+          // Thinking is not the answer, and streaming it would bury the answer in it.
+          if (event.delta?.type === 'text_delta' && event.delta.text) {
+            text += event.delta.text;
+            onChunk({ kind: 'text', text: event.delta.text });
+          } else if (event.delta?.type === 'input_json_delta') {
+            const open = openTools.get(event.index ?? 0);
+            if (open) open.json += event.delta.partial_json ?? '';
+          }
+          return;
+        }
+
+        if (event.type === 'content_block_stop') {
+          const open = openTools.get(event.index ?? 0);
+          if (open) {
+            openTools.delete(event.index ?? 0);
+            onChunk({ kind: 'tool', label: toolLabel(open.name, open.json) });
+          }
+        }
+      },
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (signal.aborted) throw new ProviderError('cancelled', 'cancelled');
+      if (/timed out/.test(message)) throw new ProviderError('timeout', message);
+      if (/ENOENT/.test(message)) throw new ProviderError('not-installed', `${this.settings.command} not found`);
+      throw new ProviderError('failed', message);
+    });
+
+    if (failure) throw new ProviderError(kindOf(failure), failure);
+    if (result.code !== 0) {
+      const detail = result.stderr.trim().split('\n')[0] ?? `exit ${result.code}`;
+      throw new ProviderError(kindOf(detail), detail);
+    }
+
+    const answer: Answer = { text, model, usage };
+    if (session) answer.session = session;
+    return answer;
+  }
 }
+
+/** `Grep {"pattern":"isExpired"}` reads as noise; `Grep isExpired` reads as a reason. */
+function toolLabel(name: string, json: string): string {
+  try {
+    const input = JSON.parse(json) as Record<string, unknown>;
+    const first = ['pattern', 'query', 'file_path', 'path', 'command'].find(
+      (key) => typeof input[key] === 'string',
+    );
+    return first ? `${name} ${String(input[first])}` : name;
+  } catch {
+    return name;
+  }
+}
+
+/** This CLI's names for the capabilities a request asks for. */
+const TOOLS: Record<ToolCapability, string> = {
+  readFile: 'Read',
+  search: 'Grep',
+  listFiles: 'Glob',
+};
+
+/** One line of `--output-format stream-json`, in the shapes this adapter reads. */
+type StreamLine = {
+  type?: string;
+  subtype?: string;
+  session_id?: string;
+  is_error?: boolean;
+  result?: string;
+  total_cost_usd?: number;
+  duration_ms?: number;
+  usage?: { input_tokens?: number; output_tokens?: number };
+  event?: {
+    type?: string;
+    index?: number;
+    content_block?: { type?: string; name?: string };
+    delta?: { type?: string; text?: string; partial_json?: string };
+  };
+};
 
 function kindOf(detail: string): ProviderError['kind'] {
   return /log ?in|authenticat|credential|unauthori[sz]ed|api key/i.test(detail) ? 'not-authenticated' : 'failed';

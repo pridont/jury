@@ -14,13 +14,16 @@ import { Comments } from './ui/comments.js';
 import { reconcileComments } from './model/comments.js';
 import { toMarkdown } from './export.js';
 import * as providers from './agent/provider.js';
+import type { Provider } from './agent/provider.js';
 import { ClaudeProvider } from './agent/providers/claude.js';
+import { VscodeLmProvider } from './agent/providers/vscodeLm.js';
 import { Cache } from './agent/cache.js';
 import { Queue } from './agent/queue.js';
 import { summariseFiles } from './agent/summaries.js';
 import { clusterChange } from './agent/cluster.js';
 import { showWalkthrough } from './ui/walkthrough.js';
 import { Activity } from './ui/activity.js';
+import { forgetSessions, registerChat } from './ui/chat.js';
 import { stateDir } from './git/repo.js';
 import { buildOrder } from './model/order.js';
 import { heuristicCohorts } from './model/heuristic.js';
@@ -56,7 +59,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const nav = new Navigator(new Session({ root: '', commonDir: '', linkedWorktree: false }, { kind: 'worktree' }));
   const comments = new Comments();
   const claude = new ClaudeProvider();
+  const vscodeLm = new VscodeLmProvider();
   providers.register(claude);
+  providers.register(vscodeLm);
   const queue = new Queue(4);
   const activity = new Activity(view);
 
@@ -71,7 +76,7 @@ export function activate(context: vscode.ExtensionContext): void {
     guardAgainstOrphans(),
 
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('changestack.providers')) applyProviderSettings(claude);
+      if (event.affectsConfiguration('changestack.providers')) applyProviderSettings(claude, vscodeLm);
     }),
 
     comments.onDidChange(() => {
@@ -138,6 +143,12 @@ export function activate(context: vscode.ExtensionContext): void {
       if (node?.type === 'orphan') comments.discard(node.comment);
     }),
     vscode.commands.registerCommand('changestack.export', () => exportReview(host)),
+    vscode.commands.registerCommand('changestack.ask', () =>
+      vscode.commands.executeCommand('workbench.action.chat.open', { query: '@changestack ' }),
+    ),
+    vscode.commands.registerCommand('changestack.askStep', () =>
+      vscode.commands.executeCommand('workbench.action.chat.open', { query: '@changestack /step ' }),
+    ),
     vscode.commands.registerCommand('changestack.walkthrough', () => {
       if (host.active) void showWalkthrough(host.active);
     }),
@@ -177,7 +188,11 @@ export function activate(context: vscode.ExtensionContext): void {
     if (node && view.visible) void view.reveal(node, { select: true, focus: false, expand: true });
   });
 
-  applyProviderSettings(claude);
+  context.subscriptions.push(
+    registerChat({ host, nav, provider: () => providerFor('ask'), log: (line) => log.appendLine(line) }),
+  );
+
+  applyProviderSettings(claude, vscodeLm);
   void vscode.commands.executeCommand('setContext', 'changestack.active', false);
   void restoreLast(host, ctx());
 
@@ -217,6 +232,7 @@ async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<
     log.appendLine(`  resumed ${stored.marks.length} marks from ${new Date(stored.updatedAt).toISOString()}`);
   }
 
+  forgetSessions();
   host.open(session);
   ctx.nav.setSession(session);
   ctx.comments.setSession(session);
@@ -390,15 +406,16 @@ async function load(session: Session, ctx: Context): Promise<void> {
  * If anything here fails, the review is exactly what it was.
  */
 async function organise(session: Session, ctx: Context): Promise<void> {
-  const provider = await activeProvider();
-  if (!provider) return;
-
   const cache = new Cache(path.join(stateDir(session.repo), 'cache'));
-  const deps = { provider, queue: ctx.queue, cache, owner: session.id, log: (line: string) => log.appendLine(line) };
+  const owner = session.id;
+  const write = (line: string) => log.appendLine(line);
 
   try {
-    await summarise(session, ctx, deps);
-    await cluster(session, ctx, deps);
+    const summariser = await providerFor('summaries');
+    if (summariser) await summarise(session, ctx, { provider: summariser, queue: ctx.queue, cache, owner, log: write });
+
+    const clusterer = await providerFor('clustering');
+    if (clusterer) await cluster(session, ctx, { provider: clusterer, queue: ctx.queue, cache, owner, log: write });
   } finally {
     ctx.activity.stop();
   }
@@ -457,7 +474,7 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
   const session = host.active;
   if (!session) return;
 
-  const provider = await activeProvider();
+  const provider = await providerFor('clustering');
   if (!provider) return;
 
   session.clustered = false;
@@ -474,22 +491,7 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
   }
 }
 
-/** The configured provider, if the user wants one and it can actually answer. */
-async function activeProvider() {
-  const config = vscode.workspace.getConfiguration('changestack');
-  if (!config.get<boolean>('ai.enabled', true)) return null;
 
-  const provider = providers.get(config.get<string>('provider', 'claude'));
-  if (!provider) return null;
-
-  const { ok, reason } = await provider.available();
-  if (!ok) {
-    log.appendLine(`  ${provider.id} unavailable: ${reason ?? 'unknown'} — nothing was organised`);
-    announceUnavailable(provider.id, reason);
-    return null;
-  }
-  return provider;
-}
 
 /** Pass 1: a sentence per file, appearing as each lands. */
 async function summarise(session: Session, ctx: Context, deps: AgentDeps): Promise<void> {
@@ -526,13 +528,45 @@ function announceUnavailable(id: string, reason: string | undefined): void {
     });
 }
 
-function applyProviderSettings(claude: ClaudeProvider): void {
+function applyProviderSettings(claude: ClaudeProvider, vscodeLm: VscodeLmProvider): void {
   const settings = vscode.workspace
     .getConfiguration('changestack')
     .get<Record<string, { command?: string; models?: Record<string, string> }>>('providers', {});
+
   const own = settings['claude'];
   if (own?.command) claude.configure({ command: own.command });
   if (own?.models) claude.configure({ models: own.models });
+
+  const lm = settings['vscode-lm'];
+  if (lm?.models) vscodeLm.configure({ models: lm.models });
+}
+
+/**
+ * Which provider answers a given pass.
+ *
+ * Summaries are many small independent calls and the cheapest thing to send elsewhere;
+ * clustering is one call that decides the whole product. Routing them separately is the
+ * reason the tiers exist.
+ */
+async function providerFor(pass: 'summaries' | 'clustering' | 'ask'): Promise<Provider | null> {
+  const config = vscode.workspace.getConfiguration('changestack');
+  if (!config.get<boolean>('ai.enabled', true)) return null;
+
+  const passes = config.get<Record<string, string>>('passes', {});
+  const id = passes[pass] ?? config.get<string>('provider', 'claude');
+  const provider = providers.get(id);
+  if (!provider) {
+    log.appendLine(`  no provider called "${id}" is registered`);
+    return null;
+  }
+
+  const { ok, reason } = await provider.available();
+  if (!ok) {
+    log.appendLine(`  ${provider.id} unavailable: ${reason ?? 'unknown'}`);
+    announceUnavailable(provider.id, reason);
+    return null;
+  }
+  return provider;
 }
 
 async function clearCache(host: SessionHost): Promise<void> {

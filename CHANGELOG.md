@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### V7 — ask, and the second provider
+- `@changestack` in the chat view answers questions about the change under the cursor, or
+  about the whole step with `/step`. Streaming, follow-ups, markdown, code links and
+  cancellation are the chat view's, not ours.
+- Tool calls are surfaced as they happen — `Grep isExpired` — so a pause has a visible reason
+  and the answer's basis is legible. The tool set is read-only: a review tool must never edit
+  the code it is reviewing.
+- A follow-up resumes rather than restates. Measured on a real question: 10,353 input tokens
+  for the first, 10 for the follow-up.
+- **`vscode-lm`**: the user's Copilot subscription, or whatever chat models their editor has.
+  No subprocess, no PATH, no API key. It exists to test whether the provider interface fits
+  anything but the adapter it was written against, and it found two things. That API has no
+  conversation handle, so `Answer.session` is absent and a follow-up resends its context —
+  which callers already tolerate because the field is optional. And it cannot yet read the
+  repository, so it declares `repoTools: false`, Ask answers from the diff alone, and says
+  so in the answer rather than quietly being worse than the other provider.
+- Passes route independently: summaries are many small calls and the cheapest to send
+  elsewhere; clustering is the one call that decides the reading order.
+
 ### Unreleased fixes
 - The walkthrough was the tree written out as prose — the same information in a worse medium,
   spent on the one moment a reviewer will read prose. It now answers what the tree cannot:

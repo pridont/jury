@@ -43,7 +43,17 @@ export type Answer = {
   text: string;
   usage: Usage;
   model: string;
+  /** A handle for continuing this conversation, when the provider offers one. */
+  session?: string;
 };
+
+/**
+ * What arrives while an answer is being written.
+ *
+ * Tool calls are surfaced rather than hidden: a pause with `Grep isExpired` under it has a
+ * visible reason, and a reviewer can see what the answer was actually based on.
+ */
+export type Chunk = { kind: 'text'; text: string } | { kind: 'tool'; label: string };
 
 export class ProviderError extends Error {
   constructor(
@@ -61,6 +71,8 @@ export interface Provider {
   /** Installed *and* signed in — a provider that cannot answer is not available. */
   available(): Promise<{ ok: boolean; reason?: string }>;
   structured(request: Request, signal: AbortSignal): Promise<Answer>;
+  /** Present when `capabilities().streaming`; chunks arrive as they are produced. */
+  stream?(request: Request, signal: AbortSignal, onChunk: (chunk: Chunk) => void): Promise<Answer>;
 }
 
 const providers = new Map<string, Provider>();

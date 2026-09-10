@@ -238,6 +238,17 @@
         "title": "Open All Files in This Step",
         "category": "Change Stack",
         "icon": "$(diff-multiple)"
+      },
+      {
+        "command": "changestack.ask",
+        "title": "Ask About This Hunk",
+        "category": "Change Stack",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "changestack.askStep",
+        "title": "Ask About This Step",
+        "category": "Change Stack"
       }
     ],
     "menus": {
@@ -425,6 +436,14 @@
         {
           "command": "changestack.openLayerFiles",
           "when": "false"
+        },
+        {
+          "command": "changestack.ask",
+          "when": "changestack.active"
+        },
+        {
+          "command": "changestack.askStep",
+          "when": "changestack.active"
         }
       ],
       "comments/commentThread/context": [
@@ -471,9 +490,14 @@
           "type": "string",
           "default": "claude",
           "enum": [
-            "claude"
+            "claude",
+            "vscode-lm"
           ],
-          "markdownDescription": "Which provider receives the diff. **Choosing a provider is choosing where the code under review is sent.**"
+          "markdownDescription": "Which provider receives the diff. **Choosing a provider is choosing where the code under review is sent.**",
+          "enumDescriptions": [
+            "The claude CLI you are already signed in to. Reads the repository while answering questions.",
+            "Your editor's chat models (Copilot and anything else installed). No API key; cannot read the repository, so answers come from the diff alone."
+          ]
         },
         "changestack.providers": {
           "type": "object",
@@ -485,6 +509,9 @@
                 "smart": "sonnet",
                 "deep": "opus"
               }
+            },
+            "vscode-lm": {
+              "models": {}
             }
           },
           "description": "Per-provider settings: executable and the model used for each tier."
@@ -492,7 +519,8 @@
         "changestack.passes": {
           "type": "object",
           "default": {},
-          "description": "Route individual passes to different providers, e.g. { \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }. Unset passes use changestack.provider."
+          "description": "Route individual passes to different providers, e.g. { \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }. Unset passes use changestack.provider.",
+          "markdownDescription": "Route individual passes to different providers, e.g. `{ \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }`. Summaries are many small calls; clustering is the one call that decides the reading order. Unset passes use `changestack.provider`."
         },
         "changestack.scaffolding.mode": {
           "type": "string",
@@ -564,6 +592,31 @@
         "command": "changestack.walkthrough",
         "key": "alt+s",
         "when": "changestack.active"
+      },
+      {
+        "command": "changestack.ask",
+        "key": "alt+a",
+        "when": "changestack.active"
+      },
+      {
+        "command": "changestack.askStep",
+        "key": "alt+shift+a",
+        "when": "changestack.active"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "changestack.ask",
+        "name": "changestack",
+        "fullName": "Change Stack",
+        "description": "Ask about the change you are reading",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "step",
+            "description": "Ask about the whole step, not just this hunk"
+          }
+        ]
       }
     ]
   },
