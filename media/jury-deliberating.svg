@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" role="img" aria-label="Jury">
+  <style>
+    .s { animation: jury-seat 1.2s ease-in-out 6 backwards; }
+    @keyframes jury-seat { 0% { opacity: .3 } 30% { opacity: 1 } 60%, 100% { opacity: .3 } }
+    @media (prefers-reduced-motion: reduce) { .s { animation: none; } }
+  </style>
+  <circle cx="12" cy="4.6" r="2.7" fill="currentColor"></circle>
+  <circle class="s" cx="4.4" cy="11.6" r="1.8" fill="currentColor"></circle>
+  <circle class="s" cx="9.5" cy="11.6" r="1.8" fill="currentColor" style="animation-delay:.12s"></circle>
+  <circle class="s" cx="14.5" cy="11.6" r="1.8" fill="currentColor" style="animation-delay:.24s"></circle>
+  <circle class="s" cx="19.6" cy="11.6" r="1.8" fill="currentColor" style="animation-delay:.36s"></circle>
+  <path d="M3.5 18H20.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
+</svg>

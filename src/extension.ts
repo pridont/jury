@@ -23,6 +23,7 @@ import { summariseFiles } from './agent/summaries.js';
 import { clusterChange } from './agent/cluster.js';
 import { showWalkthrough } from './ui/walkthrough.js';
 import { Activity } from './ui/activity.js';
+import { Loaders } from './ui/loaders.js';
 import { forgetSessions, registerChat } from './ui/chat.js';
 import { Documents, DOC_SCHEME, offerToSave } from './ui/documents.js';
 import { stateDir } from './git/repo.js';
@@ -71,7 +72,14 @@ export function activate(context: vscode.ExtensionContext): void {
   providers.register(claude);
   providers.register(vscodeLm);
   const queue = new Queue(4);
-  const activity = new Activity(view);
+  const activity = new Activity();
+  const loaders = new Loaders(context.extensionUri, context.globalStorageUri);
+  tree.attach(activity, loaders);
+  // Until the themed copies exist the tree uses a plain spinner, so there is nothing to wait for.
+  void loaders.prepare().then(
+    () => tree.refresh(),
+    (error: unknown) => log.appendLine(`  loading icons unavailable: ${error instanceof Error ? error.message : String(error)}`),
+  );
   const documents = new Documents();
 
   context.subscriptions.push(
@@ -468,7 +476,7 @@ type AgentDeps = Parameters<typeof clusterChange>[0];
 async function cluster(session: Session, ctx: Context, deps: AgentDeps): Promise<void> {
   if (session.clustered) return;
 
-  ctx.activity.start('Organising the change set');
+  ctx.activity.start('Grouping the change', 0, 'deliberating');
   const reading = ctx.nav.current?.hunk.id;
   const result = await clusterChange(deps, session.files, session.summaries);
 
@@ -553,7 +561,7 @@ async function summarise(session: Session, ctx: Context, deps: AgentDeps): Promi
   const worth = session.files.filter(
     (file) => !file.binary && file.hunks.some((hunk) => hunk.kind === 'text' && !hunk.scaffolding),
   ).length;
-  ctx.activity.start('Reading the change', worth);
+  ctx.activity.start('Reading the change', worth, 'answering');
 
   const tally = await summariseFiles(deps, session.files, (event) => {
     if (event.kind === 'summary') session.summaries.set(event.path, event.summary);

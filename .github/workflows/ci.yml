@@ -65,7 +65,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx --yes @vscode/vsce package --out jury.vsix
+      - run: npm run package
       - uses: actions/upload-artifact@v4
         with:
           name: jury-vsix

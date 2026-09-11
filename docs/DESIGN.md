@@ -1,163 +1,189 @@
 # Design
 
-How Jury is put together, and the reasoning behind the parts where a different
-choice would have been easy.
+How Jury works, and why some parts are built the way they are.
 
 ## Concepts
 
-- **Hunk** — a contiguous diff block. The atom, and the unit that gets ticked.
-- **Layer** — an ordered set of hunks forming one step of the reading. Routinely spans files.
-- **Cohort** — related layers, in reading order. What the tree lists.
-- **Scaffolding** — hunks classified as generator output. Present and reachable, but out of
-  the reading order and out of the token budget.
+- **Hunk:** one contiguous block of a diff. The smallest unit you can mark as reviewed.
+- **Layer:** a set of hunks that make up one step of the reading. A layer can span files.
+- **Cohort:** a group of related layers. The tree lists cohorts.
+- **Scaffolding:** hunks recognised as generated files. They are shown, but kept out of the
+  reading order and out of what is sent to the model.
 
-Array position *is* the order, at both levels. There is no dependency graph and no
-topological sort: the model has to reason about order anyway to write a coherent
-walkthrough, so it emits that order directly, which removes a whole class of cycle-detection
-bugs.
+The order of cohorts and layers is simply the order they are listed in. The model decides
+that order when it groups the change, so there is no separate dependency graph to maintain.
 
-## The pipeline
+## How a review is built
 
 ```
-git diff ─→ parse ─→ classify ─→ heuristic cohorts ─→ on screen
-                                          │
-                                          ├─ pass 1: a sentence per file      (Haiku)
-                                          └─ pass 2: cohorts and order        (Sonnet)
-                                                        │
-                                                     merge ─→ replaces the stack, once
+git diff → parse → detect generated files → group by file → shown in the tree
+                                                  │
+                                                  ├─ pass 1: one sentence per file   (Haiku)
+                                                  └─ pass 2: group and order         (Sonnet)
+                                                                   │
+                                                          checked, then replaces the tree once
 ```
 
-The heuristic stack is navigable before a request is sent. Every model pass improves
-something already on screen, and nothing waits on one.
+The file-based grouping appears first and is usable straight away. The model passes run in
+the background. File summaries are skipped for changes over 60 files.
 
 ## Hunk identity
 
-`sha256(path + NUL + changed lines)`, trailing whitespace stripped, context and `@@` headers
-excluded. Content-based, never positional. A hunk keeps its identity when code above it
-moves, and loses it the moment its own content changes.
+A hunk's id is a hash of its file path and its added and removed lines. Context lines and the
+`@@` header are left out. This means a hunk keeps its id when code above it moves, and gets a
+new id when its own lines change.
 
-Two identical hunks in one file collide and are disambiguated by ordinal, so each stays
-independently reviewable. A change with no textual hunks — binary, pure rename, chmod, added
-empty file — gets one synthetic hunk, because a change that cannot be listed cannot be
-reviewed.
+Two identical hunks in the same file get a number added to the id so they stay separate. A
+file with no text changes (a binary file, a rename, a permission change, an empty new file)
+gets one placeholder hunk so it can still be listed and marked.
 
-## Marks and notes take opposite trades
+## Marks and notes after a refresh
 
-Refresh computes one set of anchors: `exact`, `moved` (same file, ≥80% similar), or
-`orphaned`. What the two callers do with a `moved` match is where they differ.
+When you refresh, each old hunk is matched to the new diff as one of:
 
-A **mark** refuses it. A hunk that changed comes back unreviewed however similar it looks,
-because a tick that survives an edit is a lie, and a lie about what has been reviewed is
-worse than having no marks.
+- **exact:** the same id is still there
+- **moved:** same file, at least 80% similar
+- **gone:** no match
 
-A **note** accepts it and carries a flag. Losing the note entirely is worse than showing it
-two lines off, and the flag says not to trust the position.
+Marks and notes treat a "moved" match differently:
 
-Similarity compares added lines only with added lines — otherwise a line and its own deletion
-vouch for each other, and an edit scores identical to its own reversal. Identical lines match
-first; the remainder pairs by shared prefix and suffix, which is what makes the measure work
-on a one-line change that later gained a clause.
+- A **mark** is only kept on an exact match. If a hunk changed at all, you should look at it
+  again.
+- A **note** follows a moved match and is labelled "position is approximate". Showing a note
+  slightly out of place is better than losing it.
 
-## The model proposes, merge disposes
+Similarity compares added lines with added lines and removed lines with removed lines. If they
+were mixed, a change and its exact reversal would look identical. Identical lines are matched
+first, then the rest are paired by how much of each line is the same.
 
-Any pass-2 output, however malformed, either becomes a complete partition of the hunk set or
-is declined outright. Invented labels are dropped, repeats keep their first home, empty
-layers go, and whatever went unplaced lands in a trailing `Unclassified` cohort.
+## Checking the model's grouping
 
-Declined: everything in one cohort, one cohort per file, or most of the diff unplaced. A
-wrong answer that looks like an answer is worse than no answer, so the heuristic stack stays.
-A declined answer is never cached — a schema-valid non-answer cached is a known-bad result
-replayed on every open — and a cached answer is judged again on the way out.
+The model's answer is only used if every hunk ends up in exactly one place. Before that,
+Jury cleans it up:
 
-Hunks are labelled `h1`, `h2` in the digest: short to write back, and an invented label is
-obviously invalid rather than plausibly real. Any that leak into prose are replaced with the
-file they stand for before a reader sees them.
+- ids the model made up are dropped
+- a hunk listed twice keeps its first position
+- empty layers and cohorts are removed
+- hunks the model left out go into an **Unclassified** cohort at the end
+- documentation and generated cohorts are moved to the end
 
-## The digest
+The answer is rejected, and the file-based grouping kept, if everything is in one cohort, if
+there is one cohort per file, or if most hunks were left out. Rejected answers are not cached.
 
-Per hunk: label, path, enclosing symbol, ±counts, and a sample of changed lines, plus
-whatever pass 1 said about each file. Detail is shed as the budget tightens — samples shrink,
-then go — but never structure. **A hunk the model never sees is a hunk it cannot place**, and
-an unplaced hunk is one the reviewer might never be shown.
+In the text sent to the model, hunks are labelled `h1`, `h2` and so on. Short labels are
+cheap to repeat back, and a made-up one is easy to spot. If a label shows up in a title or
+summary, it is replaced with the file name before you see it.
 
-## Scaffolding, in order of trust
+## What the model sees
 
-1. `.gitattributes` says `linguist-generated` or `-diff`.
-2. The file says so about itself — `@generated`, `was generated with`.
-3. Lockfiles, vendored trees, build output.
-4. Workspace project config, in a repository that actually has generators.
-5. A directory arriving whole with generator-shaped config among at least three new files.
-   Only the config is claimed; the code in a new library is what the reviewer is there for.
-6. Content shape: all additions, 200+ lines, and either under 15% distinct lines or a line
-   over 2000 characters.
-7. An added markdown file with nothing under its headings but metadata.
+For each hunk: its label, file, the function it is in, how many lines were added and
+removed, and a few of the changed lines. The per-file summaries from pass 1 are included
+too. On large changes the sample lines are shortened and then dropped, but every hunk is
+always listed, because the model cannot place a hunk it was never shown.
 
-Precision beats recall throughout. Misclassifying hand-written code hides a review;
-missing one generated file costs nothing. Every verdict carries a reason, is always shown,
-and is one click from being reversed — remembered per repository.
+## Detecting generated files
+
+Checked in this order, most certain first:
+
+1. `.gitattributes` marks the file `linguist-generated` or `-diff`.
+2. The file says it was generated (`@generated`, "was generated with").
+3. Lockfiles, vendored folders and build output.
+4. Project config such as `project.json`, in a repository that uses generators (Nx,
+   Angular, Turborepo).
+5. A new folder that arrives with two or more generator-style config files and at least three
+   files in total. Only the config files are moved; the code in the folder is not.
+6. A new file of 200 lines or more that is very repetitive or has a line over 2,000
+   characters.
+7. A new markdown file with only headings and metadata in it.
+
+Each file shows why it was moved and can be brought back with **Not Scaffolding**. Jury
+remembers that choice for the repository. The rules lean towards leaving a file in the
+review, because hiding real code is worse than showing a generated file.
 
 ## Providers
 
-One interface, two implementations. Prompts are prose and a JSON shape with no model dialect
-in them, and tools are named by capability (`readFile`, `search`) rather than by product, so
-each adapter maps them to whatever it has — or declares it has none, and the feature degrades
-visibly instead of quietly getting worse.
+Model access sits behind one interface with two implementations: `claude` and `vscode-lm`.
+Prompts contain plain instructions and a JSON format, nothing specific to one model. Tools are
+requested by what they do (`readFile`, `search`), and each provider maps those to its own
+tools. A provider without repository tools says so, and Ask answers from the diff only.
 
-The second adapter exists to test the first. It found two things: `vscode.lm` has no
-conversation handle, so `Answer.session` is optional and a follow-up there resends context;
-and it cannot run repository tools, so Ask says so in its own answer rather than being
-silently worse than the alternative.
+`vscode-lm` has no way to continue a conversation, so its follow-up questions resend the
+context. It also cannot read files.
 
-The registry above the interface owns the queue, the disk cache, JSON repair, and
-cancellation. Adapters call, parse, report.
+The queue, cache, JSON repair and cancellation are shared by both providers.
 
-## Calling a model
+## Calling Claude
 
-Through the `claude` CLI the user is signed in to. `--setting-sources ""` keeps their
-settings, their hooks and **the reviewed repository's `CLAUDE.md`** out of every call: a
-repository under review is data, not instructions. `--system-prompt` replaces the CLI's agent
-instructions rather than appending to them. `--tools ""` makes the structured tier a plain
-model call.
+Jury runs the `claude` CLI. Every call uses `--setting-sources ""` so that your settings,
+your hooks and the `CLAUDE.md` of the repository being reviewed are not loaded. The reviewed
+code should never be able to change how the model behaves. `--system-prompt` replaces the
+CLI's default instructions, and `--tools ""` turns off tools for summaries and grouping.
 
-Answers are cached on disk under `.git/`, keyed by prompt version, model and input, and
-written only once the caller has accepted them. Editing a prompt invalidates exactly the
-answers that prompt produced.
+Answers are cached in `.git/`, by prompt version, model and input. Changing a prompt means
+only the answers from that prompt are asked for again. An answer is cached only after it has
+been checked.
 
-Bad JSON is first repaired locally — a raw newline inside a string, a trailing comma — then,
-if that fails, sent back to the model *with the broken answer* and asked for it corrected.
-Sending the question again instead would cost the same and change nothing.
+If the model returns broken JSON, Jury first fixes the common problems itself (a raw newline
+in a string, a trailing comma). If that is not enough, it sends the broken answer back and
+asks for a corrected one.
 
-Every child process is tracked. Closing a review cancels what it started; an exit guard on
-the extension host catches a shutdown that skips disposal, because a spawned process outlives
-its parent and would otherwise keep talking to the user's account.
+Every process Jury starts is tracked. Closing a review stops what it started, and a guard
+catches VS Code shutting down without cleaning up, so no model call keeps running after you
+close the editor.
 
-## State
+## Where state is kept
 
-`<git-common-dir>/jury/<reviewId>.json`, written atomically. Inside `.git`, so it is
-never committed and never dirties the working tree, and shared by every worktree.
+Review progress is saved in `.git/jury/<reviewId>.json`. It is not committed, does not
+show up as a change, and is shared by all worktrees of the repository. It is written to a
+temporary file first and then renamed, so a crash cannot leave a half-written file.
 
-Keyed by the **spec**, not by resolved revisions: a review of `main...HEAD` has to survive
-main moving on, or every push would silently start over.
+A review is identified by what you asked to review (for example `main...HEAD`), not by commit
+hashes. That way your progress survives `main` moving forward.
 
-## Layout
+State saved under the extension's old name (`.git/changestack/`) is moved over the first
+time you open a review in that repository.
+
+## Loading icons
+
+While work is running, the first row of the tree shows what is happening, with an animated
+icon for the kind of work:
+
+| Icon                    | When                             |
+| ----------------------- | -------------------------------- |
+| `jury-scanning.svg`     | Reading the diff                 |
+| `jury-answering.svg`    | File summaries are coming in     |
+| `jury-deliberating.svg` | The model is grouping the change |
+
+Each animation stops after about 8 seconds and settles into the static mark. With reduced
+motion turned on, the static mark is shown from the start. Both rules are written into the SVG
+files themselves.
+
+The tree draws icons as images, so the icons cannot take the theme's text colour. Jury writes
+a light and a dark copy of each loader into its storage folder when it starts, and the tree
+uses the one that matches the theme.
+
+## Code layout
 
 ```
 src/
-  git/        repo resolution, diff acquisition, unified diff parser, hunk identity
-  model/      types, scaffolding classifier, heuristic grouping, merge, reading order
-  agent/      provider interface, adapters, queue, cache, JSON hygiene, digest, prompts
-  state/      persistence and re-anchoring
-  ui/         tree, diff editor, navigation, comments, chat, walkthrough, documents
-  github/     pull requests and review submission
+  git/        finding the repository, getting the diff, parsing it, hunk ids
+  model/      types, generated-file detection, grouping, merging, reading order
+  agent/      provider interface, providers, queue, cache, JSON repair, prompts
+  state/      saving progress, matching hunks after a refresh
+  ui/         tree, diff editor, navigation, notes, chat, walkthrough, loading icons
+  github/     pull requests and posting reviews
+media/        icons
 test/
-  unit/       everything above, plus fixtures generated from real git
-  eval/       grouping and order scored against hand-written expectations
+  unit/       unit tests, with diffs generated from real git
+  eval/       grouping quality against hand-written expectations
 ```
 
-## Deliberately not done
+Everything is bundled into `dist/extension.js` with esbuild. There are no runtime
+dependencies, which is why packaging uses `vsce package --no-dependencies`.
 
-- **Commit-by-commit review.** A different mental model that would fork the whole UI.
-- **Writing patches.** The moment it edits, it stops being a review tool. The read-only tool
-  set is a constraint, not a default.
-- **A webview.** The editor's own diff, comments and chat are better than reimplementations,
-  and they come with LSP.
+## Not planned
+
+- **Reviewing commit by commit.** It would need a different interface.
+- **Editing code.** Jury only reads. Ask's tools can read files but never change them.
+- **A custom webview.** VS Code's own diff editor, comments and chat already do the job,
+  and they come with language support.

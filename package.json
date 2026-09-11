@@ -4,14 +4,15 @@
   "description": "Review a diff as an ordered stack of logical changes, not an alphabetical list of files. A model groups and orders the change; you judge the code.",
   "version": "0.0.1",
   "publisher": "pridont",
+  "icon": "media/jury-tile-128.png",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pridont/jury-vscode.git"
+    "url": "https://github.com/pridont/jury.git"
   },
-  "homepage": "https://github.com/pridont/jury-vscode#readme",
+  "homepage": "https://github.com/pridont/jury#readme",
   "bugs": {
-    "url": "https://github.com/pridont/jury-vscode/issues"
+    "url": "https://github.com/pridont/jury/issues"
   },
   "private": true,
   "engines": {
@@ -39,7 +40,7 @@
         {
           "id": "jury",
           "title": "Jury",
-          "icon": "media/icon.svg"
+          "icon": "media/jury.svg"
         }
       ]
     },
@@ -653,7 +654,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "vscode:prepublish": "npm run check && node esbuild.mjs --production",
-    "package": "npx --yes @vscode/vsce package",
+    "package": "npx --yes @vscode/vsce package --no-dependencies --out jury.vsix",
     "eval": "vitest run --config vitest.eval.config.ts"
   },
   "devDependencies": {

@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
 import type { SessionHost } from '../session.js';
+import type { Activity, ActivityKind } from './activity.js';
+import type { Loaders } from './loaders.js';
 import type { Cohort, Comment, Layer, Risk } from '../model/types.js';
 
 export type Node =
-  | { type: 'message'; text: string; icon?: string }
+  | { type: 'message'; text: string; icon?: string; loader?: ActivityKind }
+  | { type: 'status'; text: string; kind: ActivityKind }
   | { type: 'orphans' }
   | { type: 'orphan'; comment: Comment }
   | { type: 'cohort'; cohort: Cohort; index: number }
@@ -25,8 +28,22 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
   private readonly changed = new vscode.EventEmitter<Node | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
 
+  private activity: Activity | null = null;
+  private loaders: Loaders | null = null;
+
   constructor(private readonly host: SessionHost) {
     this.host.onDidChange(() => this.refresh());
+  }
+
+  /** Show the running step, with its loading icon, as the first row of the tree. */
+  attach(activity: Activity, loaders: Loaders): void {
+    this.activity = activity;
+    this.loaders = loaders;
+    activity.onDidChange(() => this.refresh());
+  }
+
+  private loaderIcon(kind: ActivityKind, fallback: string): { light: vscode.Uri; dark: vscode.Uri } | vscode.ThemeIcon {
+    return this.loaders?.icon(kind) ?? new vscode.ThemeIcon(fallback);
   }
 
   refresh(node?: Node): void {
@@ -41,7 +58,16 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const item = new vscode.TreeItem(node.text, vscode.TreeItemCollapsibleState.None);
         item.id = 'message';
         item.contextValue = 'message';
-        if (node.icon) item.iconPath = new vscode.ThemeIcon(node.icon);
+        if (node.loader) item.iconPath = this.loaderIcon(node.loader, node.icon ?? 'loading~spin');
+        else if (node.icon) item.iconPath = new vscode.ThemeIcon(node.icon);
+        return item;
+      }
+
+      case 'status': {
+        const item = new vscode.TreeItem(node.text, vscode.TreeItemCollapsibleState.None);
+        item.id = 'status';
+        item.contextValue = 'status';
+        item.iconPath = this.loaderIcon(node.kind, 'loading~spin');
         return item;
       }
 
@@ -200,10 +226,14 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
 
     if (!node) {
       if (session.error) return [{ type: 'message', text: session.error, icon: 'error' }];
-      if (session.loading) return [{ type: 'message', text: `Reading ${session.title}…`, icon: 'loading~spin' }];
+      if (session.loading) {
+        return [{ type: 'message', text: `Reading ${session.title}…`, icon: 'loading~spin', loader: 'scanning' }];
+      }
       if (session.cohorts.length === 0) return [{ type: 'message', text: 'No changes to review.' }];
 
       const nodes: Node[] = session.cohorts.map((cohort, index) => ({ type: 'cohort', cohort, index }));
+      const running = this.activity?.current;
+      if (running) nodes.unshift({ type: 'status', text: running.text, kind: running.kind });
       // Orphaned notes get their own section rather than vanishing with the code they were
       // about. Last, so they never push the reading order down the view.
       if (session.comments.some((comment) => comment.orphaned)) nodes.push({ type: 'orphans' });

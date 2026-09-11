@@ -1,148 +1,180 @@
+<img src="media/jury-tile-128.png" alt="Jury" width="96">
+
 # Jury
 
-Review a diff in VS Code as an ordered stack of logical changes, not an alphabetical list of
-files. A model groups the change and puts it in reading order; you judge the code.
+A VS Code extension for reviewing code changes. Instead of showing files in alphabetical
+order, Jury groups the diff into related changes and puts them in the order they should be
+read. A language model does the grouping. You do the reviewing.
 
-Files arrive alphabetically, which is almost never the order that makes a change make sense —
-you read the caller before the callee, the test before the thing it tests. Jury
-regroups the diff into **cohorts** of related work, each split into **layers** in
-dependency-first order: introduce the thing, then the change that needed it, then the
-plumbing, then the tests.
+## Features
 
-Everything renders in VS Code's own surfaces — the diff editor, the Comments API, the tree.
-Real syntax highlighting, real go-to-definition, your keybindings.
+- Groups a diff into **cohorts** (related work) and **layers** (steps within that work), in
+  reading order: new code first, then the code that uses it, then tests.
+- A short walkthrough of what the change does before you read any code.
+- Step through every hunk with one key, across files.
+- Mark hunks as reviewed. Marks are saved and survive a rebase.
+- Leave notes on the diff and export them as markdown.
+- Review GitHub pull requests without checking them out, and post your notes back as review
+  comments.
+- Ask questions about the code you are looking at.
+- Lockfiles and generated files are moved out of the way.
+- Works without a model too, grouped by file.
 
-## Reviewing
+## Requirements
 
-| Command | What it reviews |
-|---|---|
-| Review Working Tree | uncommitted work, untracked files included |
-| Review Staged Changes | the index |
-| Review This Branch… | what this branch adds, against a merge base |
-| Review a Pull Request… | by number, or the one on this branch |
+- VS Code 1.90 or newer
+- `git`
+- The [`claude` CLI](https://claude.com/claude-code), signed in. Optional: without it, Jury
+  groups by file and has no summaries or chat.
+- The [`gh` CLI](https://cli.github.com), signed in. Only needed for pull requests.
 
-| Key | |
-|---|---|
-| `alt+j` / `alt+k` | next / previous hunk — crosses files, layers and cohorts on its own |
-| `alt+shift+j` / `alt+shift+k` | next / previous layer |
-| `alt+m` / `alt+shift+m` | tick this hunk / this layer |
-| `alt+a` / `alt+shift+a` | ask about this hunk / this layer |
-| `alt+s` | the walkthrough |
-| `alt+z` | hide everything but the code |
+## Quick setup
 
-The walkthrough is what to read first: what the change does, in what order to read it, and
-what deserves attention. A mermaid diagram appears when the change has a shape prose does not
-show, which is rarely.
-
-## Progress that survives
-
-Marks live in `.git/`, keyed by content rather than line number. Quit and come back, or
-refresh after a force-push: a hunk that moved keeps its tick, a hunk that **changed** comes
-back unreviewed, and refresh says which — `refreshed · 5 marks kept · 2 changed · 1 gone`.
-A tick that outlived an edit would be a lie.
-
-Notes take the opposite trade. A note follows code that moved and says its position is
-approximate, because losing it would be worse. A note whose code is gone is listed for you to
-re-pin or discard, never dropped. `Export Review as Markdown` writes them out, grouped by
-cohort, each with a `file:line`.
-
-## Pull requests
-
-The head is fetched into a ref of its own and reviewed against the merge base of its target
-branch — what the author asked to have merged. Nothing is checked out; your working tree is
-untouched. GitHub's "viewed" state comes across, so a review carries on where you left it.
-
-`Submit Review to GitHub…` posts your notes as inline comments, after showing you the whole
-payload — including what it will not send — and asking. A note already posted and unchanged
-is not sent twice.
-
-## Ask
-
-`@jury` in the chat view answers questions about the change under the cursor, or the
-whole layer with `/step`. It reads the repository and shows you when it does, so a pause has
-a visible reason:
+Jury is not on the VS Code Marketplace yet. To install it, build it from this repository.
+You need [Node.js](https://nodejs.org) 20 or newer.
 
 ```
-› Grep hunkId
-Yes. hunkId() is called in src/git/parse.ts, outside identity.ts.
+git clone https://github.com/pridont/jury.git
+cd jury
+npm install
+npm run package
+code --install-extension jury.vsix
 ```
 
-Read-only, always: a review tool must never edit the code it is reviewing. Follow-ups resume
-the conversation instead of resending the diff — 10,353 input tokens for the first question,
-10 for the next.
+If the `code` command is not found, install the `.vsix` from VS Code instead: open the
+Extensions view, click the `...` menu at the top, choose **Install from VSIX…** and pick
+`jury.vsix`.
 
-## Generated code
+Reload VS Code. Jury appears in the activity bar.
 
-Lockfiles, build output, anything marked `@generated`, workspace generator config, and
-READMEs that are a heading and a tag table are collected into one trailing cohort. They are
-out of the reading order, out of the progress count, and out of the model's token budget —
-never hidden, always with the reason shown, and one click from coming back.
+To update, pull the latest changes and run the last three commands again.
 
-Nothing hand-written is touched. A README with a sentence, a usage example or even a TODO in
-it is documentation and stays.
+## Usage
+
+Open the command palette and run one of:
+
+| Command | Reviews |
+|---|---|
+| Jury: Review Working Tree | Uncommitted changes, including new files |
+| Jury: Review Staged Changes | Staged changes |
+| Jury: Review This Branch… | Everything the current branch adds, compared to a base branch you pick |
+| Jury: Review a Pull Request… | A pull request you pick from a list |
+
+The review opens in the Jury panel in the activity bar.
+
+### Keys
+
+| Key | Action |
+|---|---|
+| `alt+j` / `alt+k` | Next / previous hunk |
+| `alt+shift+j` / `alt+shift+k` | Next / previous layer |
+| `alt+m` | Mark this hunk as reviewed |
+| `alt+shift+m` | Mark this layer as reviewed and move to the next |
+| `alt+a` | Ask about this hunk |
+| `alt+shift+a` | Ask about this layer |
+| `alt+s` | Open the walkthrough |
+| `alt+z` | Focus mode |
+
+These only work while a review is open.
+
+### Marks
+
+Marks are stored in `.git/jury/`, so they are not committed and survive restarting VS Code.
+
+After the author pushes again, run **Jury: Refresh Review**. Hunks that are unchanged keep
+their mark, even if they moved. Hunks whose content changed lose their mark, so you review
+them again.
+
+### Notes
+
+Hover a changed line and click **+** to leave a note. Notes stay attached to their code when
+it moves. If the code is removed, the note is listed at the bottom of the panel so you can
+move it or delete it.
+
+**Jury: Export Review as Markdown** writes all notes out, grouped by cohort.
+
+### Pull requests
+
+Jury fetches the pull request into a separate ref and compares it to the base branch. Your
+branch and working tree are not changed. Files you marked as viewed on GitHub start out
+marked.
+
+**Jury: Submit Review to GitHub…** posts your notes as inline comments. It shows you exactly
+what will be sent and asks before sending. Notes that were already posted are not posted
+again.
+
+### Asking questions
+
+Type `@jury` in the Chat view, followed by your question. It answers about the hunk you are
+on, or the whole layer if you start with `/step`. It can read files in the repository to
+answer, but never changes them.
+
+### Generated files
+
+Lockfiles, build output, files marked `@generated`, Nx project config, and empty template
+READMEs are collected into a **Scaffolding** group at the end. They are skipped when
+stepping through the review and not counted in progress. Each shows why it was moved, and
+you can bring any of them back with **Not Scaffolding**.
 
 ## Models
 
-Through the `claude` CLI you are already signed in to. No API key.
+Jury uses the `claude` CLI, so there is no API key to set up.
 
-| Pass | Model | Thinking |
+| Task | Model |
+|---|---|
+| Summarising each file | Haiku |
+| Grouping and ordering | Sonnet |
+| Answering questions | Sonnet |
+
+File summaries are skipped for changes larger than 60 files.
+
+Jury does not load your Claude settings, hooks or `CLAUDE.md` files, including the ones in
+the repository being reviewed.
+
+You can also use the chat models built into VS Code (for example Copilot) by setting the
+provider to `vscode-lm`. These cannot read the repository, so answers are based on the diff
+only.
+
+## Settings
+
+| Setting | Default | Description |
 |---|---|---|
-| Per-file summaries | Haiku | off |
-| Grouping and ordering | Sonnet | off |
-| Ask | Sonnet | on |
-
-Thinking is off where the task is to write one sentence: it costs seconds and buys nothing.
-Summaries are skipped on changes over `jury.ai.summariseUpTo` files (60), where each
-call costs more and contributes less.
-
-Your settings, your hooks and the reviewed repository's `CLAUDE.md` are kept out of every
-call. A repository under review is data, not instructions.
-
-`vscode-lm` is the alternative: your editor's own chat models, no subprocess, no PATH. It
-cannot read the repository, so Ask answers from the diff alone and says so. Passes route
-independently:
-
-```jsonc
-"jury.passes": { "summaries": "vscode-lm", "clustering": "claude" }
-```
-
-Choosing a provider chooses where the code under review is sent, and the setting says so.
-
-**With no model at all** — `jury.ai.enabled: false`, or nothing installed — the review
-still works, grouped by file, with marks, notes and navigation intact.
-
-## Is the ordering any good?
-
-`npm run eval` answers with a number rather than an opinion. It scores two things over pairs
-of hunks against a hand-written expectation — **grouping** (do the two agree these belong
-together) and **order** (are hunks in different cohorts read in the expected sequence) — and
-prints both against the heuristic, which is what the model has to beat to be worth anything.
-
-| | auth-clock | two-changes |
-|---|---|---|
-| grouping (model) | 100.0% | 100.0% |
-| grouping (heuristic) | 80.0% | 60.9% |
-| order (model) | 100.0% | 100.0% |
-| order (heuristic) | 77.8% | 100.0% |
-
-Two fixtures is thin evidence and each figure is one sample. The harness exists so the next
-prompt change is measured rather than argued about — and it has earned that: keeping a
-documentation hunk with the change it documents moved `two-changes` grouping from 87.0% to
-91.3%.
+| `jury.ai.enabled` | `true` | Use a model at all |
+| `jury.provider` | `claude` | `claude` or `vscode-lm` |
+| `jury.providers` | | Command and models per provider |
+| `jury.passes` | `{}` | Use a different provider for summaries, grouping or questions |
+| `jury.ai.summariseUpTo` | `60` | Skip file summaries above this many files. `0` turns them off |
+| `jury.scaffolding.mode` | `collapse` | `collapse`, `inline` or `off` |
+| `jury.scaffolding.patterns` | `[]` | Extra paths to treat as generated. Start with `!` to exclude one |
+| `jury.walkthrough.autoOpen` | `true` | Open the walkthrough when grouping finishes |
 
 ## Development
 
 ```
 npm install
-npm run build      # bundle to dist/
-npm run watch      # rebuild on change
-npm run check      # typecheck
-npm test           # unit tests
-npm run eval       # score the grouping against the fixtures (spends tokens)
+npm run build     # build to dist/
+npm run watch     # rebuild on change
+npm run check     # typecheck
+npm test          # unit tests
+npm run eval      # measure grouping quality (calls the model)
 ```
 
-`F5` launches an Extension Development Host. `Jury: Doctor` reports git, `gh`,
-`claude` and their sign-in state; `Jury: Show Log` has every model call with its
-tokens, timing and cost.
+Press `F5` to run the extension in a new window. **Jury: Doctor** checks that `git`, `gh`
+and `claude` are available. **Jury: Show Log** lists every model call with its token count
+and cost.
 
-[docs/DESIGN.md](docs/DESIGN.md) is how it is put together and why.
+`npm run eval` compares the model's grouping to hand-written expectations and to a simple
+file-based grouping:
+
+| | auth-clock | two-changes |
+|---|---|---|
+| Grouping, model | 100% | 100% |
+| Grouping, by file | 80% | 61% |
+| Order, model | 100% | 100% |
+| Order, by file | 78% | 100% |
+
+See [docs/DESIGN.md](docs/DESIGN.md) for how it works.
+
+## License
+
+MIT
