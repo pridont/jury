@@ -12,7 +12,7 @@ describe('doctor', () => {
   });
 
   it('says plainly when the cwd is not a repository', async () => {
-    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'changestack-doctor-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'jury-doctor-'));
     try {
       const checks = await doctor(outside);
       const repo = checks.find((c) => c.name === 'repository');

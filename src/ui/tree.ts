@@ -83,7 +83,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
               ? vscode.TreeItemCheckboxState.Checked
               : vscode.TreeItemCheckboxState.Unchecked;
           item.command = {
-            command: 'changestack.openLayer',
+            command: 'jury.openLayer',
             title: 'Open',
             arguments: [node.index, 0],
           };
@@ -139,7 +139,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
             : vscode.TreeItemCheckboxState.Unchecked;
         item.contextValue = 'layerFile';
         item.command = {
-          command: 'changestack.openLayerFile',
+          command: 'jury.openLayerFile',
           title: 'Open',
           arguments: [node.cohortIndex, node.layerIndex, node.path],
         };
@@ -185,7 +185,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           : vscode.TreeItemCheckboxState.Unchecked;
         item.contextValue = 'layer';
         item.command = {
-          command: 'changestack.openLayer',
+          command: 'jury.openLayer',
           title: 'Open',
           arguments: [node.cohortIndex, node.layerIndex],
         };

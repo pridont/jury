@@ -111,8 +111,8 @@ export class SessionHost implements vscode.Disposable {
   open(session: Session): Session {
     this.close();
     this.current = session;
-    void vscode.commands.executeCommand('setContext', 'changestack.active', true);
-    void vscode.commands.executeCommand('setContext', 'changestack.pr', session.spec.kind === 'pr');
+    void vscode.commands.executeCommand('setContext', 'jury.active', true);
+    void vscode.commands.executeCommand('setContext', 'jury.pr', session.spec.kind === 'pr');
     this.changed.fire(session);
     return session;
   }
@@ -121,8 +121,8 @@ export class SessionHost implements vscode.Disposable {
     if (!this.current) return;
     this.current.dispose();
     this.current = null;
-    void vscode.commands.executeCommand('setContext', 'changestack.active', false);
-    void vscode.commands.executeCommand('setContext', 'changestack.pr', false);
+    void vscode.commands.executeCommand('setContext', 'jury.active', false);
+    void vscode.commands.executeCommand('setContext', 'jury.pr', false);
     this.changed.fire(null);
   }
 

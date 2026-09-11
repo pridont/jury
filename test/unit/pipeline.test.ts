@@ -23,7 +23,7 @@ const commit = async (message: string) => {
 };
 
 beforeEach(async () => {
-  dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'changestack-pipeline-')));
+  dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'jury-pipeline-')));
   await git('init', '-q', '-b', 'main');
   await git('config', 'user.email', 'test@example.com');
   await git('config', 'user.name', 'Test');

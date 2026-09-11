@@ -1,10 +1,10 @@
-# Change Stack
+# Jury
 
 Review a diff in VS Code as an ordered stack of logical changes, not an alphabetical list of
 files. A model groups the change and puts it in reading order; you judge the code.
 
 Files arrive alphabetically, which is almost never the order that makes a change make sense —
-you read the caller before the callee, the test before the thing it tests. Change Stack
+you read the caller before the callee, the test before the thing it tests. Jury
 regroups the diff into **cohorts** of related work, each split into **layers** in
 dependency-first order: introduce the thing, then the change that needed it, then the
 plumbing, then the tests.
@@ -58,7 +58,7 @@ is not sent twice.
 
 ## Ask
 
-`@changestack` in the chat view answers questions about the change under the cursor, or the
+`@jury` in the chat view answers questions about the change under the cursor, or the
 whole layer with `/step`. It reads the repository and shows you when it does, so a pause has
 a visible reason:
 
@@ -92,7 +92,7 @@ Through the `claude` CLI you are already signed in to. No API key.
 | Ask | Sonnet | on |
 
 Thinking is off where the task is to write one sentence: it costs seconds and buys nothing.
-Summaries are skipped on changes over `changestack.ai.summariseUpTo` files (60), where each
+Summaries are skipped on changes over `jury.ai.summariseUpTo` files (60), where each
 call costs more and contributes less.
 
 Your settings, your hooks and the reviewed repository's `CLAUDE.md` are kept out of every
@@ -103,12 +103,12 @@ cannot read the repository, so Ask answers from the diff alone and says so. Pass
 independently:
 
 ```jsonc
-"changestack.passes": { "summaries": "vscode-lm", "clustering": "claude" }
+"jury.passes": { "summaries": "vscode-lm", "clustering": "claude" }
 ```
 
 Choosing a provider chooses where the code under review is sent, and the setting says so.
 
-**With no model at all** — `changestack.ai.enabled: false`, or nothing installed — the review
+**With no model at all** — `jury.ai.enabled: false`, or nothing installed — the review
 still works, grouped by file, with marks, notes and navigation intact.
 
 ## Is the ordering any good?
@@ -141,8 +141,8 @@ npm test           # unit tests
 npm run eval       # score the grouping against the fixtures (spends tokens)
 ```
 
-`F5` launches an Extension Development Host. `Change Stack: Doctor` reports git, `gh`,
-`claude` and their sign-in state; `Change Stack: Show Log` has every model call with its
+`F5` launches an Extension Development Host. `Jury: Doctor` reports git, `gh`,
+`claude` and their sign-in state; `Jury: Show Log` has every model call with its
 tokens, timing and cost.
 
 [docs/DESIGN.md](docs/DESIGN.md) is how it is put together and why.

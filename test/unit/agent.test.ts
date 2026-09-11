@@ -94,7 +94,7 @@ describe('Cache', () => {
   let cache: Cache;
 
   beforeEach(async () => {
-    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'changestack-cache-'));
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'jury-cache-'));
     cache = new Cache(dir);
   });
 
@@ -267,7 +267,7 @@ describe('summariseFiles', () => {
   let deps: Parameters<typeof summariseFiles>[0];
 
   beforeEach(async () => {
-    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'changestack-sum-'));
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'jury-sum-'));
     deps = {
       provider: stub(() => '{"summary":"accepts tokens expiring exactly now"}'),
       queue: new Queue(2),

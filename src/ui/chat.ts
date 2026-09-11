@@ -13,7 +13,7 @@ export type ChatDeps = {
 };
 
 /**
- * `@changestack` — questions about the change being read.
+ * `@jury` — questions about the change being read.
  *
  * The chat view rather than a window of our own: streaming, follow-ups, markdown, code links
  * and cancellation all already work there, and a reviewer already knows how to use it.
@@ -22,10 +22,10 @@ export type ChatDeps = {
  * selected, says so instead of answering about nothing.
  */
 export function registerChat(deps: ChatDeps): vscode.Disposable {
-  const participant = vscode.chat.createChatParticipant('changestack.ask', async (request, context, stream, token) => {
+  const participant = vscode.chat.createChatParticipant('jury.ask', async (request, context, stream, token) => {
     const session = deps.host.active;
     if (!session) {
-      stream.markdown('No review is open. Run **Change Stack: Review Working Tree** first.');
+      stream.markdown('No review is open. Run **Jury: Review Working Tree** first.');
       return;
     }
 
@@ -37,7 +37,7 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
 
     const provider = await deps.provider();
     if (!provider) {
-      stream.markdown('No model provider is available. `Change Stack: Doctor` says why.');
+      stream.markdown('No model provider is available. `Jury: Doctor` says why.');
       return;
     }
     if (!provider.stream) {

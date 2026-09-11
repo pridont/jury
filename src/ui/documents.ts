@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-export const DOC_SCHEME = 'changestack-doc';
+export const DOC_SCHEME = 'jury-doc';
 
 /**
  * Documents the extension writes for you to read, rather than to keep.
@@ -44,7 +44,7 @@ export class Documents implements vscode.TextDocumentContentProvider, vscode.Dis
  */
 export async function offerToSave(content: string, suggested: string): Promise<void> {
   const choice = await vscode.window.showInformationMessage(
-    'Change Stack: review exported.',
+    'Jury: review exported.',
     'Save to a file…',
     'Copy',
   );

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { run } from '../util/exec.js';
 
-export const SCHEME = 'changestack';
+export const SCHEME = 'jury';
 
 /** A side that does not exist — the base of an added file, the head of a deleted one. */
 const EMPTY_REV = 'empty';

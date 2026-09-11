@@ -9,7 +9,7 @@ let tmp: string;
 let repoRoot: string;
 
 beforeAll(async () => {
-  tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'changestack-'));
+  tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'jury-'));
   repoRoot = await fs.realpath(tmp);
   await run('git', ['init', '-q', '-b', 'main'], { cwd: repoRoot });
   await run('git', ['config', 'user.email', 'test@example.com'], { cwd: repoRoot });
@@ -32,7 +32,7 @@ describe('findRepo', () => {
   });
 
   it('returns null outside a repository rather than throwing', async () => {
-    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'changestack-bare-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'jury-bare-'));
     try {
       expect(await findRepo(outside)).toBeNull();
     } finally {

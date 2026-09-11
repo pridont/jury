@@ -64,5 +64,5 @@ export async function currentBranch(repo: Repo): Promise<string | null> {
 
 /** Where this review's state belongs. Inside .git, so it never dirties the worktree. */
 export function stateDir(repo: Repo): string {
-  return path.join(repo.commonDir, 'changestack');
+  return path.join(repo.commonDir, 'jury');
 }

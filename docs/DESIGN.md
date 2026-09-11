@@ -1,6 +1,6 @@
 # Design
 
-How Change Stack is put together, and the reasoning behind the parts where a different
+How Jury is put together, and the reasoning behind the parts where a different
 choice would have been easy.
 
 ## Concepts
@@ -133,7 +133,7 @@ its parent and would otherwise keep talking to the user's account.
 
 ## State
 
-`<git-common-dir>/changestack/<reviewId>.json`, written atomically. Inside `.git`, so it is
+`<git-common-dir>/jury/<reviewId>.json`, written atomically. Inside `.git`, so it is
 never committed and never dirties the working tree, and shared by every worktree.
 
 Keyed by the **spec**, not by resolved revisions: a review of `main...HEAD` has to survive

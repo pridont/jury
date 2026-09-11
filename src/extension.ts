@@ -33,6 +33,7 @@ import type { ReviewSpec } from './model/types.js';
 import type { FileChange } from './git/parse.js';
 import { load as loadStored, list as listStored, reviewId } from './state/store.js';
 import { describeRefresh, reconcileMarks } from './state/reconcile.js';
+import { migrateLegacyState } from './state/migrate.js';
 import { describeSpec } from './model/types.js';
 import { fetchHead, listOpen, resolve, viewedFiles, GhError, type PullRequest } from './github/pr.js';
 import { defaultBranch, listRefs, recentCommits, type Ref } from './git/refs.js';
@@ -47,16 +48,18 @@ let log: vscode.OutputChannel;
  * second window on the same repo should not inherit what the first one was reading.
  */
 let windowState: vscode.Memento;
-const LAST_REVIEW = 'changestack.lastReview';
+const LAST_REVIEW = 'jury.lastReview';
+/** The same key under the extension's old name, read once so a reload after the rename still restores. */
+const LEGACY_LAST_REVIEW = 'changestack.lastReview';
 
 export function activate(context: vscode.ExtensionContext): void {
-  log = vscode.window.createOutputChannel('Change Stack');
+  log = vscode.window.createOutputChannel('Jury');
   windowState = context.workspaceState;
 
   const host = new SessionHost();
   const tree = new StackTree(host);
   const blobs = new BlobProvider();
-  const view = vscode.window.createTreeView('changestack.stack', {
+  const view = vscode.window.createTreeView('jury.stack', {
     treeDataProvider: tree,
     showCollapseAll: true,
   });
@@ -82,7 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
     guardAgainstOrphans(),
 
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('changestack.providers')) applyProviderSettings(claude, vscodeLm);
+      if (event.affectsConfiguration('jury.providers')) applyProviderSettings(claude, vscodeLm);
     }),
 
     comments.onDidChange(() => {
@@ -121,13 +124,13 @@ export function activate(context: vscode.ExtensionContext): void {
       if (host.active) nav.syncFromEditor(event.textEditor);
     }),
 
-    vscode.commands.registerCommand('changestack.review', () => open(host, { kind: 'worktree' }, ctx())),
-    vscode.commands.registerCommand('changestack.reviewStaged', () => open(host, { kind: 'staged' }, ctx())),
-    vscode.commands.registerCommand('changestack.reviewBase', () => reviewBase(host, ctx())),
-    vscode.commands.registerCommand('changestack.reviewPr', () => reviewPr(host, ctx())),
-    vscode.commands.registerCommand('changestack.submitReview', () => submitReview(host, documents)),
-    vscode.commands.registerCommand('changestack.refresh', () => refresh(host, ctx())),
-    vscode.commands.registerCommand('changestack.close', () => {
+    vscode.commands.registerCommand('jury.review', () => open(host, { kind: 'worktree' }, ctx())),
+    vscode.commands.registerCommand('jury.reviewStaged', () => open(host, { kind: 'staged' }, ctx())),
+    vscode.commands.registerCommand('jury.reviewBase', () => reviewBase(host, ctx())),
+    vscode.commands.registerCommand('jury.reviewPr', () => reviewPr(host, ctx())),
+    vscode.commands.registerCommand('jury.submitReview', () => submitReview(host, documents)),
+    vscode.commands.registerCommand('jury.refresh', () => refresh(host, ctx())),
+    vscode.commands.registerCommand('jury.close', () => {
       // A review that is gone must not leave a subprocess behind talking to the account.
       if (host.active) queue.cancel(host.active.id);
       activity.stop();
@@ -135,65 +138,65 @@ export function activate(context: vscode.ExtensionContext): void {
       host.close();
       void windowState.update(LAST_REVIEW, undefined);
     }),
-    vscode.commands.registerCommand('changestack.clearCache', () => clearCache(host)),
-    vscode.commands.registerCommand('changestack.showLog', () => log.show(true)),
-    vscode.commands.registerCommand('changestack.resume', () => resume(host, ctx())),
-    vscode.commands.registerCommand('changestack.list', () => pickReview(host, ctx())),
-    vscode.commands.registerCommand('changestack.doctor', () => runDoctor()),
+    vscode.commands.registerCommand('jury.clearCache', () => clearCache(host)),
+    vscode.commands.registerCommand('jury.showLog', () => log.show(true)),
+    vscode.commands.registerCommand('jury.resume', () => resume(host, ctx())),
+    vscode.commands.registerCommand('jury.list', () => pickReview(host, ctx())),
+    vscode.commands.registerCommand('jury.doctor', () => runDoctor()),
 
-    vscode.commands.registerCommand('changestack.createComment', (reply: vscode.CommentReply) =>
+    vscode.commands.registerCommand('jury.createComment', (reply: vscode.CommentReply) =>
       comments.add(reply),
     ),
-    vscode.commands.registerCommand('changestack.editComment', (c: vscode.Comment) => comments.edit(c)),
-    vscode.commands.registerCommand('changestack.saveComment', (c: vscode.Comment) => comments.save(c)),
-    vscode.commands.registerCommand('changestack.cancelComment', (c: vscode.Comment) => comments.cancel(c)),
-    vscode.commands.registerCommand('changestack.deleteComment', (c: vscode.Comment) => comments.remove(c)),
-    vscode.commands.registerCommand('changestack.repinComment', (node?: Node) => repin(host, comments, node)),
-    vscode.commands.registerCommand('changestack.discardComment', (node?: Node) => {
+    vscode.commands.registerCommand('jury.editComment', (c: vscode.Comment) => comments.edit(c)),
+    vscode.commands.registerCommand('jury.saveComment', (c: vscode.Comment) => comments.save(c)),
+    vscode.commands.registerCommand('jury.cancelComment', (c: vscode.Comment) => comments.cancel(c)),
+    vscode.commands.registerCommand('jury.deleteComment', (c: vscode.Comment) => comments.remove(c)),
+    vscode.commands.registerCommand('jury.repinComment', (node?: Node) => repin(host, comments, node)),
+    vscode.commands.registerCommand('jury.discardComment', (node?: Node) => {
       if (node?.type === 'orphan') comments.discard(node.comment);
     }),
-    vscode.commands.registerCommand('changestack.export', () => exportReview(host, documents)),
+    vscode.commands.registerCommand('jury.export', () => exportReview(host, documents)),
     // `isPartialQuery` is the difference between opening the chat with the participant
     // already typed and sending an empty question the moment the key is pressed.
-    vscode.commands.registerCommand('changestack.ask', () =>
+    vscode.commands.registerCommand('jury.ask', () =>
       vscode.commands.executeCommand('workbench.action.chat.open', {
-        query: '@changestack ',
+        query: '@jury ',
         isPartialQuery: true,
       }),
     ),
-    vscode.commands.registerCommand('changestack.askStep', () =>
+    vscode.commands.registerCommand('jury.askStep', () =>
       vscode.commands.executeCommand('workbench.action.chat.open', {
-        query: '@changestack /step ',
+        query: '@jury /step ',
         isPartialQuery: true,
       }),
     ),
-    vscode.commands.registerCommand('changestack.walkthrough', () => {
+    vscode.commands.registerCommand('jury.walkthrough', () => {
       if (host.active) void showWalkthrough(host.active, documents);
     }),
-    vscode.commands.registerCommand('changestack.recluster', () => recluster(host, ctx())),
+    vscode.commands.registerCommand('jury.recluster', () => recluster(host, ctx())),
 
-    vscode.commands.registerCommand('changestack.nextHunk', () => nav.next()),
-    vscode.commands.registerCommand('changestack.prevHunk', () => nav.previous()),
-    vscode.commands.registerCommand('changestack.nextLayer', () => nav.stepLayer(1)),
-    vscode.commands.registerCommand('changestack.prevLayer', () => nav.stepLayer(-1)),
-    vscode.commands.registerCommand('changestack.openLayer', (cohortIndex: number, layerIndex: number) =>
+    vscode.commands.registerCommand('jury.nextHunk', () => nav.next()),
+    vscode.commands.registerCommand('jury.prevHunk', () => nav.previous()),
+    vscode.commands.registerCommand('jury.nextLayer', () => nav.stepLayer(1)),
+    vscode.commands.registerCommand('jury.prevLayer', () => nav.stepLayer(-1)),
+    vscode.commands.registerCommand('jury.openLayer', (cohortIndex: number, layerIndex: number) =>
       nav.goToLayer(cohortIndex, layerIndex),
     ),
     vscode.commands.registerCommand(
-      'changestack.openLayerFile',
+      'jury.openLayerFile',
       (cohortIndex: number, layerIndex: number, path: string) => nav.goToLayerFile(cohortIndex, layerIndex, path),
     ),
-    vscode.commands.registerCommand('changestack.openLayerFiles', (node?: Node) => openLayerFiles(host, node)),
-    vscode.commands.registerCommand('changestack.openCohort', (node?: Node) => openCohort(host, node)),
-    vscode.commands.registerCommand('changestack.markCohortReviewed', (node?: Node) =>
+    vscode.commands.registerCommand('jury.openLayerFiles', (node?: Node) => openLayerFiles(host, node)),
+    vscode.commands.registerCommand('jury.openCohort', (node?: Node) => openCohort(host, node)),
+    vscode.commands.registerCommand('jury.markCohortReviewed', (node?: Node) =>
       markCohort(host, node, ctx()),
     ),
-    vscode.commands.registerCommand('changestack.toggleReviewed', () => toggleReviewed(host, nav, tree, view)),
-    vscode.commands.registerCommand('changestack.markLayerReviewed', () => markLayer(host, nav, tree, view)),
-    vscode.commands.registerCommand('changestack.notScaffolding', (node?: Node) =>
+    vscode.commands.registerCommand('jury.toggleReviewed', () => toggleReviewed(host, nav, tree, view)),
+    vscode.commands.registerCommand('jury.markLayerReviewed', () => markLayer(host, nav, tree, view)),
+    vscode.commands.registerCommand('jury.notScaffolding', (node?: Node) =>
       notScaffolding(host, node, ctx()),
     ),
-    vscode.commands.registerCommand('changestack.focusMode', () =>
+    vscode.commands.registerCommand('jury.focusMode', () =>
       vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility'),
     ),
   );
@@ -211,7 +214,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   applyProviderSettings(claude, vscodeLm);
-  void vscode.commands.executeCommand('setContext', 'changestack.active', false);
+  void vscode.commands.executeCommand('setContext', 'jury.active', false);
   void restoreLast(host, ctx());
 
   function ctx(): Context {
@@ -243,6 +246,7 @@ async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<
   if (host.active) ctx.queue.cancel(host.active.id);
   ctx.activity.stop();
   ctx.blobs.clear();
+  await migrate(repo);
   const session = new Session(repo, spec);
 
   const stored = await loadStored(repo, reviewId(repo, spec));
@@ -259,6 +263,17 @@ async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<
   await load(session, ctx);
 }
 
+/** Move state saved under the old name, once, and say so in the log if anything moved. */
+async function migrate(repo: Repo): Promise<void> {
+  try {
+    const { movedState, removedRefs } = await migrateLegacyState(repo);
+    if (movedState) log.appendLine(`  carried review state over from the old name in ${repo.root}`);
+    if (removedRefs > 0) log.appendLine(`  removed ${removedRefs} pull request refs left under the old name`);
+  } catch (error) {
+    log.appendLine(`  could not carry old state over: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 /**
  * Reopen whatever this window was reviewing when it was last closed.
  *
@@ -268,12 +283,13 @@ async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<
  * ask for.
  */
 async function restoreLast(host: SessionHost, ctx: Context): Promise<void> {
-  const spec = windowState.get<ReviewSpec>(LAST_REVIEW);
+  const spec = windowState.get<ReviewSpec>(LAST_REVIEW) ?? windowState.get<ReviewSpec>(LEGACY_LAST_REVIEW);
   if (!spec) return;
 
   const cwd = workspaceCwd();
   const repo = cwd ? await findRepo(cwd) : null;
   if (!repo) return;
+  await migrate(repo);
 
   const session = new Session(repo, spec);
   const stored = await loadStored(repo, reviewId(repo, spec));
@@ -293,7 +309,7 @@ async function resume(host: SessionHost, ctx: Context): Promise<void> {
 
   const [latest] = await listStored(repo);
   if (!latest) {
-    vscode.window.showInformationMessage('Change Stack: no saved review for this repository.');
+    vscode.window.showInformationMessage('Jury: no saved review for this repository.');
     return;
   }
   await open(host, latest.spec, ctx);
@@ -306,7 +322,7 @@ async function pickReview(host: SessionHost, ctx: Context): Promise<void> {
 
   const saved = await listStored(repo);
   if (saved.length === 0) {
-    vscode.window.showInformationMessage('Change Stack: no saved reviews for this repository.');
+    vscode.window.showInformationMessage('Jury: no saved reviews for this repository.');
     return;
   }
 
@@ -355,7 +371,7 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   }
   const message = describeRefresh(report);
   log.appendLine(`  ${message}`);
-  vscode.window.setStatusBarMessage(`Change Stack: ${message}`, 6000);
+  vscode.window.setStatusBarMessage(`Jury: ${message}`, 6000);
 }
 
 /** Persist, and say so plainly if it failed rather than letting a tick be a lie. */
@@ -365,7 +381,7 @@ async function persist(session: Session): Promise<void> {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     log.appendLine(`  could not save review state: ${detail}`);
-    vscode.window.showWarningMessage(`Change Stack: review progress was not saved — ${detail}`);
+    vscode.window.showWarningMessage(`Jury: review progress was not saved — ${detail}`);
   }
 }
 
@@ -479,11 +495,11 @@ async function cluster(session: Session, ctx: Context, deps: AgentDeps): Promise
 
   const count = session.cohorts.filter((cohort) => cohort.kind !== 'scaffolding').length;
   vscode.window.setStatusBarMessage(
-    `Change Stack: reorganised into ${count} change${count === 1 ? '' : 's'}${result.cached ? ' (cached)' : ''}`,
+    `Jury: reorganised into ${count} change${count === 1 ? '' : 's'}${result.cached ? ' (cached)' : ''}`,
     6000,
   );
 
-  if (vscode.workspace.getConfiguration('changestack').get<boolean>('walkthrough.autoOpen', true)) {
+  if (vscode.workspace.getConfiguration('jury').get<boolean>('walkthrough.autoOpen', true)) {
     await showWalkthrough(session, ctx.documents);
   }
 }
@@ -520,7 +536,7 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
  * actually reads — so the cost rises exactly as the benefit falls. Grouping runs either way.
  */
 function worthSummarising(session: Session): boolean {
-  const limit = vscode.workspace.getConfiguration('changestack').get<number>('ai.summariseUpTo', 60);
+  const limit = vscode.workspace.getConfiguration('jury').get<number>('ai.summariseUpTo', 60);
   const files = session.files.filter(
     (file) => !file.binary && file.hunks.some((hunk) => hunk.kind === 'text' && !hunk.scaffolding),
   ).length;
@@ -558,7 +574,7 @@ function announceUnavailable(id: string, reason: string | undefined): void {
   announced = true;
   void vscode.window
     .showInformationMessage(
-      `Change Stack: ${id} is unavailable — ${reason ?? 'unknown'}. The review works without it, grouped by file.`,
+      `Jury: ${id} is unavailable — ${reason ?? 'unknown'}. The review works without it, grouped by file.`,
       'Show log',
     )
     .then((choice) => {
@@ -568,7 +584,7 @@ function announceUnavailable(id: string, reason: string | undefined): void {
 
 function applyProviderSettings(claude: ClaudeProvider, vscodeLm: VscodeLmProvider): void {
   const settings = vscode.workspace
-    .getConfiguration('changestack')
+    .getConfiguration('jury')
     .get<Record<string, { command?: string; models?: Record<string, string> }>>('providers', {});
 
   const own = settings['claude'];
@@ -587,7 +603,7 @@ function applyProviderSettings(claude: ClaudeProvider, vscodeLm: VscodeLmProvide
  * reason the tiers exist.
  */
 async function providerFor(pass: 'summaries' | 'clustering' | 'ask'): Promise<Provider | null> {
-  const config = vscode.workspace.getConfiguration('changestack');
+  const config = vscode.workspace.getConfiguration('jury');
   if (!config.get<boolean>('ai.enabled', true)) return null;
 
   const passes = config.get<Record<string, string>>('passes', {});
@@ -613,12 +629,12 @@ async function clearCache(host: SessionHost): Promise<void> {
   const cache = new Cache(path.join(stateDir(repo), 'cache'));
   const size = await cache.size();
   await cache.clear();
-  vscode.window.showInformationMessage(`Change Stack: cleared ${size} cached answers.`);
+  vscode.window.showInformationMessage(`Jury: cleared ${size} cached answers.`);
 }
 
 /** Read the user's settings, then classify. */
 async function classify(session: Session): Promise<void> {
-  const config = vscode.workspace.getConfiguration('changestack');
+  const config = vscode.workspace.getConfiguration('jury');
   await classifyScaffolding(session.repo, session.files, {
     mode: config.get<'collapse' | 'inline' | 'off'>('scaffolding.mode', 'collapse'),
     patterns: config.get<string[]>('scaffolding.patterns', []),
@@ -741,12 +757,12 @@ function updateBadge(view: vscode.TreeView<Node>, nav: Navigator, host: SessionH
 async function resolveRepo(): Promise<Repo | null> {
   const cwd = workspaceCwd();
   if (!cwd) {
-    vscode.window.showErrorMessage('Change Stack: open a folder first.');
+    vscode.window.showErrorMessage('Jury: open a folder first.');
     return null;
   }
   const repo = await findRepo(cwd);
   if (!repo) {
-    vscode.window.showErrorMessage(`Change Stack: ${cwd} is not inside a git repository.`);
+    vscode.window.showErrorMessage(`Jury: ${cwd} is not inside a git repository.`);
     return null;
   }
   return repo;
@@ -887,7 +903,7 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
   if (number === undefined) return;
 
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: 'Change Stack: fetching the pull request' },
+    { location: vscode.ProgressLocation.Notification, title: 'Jury: fetching the pull request' },
     async () => {
       try {
         const pr = await resolve(repo, number);
@@ -915,7 +931,7 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
         }
       } catch (error) {
         const message = error instanceof GhError ? error.message : String(error);
-        vscode.window.showErrorMessage(`Change Stack: ${message}`);
+        vscode.window.showErrorMessage(`Jury: ${message}`);
         log.appendLine(`  pull request review failed: ${message}`);
       }
     },
@@ -932,7 +948,7 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
 async function submitReview(host: SessionHost, documents: Documents): Promise<void> {
   const session = host.active;
   if (!session?.pr) {
-    vscode.window.showInformationMessage('Change Stack: open a pull request review first.');
+    vscode.window.showInformationMessage('Jury: open a pull request review first.');
     return;
   }
 
@@ -978,19 +994,19 @@ async function submitReview(host: SessionHost, documents: Documents): Promise<vo
     await persist(session);
 
     log.appendLine(`  review posted: ${url}`);
-    const open = await vscode.window.showInformationMessage('Change Stack: review posted.', 'Open on GitHub');
+    const open = await vscode.window.showInformationMessage('Jury: review posted.', 'Open on GitHub');
     if (open === 'Open on GitHub') await vscode.env.openExternal(vscode.Uri.parse(url));
   } catch (error) {
     const message = error instanceof GhError ? error.message : String(error);
     log.appendLine(`  submitting failed: ${message}`);
-    vscode.window.showErrorMessage(`Change Stack: the review was not posted — ${message}`);
+    vscode.window.showErrorMessage(`Jury: the review was not posted — ${message}`);
   }
 }
 
 async function runDoctor(): Promise<void> {
   const checks = await doctor(workspaceCwd());
   log.clear();
-  log.appendLine('Change Stack — doctor');
+  log.appendLine('Jury — doctor');
   log.appendLine('');
   log.appendLine(formatChecks(checks));
   log.show(true);

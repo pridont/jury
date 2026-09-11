@@ -42,7 +42,7 @@ export async function listRefs(repo: Repo, limit = 60): Promise<Ref[]> {
     const [name, full, when, subject] = line.split(SEP);
     if (!name || !full) continue;
     // Our own PR refs are machinery, not something to offer as a review target.
-    if (full.startsWith('refs/changestack/')) continue;
+    if (full.startsWith('refs/jury/')) continue;
     if (name.endsWith('/HEAD')) continue;
 
     refs.push({

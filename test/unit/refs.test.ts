@@ -17,7 +17,7 @@ const commit = async (message: string, file = 'a.txt') => {
 };
 
 beforeEach(async () => {
-  dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'changestack-refs-')));
+  dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'jury-refs-')));
   await git('init', '-q', '-b', 'main');
   await git('config', 'user.email', 'test@example.com');
   await git('config', 'user.name', 'Test');
@@ -66,7 +66,7 @@ describe('listRefs', () => {
 
   it('does not offer our own machinery as a review target', async () => {
     const head = (await git('rev-parse', 'HEAD')).stdout.trim();
-    await git('update-ref', 'refs/changestack/pr-141', head);
+    await git('update-ref', 'refs/jury/pr-141', head);
 
     const names = (await listRefs(repo)).map((ref) => ref.name);
     expect(names.some((name) => name.includes('pr-141'))).toBe(false);

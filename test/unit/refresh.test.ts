@@ -33,7 +33,7 @@ const branchHunks = async (): Promise<Hunk[]> => {
 };
 
 beforeEach(async () => {
-  dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'changestack-refresh-')));
+  dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'jury-refresh-')));
   await git('init', '-q', '-b', 'main');
   await git('config', 'user.email', 'test@example.com');
   await git('config', 'user.name', 'Test');

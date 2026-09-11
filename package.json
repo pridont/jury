@@ -1,17 +1,17 @@
 {
-  "name": "change-stack",
-  "displayName": "Change Stack",
+  "name": "jury",
+  "displayName": "Jury",
   "description": "Review a diff as an ordered stack of logical changes, not an alphabetical list of files. A model groups and orders the change; you judge the code.",
   "version": "0.0.1",
   "publisher": "pridont",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pridont/change-stack-vscode.git"
+    "url": "https://github.com/pridont/jury-vscode.git"
   },
-  "homepage": "https://github.com/pridont/change-stack-vscode#readme",
+  "homepage": "https://github.com/pridont/jury-vscode#readme",
   "bugs": {
-    "url": "https://github.com/pridont/change-stack-vscode/issues"
+    "url": "https://github.com/pridont/jury-vscode/issues"
   },
   "private": true,
   "engines": {
@@ -31,482 +31,482 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onView:changestack.stack"
+    "onView:jury.stack"
   ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "changestack",
-          "title": "Change Stack",
+          "id": "jury",
+          "title": "Jury",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "changestack": [
+      "jury": [
         {
-          "id": "changestack.stack",
-          "name": "Change Stack"
+          "id": "jury.stack",
+          "name": "Jury"
         }
       ]
     },
     "viewsWelcome": [
       {
-        "view": "changestack.stack",
-        "contents": "No review is open.\n[Review working tree](command:changestack.review)\n[Review staged changes](command:changestack.reviewStaged)\n[Review this branch](command:changestack.reviewBase)\n[Review a pull request](command:changestack.reviewPr)\n[Resume last review](command:changestack.resume)\n",
-        "when": "!changestack.active"
+        "view": "jury.stack",
+        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a pull request](command:jury.reviewPr)\n[Resume last review](command:jury.resume)\n",
+        "when": "!jury.active"
       }
     ],
     "commands": [
       {
-        "command": "changestack.review",
+        "command": "jury.review",
         "title": "Review Working Tree",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(git-compare)"
       },
       {
-        "command": "changestack.reviewStaged",
+        "command": "jury.reviewStaged",
         "title": "Review Staged Changes",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.reviewBase",
+        "command": "jury.reviewBase",
         "title": "Review This Branch\u2026",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.reviewPr",
+        "command": "jury.reviewPr",
         "title": "Review a Pull Request\u2026",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.submitReview",
+        "command": "jury.submitReview",
         "title": "Submit Review to GitHub\u2026",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(github)"
       },
       {
-        "command": "changestack.refresh",
+        "command": "jury.refresh",
         "title": "Refresh Review",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(refresh)"
       },
       {
-        "command": "changestack.close",
+        "command": "jury.close",
         "title": "Close Review",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(close)"
       },
       {
-        "command": "changestack.resume",
+        "command": "jury.resume",
         "title": "Resume Last Review",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.list",
+        "command": "jury.list",
         "title": "Open a Saved Review\u2026",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.doctor",
+        "command": "jury.doctor",
         "title": "Doctor",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.nextHunk",
+        "command": "jury.nextHunk",
         "title": "Next Hunk",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.prevHunk",
+        "command": "jury.prevHunk",
         "title": "Previous Hunk",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.nextLayer",
+        "command": "jury.nextLayer",
         "title": "Next Layer",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.prevLayer",
+        "command": "jury.prevLayer",
         "title": "Previous Layer",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.openLayer",
+        "command": "jury.openLayer",
         "title": "Open Layer",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.openCohort",
+        "command": "jury.openCohort",
         "title": "Open All Files in This Cohort",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(diff-multiple)"
       },
       {
-        "command": "changestack.toggleReviewed",
+        "command": "jury.toggleReviewed",
         "title": "Toggle Reviewed on This Hunk",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.markLayerReviewed",
+        "command": "jury.markLayerReviewed",
         "title": "Mark Layer Reviewed and Advance",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.markCohortReviewed",
+        "command": "jury.markCohortReviewed",
         "title": "Mark Cohort Reviewed",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(check-all)"
       },
       {
-        "command": "changestack.notScaffolding",
+        "command": "jury.notScaffolding",
         "title": "Not Scaffolding",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(eye)"
       },
       {
-        "command": "changestack.focusMode",
+        "command": "jury.focusMode",
         "title": "Focus Mode",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.createComment",
+        "command": "jury.createComment",
         "title": "Add Note",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.editComment",
+        "command": "jury.editComment",
         "title": "Edit",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(edit)"
       },
       {
-        "command": "changestack.saveComment",
+        "command": "jury.saveComment",
         "title": "Save",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.cancelComment",
+        "command": "jury.cancelComment",
         "title": "Cancel",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.deleteComment",
+        "command": "jury.deleteComment",
         "title": "Delete",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(trash)"
       },
       {
-        "command": "changestack.repinComment",
+        "command": "jury.repinComment",
         "title": "Re-pin to a Hunk\u2026",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(pin)"
       },
       {
-        "command": "changestack.discardComment",
+        "command": "jury.discardComment",
         "title": "Discard",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(trash)"
       },
       {
-        "command": "changestack.export",
+        "command": "jury.export",
         "title": "Export Review as Markdown",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(markdown)"
       },
       {
-        "command": "changestack.clearCache",
+        "command": "jury.clearCache",
         "title": "Clear Model Answer Cache",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.showLog",
+        "command": "jury.showLog",
         "title": "Show Log",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(output)"
       },
       {
-        "command": "changestack.walkthrough",
+        "command": "jury.walkthrough",
         "title": "Show Walkthrough",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(book)"
       },
       {
-        "command": "changestack.recluster",
+        "command": "jury.recluster",
         "title": "Reorganise the Stack",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(sparkle)"
       },
       {
-        "command": "changestack.openLayerFile",
+        "command": "jury.openLayerFile",
         "title": "Open File",
-        "category": "Change Stack"
+        "category": "Jury"
       },
       {
-        "command": "changestack.openLayerFiles",
+        "command": "jury.openLayerFiles",
         "title": "Open All Files in This Step",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(diff-multiple)"
       },
       {
-        "command": "changestack.ask",
+        "command": "jury.ask",
         "title": "Ask About This Hunk",
-        "category": "Change Stack",
+        "category": "Jury",
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "changestack.askStep",
+        "command": "jury.askStep",
         "title": "Ask About This Step",
-        "category": "Change Stack"
+        "category": "Jury"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "changestack.walkthrough",
-          "when": "view == changestack.stack && changestack.active",
+          "command": "jury.walkthrough",
+          "when": "view == jury.stack && jury.active",
           "group": "navigation@0"
         },
         {
-          "command": "changestack.export",
-          "when": "view == changestack.stack && changestack.active",
+          "command": "jury.export",
+          "when": "view == jury.stack && jury.active",
           "group": "navigation@0"
         },
         {
-          "command": "changestack.refresh",
-          "when": "view == changestack.stack && changestack.active",
+          "command": "jury.refresh",
+          "when": "view == jury.stack && jury.active",
           "group": "navigation@1"
         },
         {
-          "command": "changestack.close",
-          "when": "view == changestack.stack && changestack.active",
+          "command": "jury.close",
+          "when": "view == jury.stack && jury.active",
           "group": "navigation@2"
         },
         {
-          "command": "changestack.showLog",
-          "when": "view == changestack.stack",
+          "command": "jury.showLog",
+          "when": "view == jury.stack",
           "group": "1_log@1"
         },
         {
-          "command": "changestack.recluster",
-          "when": "view == changestack.stack && changestack.active",
+          "command": "jury.recluster",
+          "when": "view == jury.stack && jury.active",
           "group": "1_log@0"
         },
         {
-          "command": "changestack.submitReview",
-          "when": "view == changestack.stack && changestack.pr",
+          "command": "jury.submitReview",
+          "when": "view == jury.stack && jury.pr",
           "group": "1_log@2"
         }
       ],
       "view/item/context": [
         {
-          "command": "changestack.openCohort",
-          "when": "view == changestack.stack && viewItem =~ /^cohort/",
+          "command": "jury.openCohort",
+          "when": "view == jury.stack && viewItem =~ /^cohort/",
           "group": "inline@1"
         },
         {
-          "command": "changestack.openCohort",
-          "when": "view == changestack.stack && viewItem =~ /^cohort/",
+          "command": "jury.openCohort",
+          "when": "view == jury.stack && viewItem =~ /^cohort/",
           "group": "navigation@1"
         },
         {
-          "command": "changestack.markCohortReviewed",
-          "when": "view == changestack.stack && viewItem =~ /^cohort/",
+          "command": "jury.markCohortReviewed",
+          "when": "view == jury.stack && viewItem =~ /^cohort/",
           "group": "navigation@2"
         },
         {
-          "command": "changestack.notScaffolding",
-          "when": "view == changestack.stack && viewItem == cohort-scaffolding",
+          "command": "jury.notScaffolding",
+          "when": "view == jury.stack && viewItem == cohort-scaffolding",
           "group": "navigation@3"
         },
         {
-          "command": "changestack.notScaffolding",
-          "when": "view == changestack.stack && viewItem == layer",
+          "command": "jury.notScaffolding",
+          "when": "view == jury.stack && viewItem == layer",
           "group": "navigation@3"
         },
         {
-          "command": "changestack.openLayer",
-          "when": "view == changestack.stack && viewItem == layer",
+          "command": "jury.openLayer",
+          "when": "view == jury.stack && viewItem == layer",
           "group": "navigation@1"
         },
         {
-          "command": "changestack.repinComment",
-          "when": "view == changestack.stack && viewItem == orphan",
+          "command": "jury.repinComment",
+          "when": "view == jury.stack && viewItem == orphan",
           "group": "inline@1"
         },
         {
-          "command": "changestack.discardComment",
-          "when": "view == changestack.stack && viewItem == orphan",
+          "command": "jury.discardComment",
+          "when": "view == jury.stack && viewItem == orphan",
           "group": "inline@2"
         },
         {
-          "command": "changestack.openLayerFiles",
-          "when": "view == changestack.stack && viewItem == layer",
+          "command": "jury.openLayerFiles",
+          "when": "view == jury.stack && viewItem == layer",
           "group": "inline@1"
         },
         {
-          "command": "changestack.openLayerFiles",
-          "when": "view == changestack.stack && viewItem == layer",
+          "command": "jury.openLayerFiles",
+          "when": "view == jury.stack && viewItem == layer",
           "group": "navigation@0"
         }
       ],
       "commandPalette": [
         {
-          "command": "changestack.refresh",
-          "when": "changestack.active"
+          "command": "jury.refresh",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.close",
-          "when": "changestack.active"
+          "command": "jury.close",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.openLayer",
+          "command": "jury.openLayer",
           "when": "false"
         },
         {
-          "command": "changestack.openCohort",
+          "command": "jury.openCohort",
           "when": "false"
         },
         {
-          "command": "changestack.notScaffolding",
+          "command": "jury.notScaffolding",
           "when": "false"
         },
         {
-          "command": "changestack.nextHunk",
-          "when": "changestack.active"
+          "command": "jury.nextHunk",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.prevHunk",
-          "when": "changestack.active"
+          "command": "jury.prevHunk",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.nextLayer",
-          "when": "changestack.active"
+          "command": "jury.nextLayer",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.prevLayer",
-          "when": "changestack.active"
+          "command": "jury.prevLayer",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.toggleReviewed",
-          "when": "changestack.active"
+          "command": "jury.toggleReviewed",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.markLayerReviewed",
-          "when": "changestack.active"
+          "command": "jury.markLayerReviewed",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.focusMode",
-          "when": "changestack.active"
+          "command": "jury.focusMode",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.markCohortReviewed",
+          "command": "jury.markCohortReviewed",
           "when": "false"
         },
         {
-          "command": "changestack.createComment",
+          "command": "jury.createComment",
           "when": "false"
         },
         {
-          "command": "changestack.editComment",
+          "command": "jury.editComment",
           "when": "false"
         },
         {
-          "command": "changestack.saveComment",
+          "command": "jury.saveComment",
           "when": "false"
         },
         {
-          "command": "changestack.cancelComment",
+          "command": "jury.cancelComment",
           "when": "false"
         },
         {
-          "command": "changestack.deleteComment",
+          "command": "jury.deleteComment",
           "when": "false"
         },
         {
-          "command": "changestack.repinComment",
+          "command": "jury.repinComment",
           "when": "false"
         },
         {
-          "command": "changestack.discardComment",
+          "command": "jury.discardComment",
           "when": "false"
         },
         {
-          "command": "changestack.export",
-          "when": "changestack.active"
+          "command": "jury.export",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.walkthrough",
-          "when": "changestack.active"
+          "command": "jury.walkthrough",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.recluster",
-          "when": "changestack.active"
+          "command": "jury.recluster",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.openLayerFile",
+          "command": "jury.openLayerFile",
           "when": "false"
         },
         {
-          "command": "changestack.openLayerFiles",
+          "command": "jury.openLayerFiles",
           "when": "false"
         },
         {
-          "command": "changestack.ask",
-          "when": "changestack.active"
+          "command": "jury.ask",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.askStep",
-          "when": "changestack.active"
+          "command": "jury.askStep",
+          "when": "jury.active"
         },
         {
-          "command": "changestack.submitReview",
-          "when": "changestack.pr"
+          "command": "jury.submitReview",
+          "when": "jury.pr"
         }
       ],
       "comments/commentThread/context": [
         {
-          "command": "changestack.createComment",
+          "command": "jury.createComment",
           "group": "inline@1",
-          "when": "commentController == changestack"
+          "when": "commentController == jury"
         }
       ],
       "comments/comment/title": [
         {
-          "command": "changestack.editComment",
+          "command": "jury.editComment",
           "group": "group@1",
-          "when": "commentController == changestack && comment == changestack"
+          "when": "commentController == jury && comment == jury"
         },
         {
-          "command": "changestack.deleteComment",
+          "command": "jury.deleteComment",
           "group": "group@2",
-          "when": "commentController == changestack && comment == changestack"
+          "when": "commentController == jury && comment == jury"
         }
       ],
       "comments/comment/context": [
         {
-          "command": "changestack.saveComment",
+          "command": "jury.saveComment",
           "group": "inline@1",
-          "when": "commentController == changestack"
+          "when": "commentController == jury"
         },
         {
-          "command": "changestack.cancelComment",
+          "command": "jury.cancelComment",
           "group": "inline@2",
-          "when": "commentController == changestack"
+          "when": "commentController == jury"
         }
       ]
     },
     "configuration": {
-      "title": "Change Stack",
+      "title": "Jury",
       "properties": {
-        "changestack.ai.enabled": {
+        "jury.ai.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Use a model to group, order and summarise the change. With this off the review still works, grouped by file."
         },
-        "changestack.provider": {
+        "jury.provider": {
           "type": "string",
           "default": "claude",
           "enum": [
@@ -519,7 +519,7 @@
             "Your editor's chat models (Copilot and anything else installed). No API key; cannot read the repository, so answers come from the diff alone."
           ]
         },
-        "changestack.providers": {
+        "jury.providers": {
           "type": "object",
           "default": {
             "claude": {
@@ -536,13 +536,13 @@
           },
           "description": "Per-provider settings: executable and the model used for each tier."
         },
-        "changestack.passes": {
+        "jury.passes": {
           "type": "object",
           "default": {},
-          "description": "Route individual passes to different providers, e.g. { \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }. Unset passes use changestack.provider.",
-          "markdownDescription": "Route individual passes to different providers, e.g. `{ \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }`. Summaries are many small calls; clustering is the one call that decides the reading order. Unset passes use `changestack.provider`."
+          "description": "Route individual passes to different providers, e.g. { \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }. Unset passes use jury.provider.",
+          "markdownDescription": "Route individual passes to different providers, e.g. `{ \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }`. Summaries are many small calls; clustering is the one call that decides the reading order. Unset passes use `jury.provider`."
         },
-        "changestack.scaffolding.mode": {
+        "jury.scaffolding.mode": {
           "type": "string",
           "default": "collapse",
           "enum": [
@@ -557,7 +557,7 @@
           ],
           "description": "What to do with generated files, lockfiles and generator output."
         },
-        "changestack.scaffolding.patterns": {
+        "jury.scaffolding.patterns": {
           "type": "array",
           "items": {
             "type": "string"
@@ -565,12 +565,12 @@
           "default": [],
           "description": "Extra globs treated as scaffolding. Prefix with ! to force a path back into the review."
         },
-        "changestack.walkthrough.autoOpen": {
+        "jury.walkthrough.autoOpen": {
           "type": "boolean",
           "default": true,
           "description": "Open the walkthrough when the model finishes organising the change. It is the thing to read before any code."
         },
-        "changestack.ai.summariseUpTo": {
+        "jury.ai.summariseUpTo": {
           "type": "number",
           "default": 60,
           "minimum": 0,
@@ -580,61 +580,61 @@
     },
     "keybindings": [
       {
-        "command": "changestack.nextHunk",
+        "command": "jury.nextHunk",
         "key": "alt+j",
-        "when": "changestack.active"
+        "when": "jury.active"
       },
       {
-        "command": "changestack.prevHunk",
+        "command": "jury.prevHunk",
         "key": "alt+k",
-        "when": "changestack.active"
+        "when": "jury.active"
       },
       {
-        "command": "changestack.nextLayer",
+        "command": "jury.nextLayer",
         "key": "alt+shift+j",
-        "when": "changestack.active"
+        "when": "jury.active"
       },
       {
-        "command": "changestack.prevLayer",
+        "command": "jury.prevLayer",
         "key": "alt+shift+k",
-        "when": "changestack.active"
+        "when": "jury.active"
       },
       {
-        "command": "changestack.toggleReviewed",
+        "command": "jury.toggleReviewed",
         "key": "alt+m",
-        "when": "changestack.active"
+        "when": "jury.active"
       },
       {
-        "command": "changestack.markLayerReviewed",
+        "command": "jury.markLayerReviewed",
         "key": "alt+shift+m",
-        "when": "changestack.active"
+        "when": "jury.active"
       },
       {
-        "command": "changestack.focusMode",
+        "command": "jury.focusMode",
         "key": "alt+z",
-        "when": "changestack.active"
+        "when": "jury.active"
       },
       {
-        "command": "changestack.walkthrough",
+        "command": "jury.walkthrough",
         "key": "alt+s",
-        "when": "changestack.active"
+        "when": "jury.active"
       },
       {
-        "command": "changestack.ask",
+        "command": "jury.ask",
         "key": "alt+a",
-        "when": "changestack.active"
+        "when": "jury.active"
       },
       {
-        "command": "changestack.askStep",
+        "command": "jury.askStep",
         "key": "alt+shift+a",
-        "when": "changestack.active"
+        "when": "jury.active"
       }
     ],
     "chatParticipants": [
       {
-        "id": "changestack.ask",
-        "name": "changestack",
-        "fullName": "Change Stack",
+        "id": "jury.ask",
+        "name": "jury",
+        "fullName": "Jury",
         "description": "Ask about the change you are reading",
         "isSticky": true,
         "commands": [

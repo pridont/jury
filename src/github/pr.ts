@@ -26,7 +26,7 @@ export class GhError extends Error {
 
 /** The local ref a PR head is fetched into. Nothing is ever checked out. */
 export function refFor(number: number): string {
-  return `refs/changestack/pr-${number}`;
+  return `refs/jury/pr-${number}`;
 }
 
 /**

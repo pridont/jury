@@ -22,7 +22,7 @@ export class Comments implements vscode.Disposable {
   readonly onDidChange = this.changed.event;
 
   constructor() {
-    this.controller = vscode.comments.createCommentController('changestack', 'Change Stack');
+    this.controller = vscode.comments.createCommentController('jury', 'Jury');
     this.controller.options = { prompt: 'Leave a review note', placeHolder: 'What is worth saying here?' };
 
     // Only offer to comment where there is actually a hunk. A gutter that invites a note on
@@ -58,7 +58,7 @@ export class Comments implements vscode.Disposable {
     const line = reply.thread.range?.start.line ?? 0;
     const located = this.locate(reply.thread.uri, line + 1);
     if (!located) {
-      vscode.window.showWarningMessage('Change Stack: a note has to sit on a changed line.');
+      vscode.window.showWarningMessage('Jury: a note has to sit on a changed line.');
       reply.thread.dispose();
       return;
     }
@@ -214,7 +214,7 @@ export class Comments implements vscode.Disposable {
       body: new vscode.MarkdownString(comment.body),
       mode: vscode.CommentMode.Preview,
       author: { name: 'You' },
-      contextValue: 'changestack',
+      contextValue: 'jury',
       stored: comment,
     };
   }

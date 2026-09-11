@@ -10,7 +10,7 @@ let dir: string;
 let repo: Repo;
 
 beforeEach(async () => {
-  dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'changestack-store-')));
+  dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'jury-store-')));
   await run('git', ['init', '-q', '-b', 'main'], { cwd: dir });
   repo = (await findRepo(dir))!;
 });

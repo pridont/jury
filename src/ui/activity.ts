@@ -26,7 +26,7 @@ export class Activity implements vscode.Disposable {
 
     if (this.finish) return;
     void vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: 'Change Stack' },
+      { location: vscode.ProgressLocation.Window, title: 'Jury' },
       (progress) =>
         new Promise<void>((resolve) => {
           this.report = (value) => progress.report(value);
