@@ -1,0 +1,7 @@
+# The diff fixtures are compared byte for byte. Converting their line endings on checkout,
+# which git does by default on Windows, adds a \r to every header line, so leave them alone.
+test/fixtures/*.diff -text
+test/eval/fixtures/*.diff -text
+
+# Shell scripts break with CRLF line endings.
+*.sh text eol=lf

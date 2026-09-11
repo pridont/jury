@@ -34,10 +34,13 @@ export async function findRepo(cwd: string): Promise<Repo | null> {
   });
   if (result.code !== 0) return null;
 
-  const [root, commonDir, gitDir] = result.stdout.trim().split('\n');
-  if (!root || !commonDir || !gitDir) return null;
+  const [reported, commonDir, gitDir] = result.stdout.trim().split(/\r?\n/);
+  if (!reported || !commonDir || !gitDir) return null;
 
-  const absolute = (p: string) => (path.isAbsolute(p) ? p : path.resolve(root, p));
+  // git answers with forward slashes on Windows (C:/Users/...). Resolve everything to the
+  // platform's own form so these paths compare equal to ones from Node and VS Code.
+  const root = path.resolve(reported);
+  const absolute = (p: string) => path.resolve(root, p);
   const common = absolute(commonDir);
 
   return {

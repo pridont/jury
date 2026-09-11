@@ -11,19 +11,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        node: [20, 22]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: lts/*
           cache: npm
       - run: npm ci
 
-      # The fixtures are generated from real git rather than hand-written, so the tests need
-      # an identity to commit with.
+      # The tests create and commit to throwaway repositories, so git needs an identity.
       - name: Configure git
         run: |
           git config --global user.email "ci@example.com"
@@ -34,35 +32,13 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # Windows has never been tried. `git rev-parse --show-toplevel` answers with forward
-  # slashes while `fs.realpath` answers with backslashes, and several tests compare the two,
-  # so this is expected to have something to say. It reports rather than gates until someone
-  # has actually read what it says.
-  windows:
-    runs-on: windows-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Configure git
-        run: |
-          git config --global user.email "ci@example.com"
-          git config --global user.name "CI"
-          git config --global init.defaultBranch main
-      - run: npm run check
-      - run: npm test
-
   package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: lts/*
           cache: npm
       - run: npm ci
       - run: npm run package
