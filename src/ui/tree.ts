@@ -77,10 +77,13 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // A cohort of one layer says everything its child would. Expanding it to a row that
         // repeats the title is noise, so it becomes that row: openable, tickable, one line.
         const only = node.cohort.layers.length === 1 ? node.cohort.layers[0] : undefined;
+        // Becoming that row must not take the row's children with it: a single step spanning
+        // files still expands to them, or those files exist nowhere in the tree at all.
+        const spans = only !== undefined && only.paths.length > 1;
 
         const item = new vscode.TreeItem(
           scaffolding ? node.cohort.title : `${node.index + 1}. ${node.cohort.title}`,
-          only
+          only && !spans
             ? vscode.TreeItemCollapsibleState.None
             : scaffolding
               ? vscode.TreeItemCollapsibleState.Collapsed
@@ -91,7 +94,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const hunks = node.cohort.layers.reduce((n, layer) => n + layer.hunkIds.length, 0);
         const onlyPath = only?.paths.length === 1 ? only.paths[0] : undefined;
         const files = new Set(node.cohort.layers.flatMap((layer) => layer.paths)).size;
-        const where = onlyPath ? directory(onlyPath) : `${files} file${files === 1 ? '' : 's'}`;
+        const where = onlyPath ?? `${files} file${files === 1 ? '' : 's'}`;
         item.description = [
           onlyPath ? statusNote(session, onlyPath) : '',
           where,
@@ -184,7 +187,12 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // A heuristic layer is a file; a model's layer is a step that may span several. Use
         // the paths it recorded rather than reading the title as if it were one.
         const single = node.layer.paths.length === 1 ? node.layer.paths[0] : undefined;
-        const label = single ? name(single) : node.layer.title;
+        // The heuristic names a layer after its file, and that row should read as the file.
+        // A model's layer is a step, and overwriting "Diff a commit against its first
+        // parent" with `source.ts` turns the reading order back into the alphabetical file
+        // list this whole thing exists to replace. So the file moves to the description.
+        const named = single !== undefined && node.layer.title === single;
+        const label = named && single !== undefined ? name(single) : node.layer.title;
         // A step that spans files opens as those files; it also expands to them, so what it
         // touches is visible without opening anything.
         const item = new vscode.TreeItem(
@@ -199,7 +207,9 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           : 0;
         const summary = single ? session?.summaries.get(single) : undefined;
         const where = single
-          ? directory(single)
+          ? named
+            ? directory(single)
+            : single
           : `${node.layer.paths.length} file${node.layer.paths.length === 1 ? '' : 's'}`;
         // Notes first: in a narrow view the tail is what gets truncated, and "there is
         // something written here" matters more than the hunk count it would push off.
@@ -268,7 +278,20 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     }
 
     if (node.type === 'cohort') {
-      if (node.cohort.layers.length === 1) return [];
+      const only = node.cohort.layers.length === 1 ? node.cohort.layers[0] : undefined;
+      if (only) {
+        // The cohort row already says what the layer would, so the layer row is skipped —
+        // but its files are rows of their own, hanging off the cohort instead.
+        if (only.paths.length <= 1) return [];
+        return only.paths.map((path) => ({
+          type: 'layerFile',
+          cohortIndex: node.index,
+          layerIndex: 0,
+          cohort: node.cohort,
+          layer: only,
+          path,
+        }));
+      }
       return node.cohort.layers.map((layer, layerIndex) => ({
         type: 'layer',
         cohortIndex: node.index,
@@ -283,6 +306,12 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
 
   getParent(node: Node): Node | undefined {
     if (node.type === 'layerFile') {
+      // When the cohort collapsed to its only layer, the cohort row is the parent. Naming
+      // the layer row here would name an element the tree never rendered, and reveal — which
+      // walks this chain — would not find the file it was asked to select.
+      if (node.cohort.layers.length === 1) {
+        return { type: 'cohort', cohort: node.cohort, index: node.cohortIndex };
+      }
       return {
         type: 'layer',
         cohortIndex: node.cohortIndex,
