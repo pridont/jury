@@ -117,20 +117,13 @@ export class Navigator implements vscode.Disposable {
   }
 
   /**
-   * Open what the reader needs to see.
+   * One editor, on the file the position is in.
    *
-   * A layer is a step in the reading, and a step routinely spans files. Opening every file
-   * of the layer at once means the step arrives whole, rather than one file at a time with
-   * no way to see what else it touches.
+   * Opening a step's other files here too cost two view switches per move, and a multi-file
+   * editor cannot host the reading anyway: its panes are not `visibleTextEditors`, so the
+   * reveal and the decorations have nothing to attach to. Opening a whole step is an action.
    */
   private async open(entry: Entry): Promise<vscode.TextEditor | undefined> {
-    const others = entry.layer.paths.length;
-    if (others > 1) {
-      const files = entry.layer.paths
-        .map((path) => this.session.files.find((file) => file.path === path))
-        .filter((file): file is FileChange => file !== undefined);
-      await openMultiDiff(this.session, entry.layer.title, files);
-    }
     return openFileDiff(this.session, entry.file);
   }
 
