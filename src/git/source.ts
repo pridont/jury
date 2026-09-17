@@ -61,6 +61,19 @@ export async function acquire(repo: Repo, spec: ReviewSpec, contextLines = 3): P
       return { base, head, files: parseDiff(text) };
     }
 
+    case 'commit': {
+      const head = await resolve(repo, spec.sha);
+      // Read against the first parent: for a merge that is the branch it landed on, so the
+      // diff is what merging brought in. A root commit has no parent and reads against the
+      // empty tree, the same base a first commit gets everywhere else here.
+      const base = (await firstParent(repo, head)) ?? EMPTY_TREE;
+      const text = await runOk('git', [...DIFF_ARGS, ...unified, base, head], {
+        cwd: repo.root,
+        timeoutMs: 60_000,
+      });
+      return { base, head, files: parseDiff(text) };
+    }
+
     case 'pr': {
       // The head is already fetched into a ref of our own by the caller; nothing is checked
       // out, and both sides of the diff are read straight from git.
@@ -79,6 +92,14 @@ async function resolve(repo: Repo, rev: string): Promise<string> {
     timeoutMs: 10_000,
   });
   return out.trim();
+}
+
+async function firstParent(repo: Repo, commit: string): Promise<string | null> {
+  const result = await run('git', ['rev-parse', '--verify', '--quiet', `${commit}^1^{commit}`], {
+    cwd: repo.root,
+    timeoutMs: 10_000,
+  });
+  return result.code === 0 ? result.stdout.trim() : null;
 }
 
 async function headOrEmptyTree(repo: Repo): Promise<string> {

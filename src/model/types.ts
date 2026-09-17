@@ -4,7 +4,9 @@ export type ReviewSpec =
   | { kind: 'staged' }
   | { kind: 'range'; base: string; head: string; threeDot: boolean }
   /** `base` and `head` are resolved commits: a pull request review compares exact objects. */
-  | { kind: 'pr'; number: number; base: string; head: string; title?: string };
+  | { kind: 'pr'; number: number; base: string; head: string; title?: string }
+  /** One commit, read against its first parent. `sha` is full; `subject` is for the label. */
+  | { kind: 'commit'; sha: string; subject?: string };
 
 export function describeSpec(spec: ReviewSpec): string {
   switch (spec.kind) {
@@ -16,6 +18,10 @@ export function describeSpec(spec: ReviewSpec): string {
       return `${spec.base}${spec.threeDot ? '...' : '..'}${spec.head}`;
     case 'pr':
       return spec.title ? `#${spec.number} — ${spec.title}` : `pull request #${spec.number}`;
+    case 'commit': {
+      const short = spec.sha.slice(0, 8);
+      return spec.subject ? `${short} — ${spec.subject}` : `commit ${short}`;
+    }
   }
 }
 

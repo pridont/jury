@@ -55,7 +55,7 @@
     "viewsWelcome": [
       {
         "view": "jury.stack",
-        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a pull request](command:jury.reviewPr)\n[Resume last review](command:jury.resume)\n",
+        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a commit](command:jury.reviewCommit)\n[Review a pull request](command:jury.reviewPr)\n[Resume last review](command:jury.resume)\n",
         "when": "!jury.active"
       }
     ],
@@ -74,6 +74,11 @@
       {
         "command": "jury.reviewBase",
         "title": "Review This Branch…",
+        "category": "Jury"
+      },
+      {
+        "command": "jury.reviewCommit",
+        "title": "Review a Commit…",
         "category": "Jury"
       },
       {
@@ -284,6 +289,11 @@
           "command": "jury.close",
           "when": "view == jury.stack && jury.active",
           "group": "navigation@2"
+        },
+        {
+          "command": "jury.reviewCommit",
+          "when": "view == jury.stack",
+          "group": "0_review@0"
         },
         {
           "command": "jury.showLog",

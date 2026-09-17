@@ -161,6 +161,56 @@ describe('acquire range', () => {
   });
 });
 
+describe('acquire commit', () => {
+  it('reads a commit against its parent, not against the working tree', async () => {
+    await write('app.txt', 'a\nb\n');
+    await commit('base');
+    await write('app.txt', 'a\nB\n');
+    await commit('the one under review');
+    // Uncommitted noise on top must not leak into a review of a commit.
+    await write('app.txt', 'a\nB\nlater\n');
+
+    const result = await acquire(repo, { kind: 'commit', sha: 'HEAD' });
+    expect(result.files.map((f) => f.path)).toEqual(['app.txt']);
+    expect(result.files[0]!.stats).toEqual({ added: 1, removed: 1 });
+  });
+
+  it('reads a root commit against the empty tree, so the first commit is reviewable', async () => {
+    await write('first.txt', 'a\n');
+    await commit('root');
+
+    const result = await acquire(repo, { kind: 'commit', sha: 'HEAD' });
+    expect(result.files.map((f) => f.path)).toEqual(['first.txt']);
+    expect(result.files[0]!.status).toBe('added');
+  });
+
+  it('reads a merge against its first parent: what merging brought in', async () => {
+    await write('app.txt', 'a\n');
+    await commit('base');
+    await git('checkout', '-q', '-b', 'feature');
+    await write('feature.txt', 'f\n');
+    await commit('feature work');
+    await git('checkout', '-q', 'main');
+    await write('trunk.txt', 't\n');
+    await commit('trunk work');
+    await git('merge', '-q', '--no-ff', '-m', 'merge feature', 'feature');
+
+    const result = await acquire(repo, { kind: 'commit', sha: 'HEAD' });
+    expect(result.files.map((f) => f.path)).toEqual(['feature.txt']);
+  });
+
+  it('records the commit it resolved, whatever revision was asked for', async () => {
+    await write('app.txt', 'a\n');
+    await commit('base');
+    await write('app.txt', 'b\n');
+    await commit('second');
+
+    const head = (await git('rev-parse', 'HEAD')).stdout.trim();
+    const result = await acquire(repo, { kind: 'commit', sha: head.slice(0, 8) });
+    expect(result.head).toBe(head);
+  });
+});
+
 async function commit_empty(): Promise<void> {
   await write('.keep', '');
   await commit('base');

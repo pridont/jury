@@ -37,7 +37,7 @@ import { describeRefresh, reconcileMarks } from './state/reconcile.js';
 import { migrateLegacyState } from './state/migrate.js';
 import { describeSpec } from './model/types.js';
 import { fetchHead, listOpen, resolve, viewedFiles, GhError, type PullRequest } from './github/pr.js';
-import { defaultBranch, listRefs, recentCommits, type Ref } from './git/refs.js';
+import { defaultBranch, describeCommit, listRefs, recentCommits, type Ref } from './git/refs.js';
 import { pickOrType } from './ui/pick.js';
 import { prepare, preview, recordPosted, submit, type ReviewEvent } from './github/submit.js';
 
@@ -135,6 +135,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.review', () => open(host, { kind: 'worktree' }, ctx())),
     vscode.commands.registerCommand('jury.reviewStaged', () => open(host, { kind: 'staged' }, ctx())),
     vscode.commands.registerCommand('jury.reviewBase', () => reviewBase(host, ctx())),
+    vscode.commands.registerCommand('jury.reviewCommit', () => reviewCommit(host, ctx())),
     vscode.commands.registerCommand('jury.reviewPr', () => reviewPr(host, ctx())),
     vscode.commands.registerCommand('jury.submitReview', () => submitReview(host, documents)),
     vscode.commands.registerCommand('jury.refresh', () => refresh(host, ctx())),
@@ -829,6 +830,50 @@ async function reviewBase(host: SessionHost, ctx: Context): Promise<void> {
   if (!base) return;
 
   await open(host, { kind: 'range', base, head: 'HEAD', threeDot: true }, ctx);
+}
+
+/**
+ * Review one commit.
+ *
+ * Picked from recent commits, or typed: any revision git understands, resolved to the commit
+ * it names so the review records the commit rather than the spelling.
+ *
+ * The commit is chosen in Jury's own view rather than by right-clicking the Source Control
+ * graph: `scm/historyItem/context` is a proposed menu, and contributing to it errors for
+ * everyone not running with `--enable-proposed-api`.
+ */
+async function reviewCommit(host: SessionHost, ctx: Context): Promise<void> {
+  const repo = await resolveRepo();
+  if (!repo) return;
+
+  const rev = await pickCommit(repo);
+  if (!rev) return;
+
+  const commit = await describeCommit(repo, rev);
+  if (!commit) {
+    vscode.window.showErrorMessage(`Jury: ${rev} is not a commit in this repository.`);
+    return;
+  }
+
+  const spec = commit.subject
+    ? ({ kind: 'commit', sha: commit.sha, subject: commit.subject } as const)
+    : ({ kind: 'commit', sha: commit.sha } as const);
+  await open(host, spec, ctx);
+}
+
+async function pickCommit(repo: Repo): Promise<string | undefined> {
+  const commits = await recentCommits(repo, 40);
+  return pickOrType<string>({
+    title: 'Review a commit',
+    placeholder: commits.length > 0 ? 'Pick a commit, or type any revision' : 'Type a revision',
+    choices: commits.map((ref) => ({
+      label: ref.name,
+      description: ref.when,
+      detail: ref.subject,
+      value: ref.name,
+    })),
+    fromText: (text) => ({ label: text, value: text }),
+  });
 }
 
 function describeRef(ref: Ref): string {

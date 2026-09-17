@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { run } from '../../src/util/exec.js';
 import { findRepo, type Repo } from '../../src/git/repo.js';
-import { defaultBranch, listRefs, recentCommits } from '../../src/git/refs.js';
+import { defaultBranch, describeCommit, listRefs, recentCommits } from '../../src/git/refs.js';
 
 let dir: string;
 let repo: Repo;
@@ -101,5 +101,32 @@ describe('defaultBranch', () => {
   it('is null when nothing conventional exists', async () => {
     await git('branch', '-m', 'main', 'trunk');
     expect(await defaultBranch(repo)).toBeNull();
+  });
+});
+
+describe('describeCommit', () => {
+  it('resolves a revision to the commit it names, with its subject', async () => {
+    await commit('the change under review');
+    const head = (await git('rev-parse', 'HEAD')).stdout.trim();
+
+    expect(await describeCommit(repo, 'HEAD')).toEqual({ sha: head, subject: 'the change under review' });
+    expect(await describeCommit(repo, head.slice(0, 8))).toEqual({
+      sha: head,
+      subject: 'the change under review',
+    });
+  });
+
+  it('resolves a tag and a relative revision to the same commit git would', async () => {
+    await commit('second');
+    await git('tag', 'v1');
+    await commit('third');
+
+    const tagged = await describeCommit(repo, 'v1');
+    expect(tagged?.subject).toBe('second');
+    expect((await describeCommit(repo, 'HEAD~1'))?.sha).toBe(tagged?.sha);
+  });
+
+  it('returns null for something that is not a commit, rather than throwing', async () => {
+    expect(await describeCommit(repo, 'no-such-revision')).toBeNull();
   });
 });

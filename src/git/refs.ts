@@ -75,6 +75,24 @@ export async function recentCommits(repo: Repo, limit = 20): Promise<Ref[]> {
     }));
 }
 
+/**
+ * Resolve anything git accepts as a revision to the commit it names.
+ *
+ * `HEAD~3`, a tag, a branch, an eight-character prefix: the reviewer types what they
+ * remember, and a review has to record the commit rather than the way it was spelled.
+ */
+export async function describeCommit(repo: Repo, rev: string): Promise<{ sha: string; subject: string } | null> {
+  const result = await run('git', ['log', '-1', `--format=%H${SEP}%s`, `${rev}^{commit}`, '--'], {
+    cwd: repo.root,
+    timeoutMs: 10_000,
+  }).catch(() => null);
+  if (!result || result.code !== 0) return null;
+
+  const [sha, subject] = result.stdout.trim().split(SEP);
+  if (!sha) return null;
+  return { sha, subject: subject ?? '' };
+}
+
 /** What this repository considers its trunk, so it can be offered first. */
 export async function defaultBranch(repo: Repo): Promise<string | null> {
   const head = await run('git', ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'], {

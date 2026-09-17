@@ -26,7 +26,17 @@ export type StoredReview = {
  * silently started a new review and threw the reviewer's progress away.
  */
 export function reviewId(repo: Repo, spec: ReviewSpec): string {
-  return createHash('sha1').update(`${repo.root}\0${JSON.stringify(spec)}`).digest('hex').slice(0, 16);
+  return createHash('sha1').update(`${repo.root}\0${JSON.stringify(identity(spec))}`).digest('hex').slice(0, 16);
+}
+
+/**
+ * The part of a spec that identifies it.
+ *
+ * A commit's subject rides along for the label, but the same commit opened from the graph
+ * and from the palette has to be one review — not two whose progress depends on the way in.
+ */
+function identity(spec: ReviewSpec): ReviewSpec | { kind: 'commit'; sha: string } {
+  return spec.kind === 'commit' ? { kind: 'commit', sha: spec.sha } : spec;
 }
 
 function fileFor(repo: Repo, id: string): string {

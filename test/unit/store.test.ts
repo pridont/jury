@@ -29,6 +29,20 @@ describe('reviewId', () => {
     expect(reviewId(repo, { kind: 'worktree' })).not.toBe(reviewId(repo, { kind: 'staged' }));
   });
 
+  it('ignores a commit subject, which labels a review rather than identifying it', () => {
+    const sha = '0'.repeat(40);
+    // The graph knows the subject, the palette may not. Same commit, so the same review.
+    expect(reviewId(repo, { kind: 'commit', sha, subject: 'a subject' })).toBe(
+      reviewId(repo, { kind: 'commit', sha }),
+    );
+  });
+
+  it('gives different commits different reviews', () => {
+    expect(reviewId(repo, { kind: 'commit', sha: 'a'.repeat(40) })).not.toBe(
+      reviewId(repo, { kind: 'commit', sha: 'b'.repeat(40) }),
+    );
+  });
+
   it('is keyed by the spec, not by what it resolved to', () => {
     // The point: main can move on, and the review has to survive it.
     const before = reviewId(repo, { kind: 'range', base: 'main', head: 'HEAD', threeDot: true });
