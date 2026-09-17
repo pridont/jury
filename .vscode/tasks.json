@@ -1,7 +1,20 @@
 {
   "version": "2.0.0",
   "tasks": [
-    { "type": "npm", "script": "build", "group": { "kind": "build", "isDefault": true }, "problemMatcher": ["$esbuild"] },
-    { "type": "npm", "script": "watch", "isBackground": true, "problemMatcher": ["$esbuild-watch"] }
+    { "type": "npm", "script": "build", "group": { "kind": "build", "isDefault": true }, "problemMatcher": [] },
+    {
+      "type": "npm",
+      "script": "watch",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": [
+          { "regexp": "^\\[([^\\]]+)\\]\\s+(.*)$", "code": 1, "message": 2 },
+          { "regexp": "╭─\\[\\s*(.+):(\\d+):(\\d+)\\s*\\]", "file": 1, "line": 2, "column": 3 }
+        ],
+        "background": { "beginsPattern": "^build started", "endsPattern": "^(built in \\d+ms|Build failed)" }
+      }
+    }
   ]
 }

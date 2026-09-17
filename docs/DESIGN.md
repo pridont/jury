@@ -178,7 +178,7 @@ test/
   eval/       grouping quality against hand-written expectations
 ```
 
-Everything is bundled into `dist/extension.js` with esbuild. There are no runtime
+Everything is bundled into `dist/extension.js` with Vite. There are no runtime
 dependencies, which is why packaging uses `vsce package --no-dependencies`.
 
 ## Not planned

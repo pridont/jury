@@ -4,9 +4,9 @@ src/**
 test/**
 node_modules/**
 docs/**
-esbuild.mjs
+vite.config.mts
 tsconfig.json
-vitest.config.ts
-vitest.eval.config.ts
+vitest.config.mts
+vitest.eval.config.mts
 .gitignore
 **/*.map
