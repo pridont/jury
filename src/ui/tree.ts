@@ -118,16 +118,23 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           prose + (node.cohort.riskReason ? `\n\n**Risk:** ${node.cohort.riskReason}` : ''),
         );
 
+        // Every cohort row carries a tick and an icon, whatever shape the cohort is. Rows at
+        // one depth have to line up: a row that alone has a checkbox and an icon starts its
+        // label some 36px right of its siblings, and the tree's own indent is 8px, so that
+        // shift reads as being nested under the row above rather than as a sibling of it.
         const icon = riskIcon(node.cohort.risk);
         if (icon) item.iconPath = icon;
+        else if (!onlyPath) item.iconPath = new vscode.ThemeIcon('layers');
         item.contextValue = scaffolding ? 'cohort-scaffolding' : 'cohort';
+
+        const hunkIds = node.cohort.layers.flatMap((layer) => layer.hunkIds);
+        item.checkboxState =
+          session && hunkIds.length > 0 && hunkIds.every((id) => session.marks.has(id))
+            ? vscode.TreeItemCheckboxState.Checked
+            : vscode.TreeItemCheckboxState.Unchecked;
 
         if (only) {
           if (onlyPath) item.resourceUri = vscode.Uri.file(onlyPath);
-          item.checkboxState =
-            session && only.hunkIds.every((id) => session.marks.has(id))
-              ? vscode.TreeItemCheckboxState.Checked
-              : vscode.TreeItemCheckboxState.Unchecked;
           item.command = {
             command: 'jury.openLayer',
             title: 'Open',
