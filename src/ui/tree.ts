@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { FileChange } from '../git/parse.js';
 import type { SessionHost } from '../session.js';
 import type { Activity, ActivityKind } from './activity.js';
 import type { Loaders } from './loaders.js';
@@ -91,7 +92,13 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const onlyPath = only?.paths.length === 1 ? only.paths[0] : undefined;
         const files = new Set(node.cohort.layers.flatMap((layer) => layer.paths)).size;
         const where = onlyPath ? directory(onlyPath) : `${files} file${files === 1 ? '' : 's'}`;
-        item.description = `${where ? `${where} · ` : ''}${hunks} hunk${hunks === 1 ? '' : 's'}`;
+        item.description = [
+          onlyPath ? statusNote(session, onlyPath) : '',
+          where,
+          `${hunks} hunk${hunks === 1 ? '' : 's'}`,
+        ]
+          .filter(Boolean)
+          .join(' · ');
         const prose =
           node.cohort.summary || (onlyPath ? (session?.summaries.get(onlyPath) ?? '') : '') || node.cohort.title;
         item.tooltip = new vscode.MarkdownString(
@@ -152,6 +159,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           : 0;
         item.description = [
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
+          statusNote(session, node.path),
           directory(node.path),
           `${hunks.length} hunk${hunks.length === 1 ? '' : 's'}`,
         ]
@@ -197,6 +205,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // something written here" matters more than the hunk count it would push off.
         item.description = [
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
+          single ? statusNote(session, single) : '',
           where,
           `${node.layer.hunkIds.length} hunk${node.layer.hunkIds.length === 1 ? '' : 's'}`,
         ]
@@ -315,6 +324,16 @@ function fileId(cohort: Cohort, layer: Layer, path: string): string {
 function name(path: string): string {
   const at = path.lastIndexOf('/');
   return at === -1 ? path : path.slice(at + 1);
+}
+
+/**
+ * The word that says this row is a file the change removes.
+ *
+ * Nothing else in the row would: a deletion carries the same file icon and the same hunk
+ * count as an edit, and its title in the tree is the name of a file that is no longer there.
+ */
+function statusNote(session: { files: FileChange[] } | null, path: string): string {
+  return session?.files.find((file) => file.path === path)?.status === 'deleted' ? 'deleted' : '';
 }
 
 function directory(path: string): string {

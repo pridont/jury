@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import type { FileChange } from '../git/parse.js';
+import { contentSide, type FileChange } from '../git/parse.js';
 import type { Session } from '../session.js';
-import { openFileDiff, openMultiDiff, sidesFor } from './diff.js';
+import { contentUri, openFileDiff, openMultiDiff, sidesFor } from './diff.js';
 import { layerEntry, step, stepLayer, type Entry } from '../model/order.js';
 
 export { buildOrder, type Entry } from '../model/order.js';
@@ -103,7 +103,8 @@ export class Navigator implements vscode.Disposable {
     this.moving = true;
     try {
       const changingFile = !previous || previous.file.path !== entry.file.path;
-      const editor = changingFile || !isShowing(entry.file) ? await this.open(entry) : showing(entry.file);
+      const shown = this.showing(entry.file);
+      const editor = changingFile || !shown ? await this.open(entry) : shown;
 
       if (editor) {
         reveal(editor, entry);
@@ -131,6 +132,18 @@ export class Navigator implements vscode.Disposable {
       await openMultiDiff(this.session, entry.layer.title, files);
     }
     return openFileDiff(this.session, entry.file);
+  }
+
+  /**
+   * The editor already showing this file's content.
+   *
+   * Matched on the exact URI of the side that holds it rather than on the path: the two
+   * sides of a deletion differ only by the revision in the query, so a path match can hand
+   * back the empty pane, where every reveal silently does nothing.
+   */
+  private showing(file: FileChange): vscode.TextEditor | undefined {
+    const uri = contentUri(this.session, file).toString();
+    return vscode.window.visibleTextEditors.find((editor) => editor.document.uri.toString() === uri);
   }
 
   /** Map a cursor back onto a hunk, so clicking in the diff moves the review with it. */
@@ -186,14 +199,6 @@ function contains(start: number, count: number, line: number): boolean {
   return count > 0 ? line >= start && line < start + count : line === start;
 }
 
-function showing(file: FileChange): vscode.TextEditor | undefined {
-  return vscode.window.visibleTextEditors.find((editor) => editor.document.uri.path.endsWith(`/${file.path}`));
-}
-
-function isShowing(file: FileChange): boolean {
-  return showing(file) !== undefined;
-}
-
 function reveal(editor: vscode.TextEditor, entry: Entry): void {
   const line = Math.max(0, (entry.hunk.newCount > 0 ? entry.hunk.newStart : entry.hunk.oldStart) - 1);
   const position = new vscode.Position(Math.min(line, Math.max(0, editor.document.lineCount - 1)), 0);
@@ -213,9 +218,14 @@ function focusLayer(editor: vscode.TextEditor, entry: Entry, order: readonly Ent
   const inFile = order.filter((other) => other.file.path === entry.file.path);
   const lastLine = Math.max(0, editor.document.lineCount - 1);
 
+  // Line numbers are per side, and a deleted file is only ever open on its old one. Reading
+  // the new side's there would put every hunk at line 0 and dim the whole file as context.
+  const side = contentSide(entry.file);
   const rangeOf = (other: Entry): vscode.Range => {
-    const start = Math.min(Math.max(0, other.hunk.newStart - 1), lastLine);
-    const end = Math.min(start + Math.max(other.hunk.newCount, 1) - 1, lastLine);
+    const at = side === 'old' ? other.hunk.oldStart : other.hunk.newStart;
+    const count = side === 'old' ? other.hunk.oldCount : other.hunk.newCount;
+    const start = Math.min(Math.max(0, at - 1), lastLine);
+    const end = Math.min(start + Math.max(count, 1) - 1, lastLine);
     return new vscode.Range(start, 0, end, 0);
   };
 

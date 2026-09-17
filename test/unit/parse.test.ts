@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { parseDiff, parseGitHeaderPaths } from '../../src/git/parse.js';
+import { contentSide, parseDiff, parseGitHeaderPaths } from '../../src/git/parse.js';
 
 // vitest runs from the project root; keeping this a plain relative path avoids import.meta,
 // which tsc rejects under the CommonJS output the extension host loads.
@@ -32,6 +32,14 @@ describe('parseDiff', () => {
     expect(byPath['added.txt']).toMatchObject({ status: 'added' });
     expect(byPath['modify.txt']).toMatchObject({ status: 'deleted' });
     expect(byPath['added.txt']!.hunks[0]!.stats).toEqual({ added: 2, removed: 0 });
+  });
+
+  it('puts only a deletion on the old side, since that is the only side it exists on', () => {
+    const byPath = Object.fromEntries(parseDiff(fixture('add-delete')).map((f) => [f.path, f]));
+    expect(contentSide(byPath['modify.txt']!)).toBe('old');
+    expect(contentSide(byPath['added.txt']!)).toBe('new');
+    expect(contentSide(parseDiff(fixture('modify'))[0]!)).toBe('new');
+    expect(contentSide(parseDiff(fixture('rename-pure'))[0]!)).toBe('new');
   });
 
   it('gives a pure rename one synthetic hunk, so it can be listed and marked', () => {

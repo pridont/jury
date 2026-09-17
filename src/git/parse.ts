@@ -18,6 +18,17 @@ export type FileChange = {
   stats: { added: number; removed: number };
 };
 
+/**
+ * Which side of a diff holds a file's content.
+ *
+ * Only a deletion answers `old`: the file exists in the base and nowhere else. The reading
+ * UI needs this to know which pane a hunk can be revealed in, and which of a hunk's two
+ * line numbers is the real one there.
+ */
+export function contentSide(file: Pick<FileChange, 'status'>): 'old' | 'new' {
+  return file.status === 'deleted' ? 'old' : 'new';
+}
+
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
 
 /**

@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import type { FileChange } from '../git/parse.js';
+import { contentSide, type FileChange } from '../git/parse.js';
 import type { Session } from '../session.js';
 import { blobUri, emptyUri } from './content.js';
 
@@ -29,6 +29,12 @@ export function sidesFor(session: Session, file: FileChange): Sides {
   return { before, after: blobUri(root, file.path, session.head) };
 }
 
+/** The side of `file` that has content: the base for a deletion, the head for everything else. */
+export function contentUri(session: Session, file: FileChange): vscode.Uri {
+  const { before, after } = sidesFor(session, file);
+  return contentSide(file) === 'old' ? before : after;
+}
+
 /** Which file and side a document belongs to, or null when it is not part of the review. */
 export function fileForUri(
   session: Session,
@@ -54,16 +60,18 @@ export function diffTitle(file: FileChange): string {
 /**
  * Open one file's diff and return the editor showing it.
  *
- * When a side has no content — an added file, a deleted one — the pane for it is dropped and
- * the file opens on its own. Two panes, one of them blank, with every line painted as an
- * addition, say nothing that one pane does not: reading a new file is just reading a file.
+ * An added file opens on its own. Two panes, one of them blank, with every line painted as
+ * an addition say nothing that one pane does not: reading a new file is just reading a file.
+ *
+ * A deletion is not the same case. Its old content on its own is indistinguishable from the
+ * file still being there — same name in the tab, same code in the pane — so it opens as a
+ * diff against nothing, where the title says `(deleted)` and every line is a removal.
  */
 export async function openFileDiff(session: Session, file: FileChange): Promise<vscode.TextEditor | undefined> {
   const { before, after } = sidesFor(session, file);
 
-  if (file.status === 'added' || file.status === 'deleted') {
-    const only = file.status === 'added' ? after : before;
-    const document = await vscode.workspace.openTextDocument(only);
+  if (file.status === 'added') {
+    const document = await vscode.workspace.openTextDocument(after);
     return vscode.window.showTextDocument(document, { preview: true, preserveFocus: false });
   }
 
@@ -74,8 +82,11 @@ export async function openFileDiff(session: Session, file: FileChange): Promise<
 
   // `activeTextEditor` is not reliably the editor the command just opened, and revealing in
   // the wrong one puts the cursor back in the file being left — which then syncs the
-  // position back and makes the next-hunk key look broken.
-  return editorFor(after) ?? editorFor(before) ?? vscode.window.activeTextEditor;
+  // position back and makes the next-hunk key look broken. The side with the content comes
+  // first: the other pane of a deletion is empty, and revealing a hunk there reveals nothing.
+  const content = contentUri(session, file);
+  const other = content.toString() === after.toString() ? before : after;
+  return editorFor(content) ?? editorFor(other) ?? vscode.window.activeTextEditor;
 }
 
 function editorFor(uri: vscode.Uri): vscode.TextEditor | undefined {
