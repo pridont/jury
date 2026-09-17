@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import type { FileChange } from '../git/parse.js';
 import type { SessionHost } from '../session.js';
 import type { Activity, ActivityKind } from './activity.js';
-import type { Loaders } from './loaders.js';
 import type { Cohort, Comment, Layer, Risk } from '../model/types.js';
 
 export type Node =
@@ -30,21 +29,32 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
   readonly onDidChangeTreeData = this.changed.event;
 
   private activity: Activity | null = null;
-  private loaders: Loaders | null = null;
+  private extension: vscode.Uri | null = null;
 
   constructor(private readonly host: SessionHost) {
     this.host.onDidChange(() => this.refresh());
   }
 
   /** Show the running step, with its loading icon, as the first row of the tree. */
-  attach(activity: Activity, loaders: Loaders): void {
+  attach(activity: Activity, extension: vscode.Uri): void {
     this.activity = activity;
-    this.loaders = loaders;
+    this.extension = extension;
     activity.onDidChange(() => this.refresh());
   }
 
+  /**
+   * The animated icon for a kind of work, as a light and dark pair the editor picks from.
+   *
+   * Both are built into `dist/loaders/` at build time and live inside the extension, which
+   * is where the activity bar icon is served from too. Copies written somewhere else at
+   * runtime — a storage folder, say — add a directory the renderer may decline to serve and
+   * a window in which the files do not exist yet.
+   */
   private loaderIcon(kind: ActivityKind, fallback: string): { light: vscode.Uri; dark: vscode.Uri } | vscode.ThemeIcon {
-    return this.loaders?.icon(kind) ?? new vscode.ThemeIcon(fallback);
+    if (!this.extension) return new vscode.ThemeIcon(fallback);
+    const file = (theme: 'light' | 'dark') =>
+      vscode.Uri.joinPath(this.extension!, 'dist', 'loaders', `jury-${kind}-${theme}.svg`);
+    return { light: file('light'), dark: file('dark') };
   }
 
   refresh(node?: Node): void {

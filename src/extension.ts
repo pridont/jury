@@ -23,7 +23,6 @@ import { summariseFiles } from './agent/summaries.js';
 import { clusterChange } from './agent/cluster.js';
 import { showWalkthrough } from './ui/walkthrough.js';
 import { Activity } from './ui/activity.js';
-import { Loaders } from './ui/loaders.js';
 import { forgetSessions, registerChat } from './ui/chat.js';
 import { Documents, DOC_SCHEME, offerToSave } from './ui/documents.js';
 import { stateDir } from './git/repo.js';
@@ -73,13 +72,7 @@ export function activate(context: vscode.ExtensionContext): void {
   providers.register(vscodeLm);
   const queue = new Queue(4);
   const activity = new Activity();
-  const loaders = new Loaders(context.extensionUri, context.globalStorageUri);
-  tree.attach(activity, loaders);
-  // Until the themed copies exist the tree uses a plain spinner, so there is nothing to wait for.
-  void loaders.prepare().then(
-    () => tree.refresh(),
-    (error: unknown) => log.appendLine(`  loading icons unavailable: ${error instanceof Error ? error.message : String(error)}`),
-  );
+  tree.attach(activity, context.extensionUri);
   const documents = new Documents();
 
   context.subscriptions.push(

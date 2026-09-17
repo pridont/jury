@@ -154,13 +154,18 @@ icon for the kind of work:
 | `jury-answering.svg`    | File summaries are coming in     |
 | `jury-deliberating.svg` | The model is grouping the change |
 
-Each animation stops after about 8 seconds and settles into the static mark. With reduced
-motion turned on, the static mark is shown from the start. Both rules are written into the SVG
-files themselves.
+The animations loop for as long as the work does. They cannot be finite: the tree draws an
+icon as an image, an image's animation clock starts when the file is loaded rather than when
+it is shown, and the file stays cached — so a fixed number of iterations plays out once and
+every appearance after that is a frozen picture. With reduced motion turned on, the static
+mark is shown instead. Both rules are written into the SVG files themselves.
 
-The tree draws icons as images, so the icons cannot take the theme's text colour. Jury writes
-a light and a dark copy of each loader into its storage folder when it starts, and the tree
-uses the one that matches the theme.
+An image has no inherited text colour, so `currentColor` resolves to black and disappears on
+a dark theme. The art lives in `media/` in `currentColor`, the build writes a light and a
+dark copy into `dist/loaders/`, and the editor picks by theme kind — which is as close to the
+theme as an image icon gets. Building them keeps the icons inside the extension, served from
+the same place as the activity bar icon and present before the first row is drawn; writing
+them into the storage folder at startup was neither.
 
 ## Code layout
 

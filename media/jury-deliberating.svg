@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" role="img" aria-label="Jury">
   <style>
-    .s { animation: jury-seat 1.2s ease-in-out 6 backwards; }
+    /* Infinite: see jury-scanning.svg. A cached image's animation does not start again. */
+    .s { animation: jury-seat 1.2s ease-in-out infinite backwards; }
     @keyframes jury-seat { 0% { opacity: .3 } 30% { opacity: 1 } 60%, 100% { opacity: .3 } }
     @media (prefers-reduced-motion: reduce) { .s { animation: none; } }
   </style>

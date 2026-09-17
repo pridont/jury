@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" role="img" aria-label="Jury">
   <style>
-    .sweep { animation: jury-sweep 1.6s linear 5, jury-out 8s step-end forwards; }
+    /* Infinite on purpose: the icon exists only while the work does, and an image's
+       animation clock starts when it is loaded, not when it is shown. A finite count plus a
+       cached image means every appearance after the first few seconds is a frozen picture. */
+    .sweep { animation: jury-sweep 1.6s linear infinite; }
     @keyframes jury-sweep { from { stroke-dashoffset: 0 } to { stroke-dashoffset: -17 } }
-    @keyframes jury-out { 0% { opacity: 1 } 100% { opacity: 0 } }
-    path:not(.sweep) { animation: jury-in 8s step-end forwards; }
-    @keyframes jury-in { 0% { opacity: .3 } 100% { opacity: 1 } }
-    @media (prefers-reduced-motion: reduce) { .sweep { animation: none; opacity: 0; } path:not(.sweep) { animation: none; opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .sweep { animation: none; opacity: 0; } }
   </style>
   <circle cx="12" cy="4.6" r="2.7" fill="currentColor"></circle>
   <circle cx="4.4" cy="11.6" r="1.8" fill="currentColor"></circle>
