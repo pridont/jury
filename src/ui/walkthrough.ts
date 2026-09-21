@@ -3,8 +3,14 @@ import type { Session } from '../session.js';
 import { describeSpec } from '../model/types.js';
 import type { Documents } from './documents.js';
 
-/** The extension that teaches VS Code's markdown preview to draw mermaid. */
+/** The extension that teaches an older VS Code's markdown preview to draw mermaid. */
 const MERMAID_EXTENSION = 'bierner.markdown-mermaid';
+
+/**
+ * Anything that makes the markdown preview draw mermaid. Newer VS Code ships its own, and a
+ * reviewer who has it should get the picture, not advice to install what they do not need.
+ */
+const MERMAID_RENDERERS = ['vscode.mermaid-markdown-features', MERMAID_EXTENSION];
 
 /**
  * What this change is, before any of it.
@@ -77,5 +83,5 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
 }
 
 function hasMermaid(): boolean {
-  return vscode.extensions.getExtension(MERMAID_EXTENSION) !== undefined;
+  return MERMAID_RENDERERS.some((id) => vscode.extensions.getExtension(id) !== undefined);
 }

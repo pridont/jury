@@ -51,7 +51,7 @@ describe('the diagram field', () => {
     expect(diagramOf('This change adds a clock port and threads it through.')).toBe('');
   });
 
-  it('is empty when the model left it out, which is the normal answer', () => {
+  it('is empty when the model left it out', () => {
     expect(diagramOf(undefined)).toBe('');
     expect(diagramOf('')).toBe('');
   });

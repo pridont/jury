@@ -47,7 +47,7 @@ export class Session implements vscode.Disposable {
   overview = '';
   /** Things worth attention that belong to no single cohort. */
   notes: string[] = [];
-  /** Mermaid source, when the change had a shape worth drawing. Usually empty. */
+  /** Mermaid source, when the change had a shape worth drawing. Empty for small changes. */
   diagram = '';
   /** Set for a pull request review, and what makes submitting possible. */
   pr: PullRequest | null = null;
