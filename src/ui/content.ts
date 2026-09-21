@@ -49,6 +49,10 @@ export class BlobProvider implements vscode.TextDocumentContentProvider {
 export function blobUri(root: string, path: string, rev: string): vscode.Uri {
   return vscode.Uri.from({
     scheme: SCHEME,
+    // The revision rides in the authority as well as the query. TypeScript names a document
+    // by scheme, authority and path and drops the query, so without it the base and head of
+    // one file are the same document to it — and whichever opened first answers for both.
+    authority: rev.toLowerCase().replace(/[^a-z0-9.-]+/g, '-'),
     path: `/${path}`,
     query: new URLSearchParams({ root, path, rev }).toString(),
   });
@@ -58,7 +62,7 @@ export function emptyUri(root: string, path: string): vscode.Uri {
   return blobUri(root, path, EMPTY_REV);
 }
 
-function decode(uri: vscode.Uri): Params {
+export function decode(uri: vscode.Uri): Params {
   const params = new URLSearchParams(uri.query);
   return {
     root: params.get('root') ?? '',

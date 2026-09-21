@@ -8,6 +8,7 @@ import { doctor, formatChecks } from './doctor.js';
 import { Session, SessionHost } from './session.js';
 import { StackTree, type Node } from './ui/tree.js';
 import { BlobProvider, SCHEME } from './ui/content.js';
+import { BlobDefinitions } from './ui/definitions.js';
 import { openMultiDiff } from './ui/diff.js';
 import { Navigator } from './ui/nav.js';
 import { Comments } from './ui/comments.js';
@@ -94,6 +95,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (host.active) void persist(host.active);
     }),
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, blobs),
+    vscode.languages.registerDefinitionProvider({ scheme: SCHEME }, new BlobDefinitions(host)),
     vscode.workspace.registerTextDocumentContentProvider(DOC_SCHEME, documents),
     documents,
 
