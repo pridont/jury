@@ -186,7 +186,8 @@ function organised(cohorts: readonly Cohort[], labels: ReadonlyMap<string, Hunk>
   return null;
 }
 
-function scaffoldingCohort(hunks: readonly Hunk[]): Cohort {
+/** Generated files, kept together at the end and out of the reading order. */
+export function scaffoldingCohort(hunks: readonly Hunk[]): Cohort {
   const paths = [...new Set(hunks.map((hunk) => hunk.path))];
   const reasons = [...new Set(hunks.map((hunk) => hunk.scaffolding?.reason).filter(Boolean))];
   return {

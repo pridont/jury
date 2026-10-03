@@ -1,5 +1,7 @@
+import { basename } from 'node:path/posix';
 import type { FileChange } from '../git/parse.js';
 import type { Cohort, CohortKind, Hunk, Layer } from './types.js';
+import { scaffoldingCohort } from './merge.js';
 
 /**
  * Group a diff without a model.
@@ -30,7 +32,7 @@ export function heuristicCohorts(files: FileChange[]): Cohort[] {
   );
 
   if (scaffolding.length > 0) {
-    cohorts.push(scaffoldingCohort(scaffolding));
+    cohorts.push(scaffoldingCohort(scaffolding.flatMap((file) => file.hunks)));
   }
   return cohorts;
 }
@@ -123,29 +125,6 @@ function disambiguate(cohorts: Cohort[], groups: Group[]): void {
   });
 }
 
-function scaffoldingCohort(files: FileChange[]): Cohort {
-  const reasons = new Set<string>();
-  for (const file of files) {
-    const reason = file.hunks[0]?.scaffolding?.reason;
-    if (reason) reasons.add(reason);
-  }
-  return {
-    id: 'h:scaffolding',
-    title: `Scaffolding · ${files.length} file${files.length === 1 ? '' : 's'}`,
-    summary: `Generated or vendored: ${[...reasons].join(', ')}. Not in the reading order.`,
-    kind: 'scaffolding',
-    risk: 'low',
-    layers: files.map((file) => ({
-      id: `l:${file.path}`,
-      title: file.path,
-      summary: file.hunks[0]?.scaffolding?.reason ?? 'generated',
-      hunkIds: file.hunks.map((hunk) => hunk.id),
-      paths: [file.path],
-    })),
-    origin: 'heuristic',
-  };
-}
-
 function describe(file: FileChange): string {
   if (file.binary) return `${file.path} (binary, ${file.status}).`;
   if (file.status === 'renamed') return `${file.oldPath} moved to ${file.path}.`;
@@ -201,11 +180,6 @@ function isConfig(path: string): boolean {
 
 function isScaffolding(file: FileChange): boolean {
   return file.hunks.some((hunk: Hunk) => hunk.scaffolding !== undefined);
-}
-
-function basename(path: string): string {
-  const at = path.lastIndexOf('/');
-  return at === -1 ? path : path.slice(at + 1);
 }
 
 /** `src/auth/token.spec.ts` -> `src/auth/token`, so a test can find its source. */

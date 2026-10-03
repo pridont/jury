@@ -1,3 +1,6 @@
+import type { Cache } from './cache.js';
+import type { Queue } from './queue.js';
+
 /** What a provider can do. Drives feature gating and the digest budget, never a hardcode. */
 export type Capabilities = {
   /** Can read the repository while answering. */
@@ -53,7 +56,7 @@ export type Chunk = { kind: 'text'; text: string } | { kind: 'tool'; label: stri
 
 export class ProviderError extends Error {
   constructor(
-    readonly kind: 'not-installed' | 'not-authenticated' | 'timeout' | 'cancelled' | 'failed',
+    readonly kind: 'cancelled' | 'failed',
     message: string,
   ) {
     super(message);
@@ -70,6 +73,16 @@ export interface Provider {
   /** Chunks arrive as they are produced. */
   stream(request: Request, signal: AbortSignal, onChunk: (chunk: Chunk) => void): Promise<Answer>;
 }
+
+/** What a model pass needs: who to ask, how many at once, and where answers are kept. */
+export type PassDeps = {
+  provider: Provider;
+  queue: Queue;
+  cache: Cache;
+  /** The review the requests belong to, so closing it cancels them. */
+  owner: string;
+  log: (line: string) => void;
+};
 
 const providers = new Map<string, Provider>();
 

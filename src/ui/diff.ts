@@ -89,7 +89,12 @@ export async function openFileDiff(session: Session, file: FileChange): Promise<
   return editorFor(content) ?? editorFor(other) ?? vscode.window.activeTextEditor;
 }
 
-function editorFor(uri: vscode.Uri): vscode.TextEditor | undefined {
+/**
+ * The editor showing exactly this URI. Matched on the URI, not the path: the two sides of a
+ * deletion differ only by the revision in the query, so a path match can hand back the
+ * empty pane, where every reveal silently does nothing.
+ */
+export function editorFor(uri: vscode.Uri): vscode.TextEditor | undefined {
   const key = uri.toString();
   return vscode.window.visibleTextEditors.find((editor) => editor.document.uri.toString() === key);
 }

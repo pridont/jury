@@ -21,12 +21,14 @@ export function commentOffset(hunk: Hunk, side: 'old' | 'new', line: number): nu
 
 /** The hunk a line belongs to, or null when the line is between hunks. */
 export function hunkAt(hunks: readonly Hunk[], side: 'old' | 'new', line: number): Hunk | null {
-  for (const hunk of hunks) {
-    const start = side === 'new' ? hunk.newStart : hunk.oldStart;
-    const count = side === 'new' ? hunk.newCount : hunk.oldCount;
-    if (count > 0 ? line >= start && line < start + count : line === start) return hunk;
-  }
-  return null;
+  return hunks.find((hunk) => covers(hunk, side, line)) ?? null;
+}
+
+/** Whether `line` on one side falls inside the hunk. A hunk with no lines there owns its start. */
+export function covers(hunk: Hunk, side: 'old' | 'new', line: number): boolean {
+  const start = side === 'new' ? hunk.newStart : hunk.oldStart;
+  const count = side === 'new' ? hunk.newCount : hunk.oldCount;
+  return count > 0 ? line >= start && line < start + count : line === start;
 }
 
 export function newComment(hunkId: string, offset: number, side: 'old' | 'new', body: string): Comment {

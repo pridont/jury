@@ -1,20 +1,11 @@
 import type { FileChange } from '../git/parse.js';
 import { Cache } from './cache.js';
-import { parse, repairPrompt } from './json.js';
+import { askForJson, parse, type Accepted } from './json.js';
 import { summaryPrompt } from './prompts/summary.js';
-import { ProviderError, type Provider, type Usage } from './provider.js';
-import type { Queue } from './queue.js';
+import { ProviderError, type PassDeps, type Usage } from './provider.js';
 
 /** Past this, a file is described by its shape rather than sent in full. */
 const MAX_INPUT_CHARS = 12_000;
-
-export type SummaryDeps = {
-  provider: Provider;
-  queue: Queue;
-  cache: Cache;
-  owner: string;
-  log: (line: string) => void;
-};
 
 export type SummaryEvent =
   | { kind: 'summary'; path: string; summary: string; cached: boolean; usage?: Usage }
@@ -29,7 +20,7 @@ export type SummaryEvent =
  * exists to avoid.
  */
 export async function summariseFiles(
-  deps: SummaryDeps,
+  deps: PassDeps,
   files: readonly FileChange[],
   onEvent: (event: SummaryEvent) => void,
 ): Promise<{ summarised: number; cached: number; failed: number; costUsd: number }> {
@@ -54,41 +45,17 @@ export async function summariseFiles(
 
       try {
         const summary = await deps.queue.run(deps.owner, async (signal) => {
-          const answer = await deps.provider.structured(
+          const { result, usage } = await askForJson(
+            deps.provider,
             { tier: 'fast', system: summaryPrompt.system, input },
             signal,
+            acceptSummary,
           );
-
-          let parsed = parse<{ summary: string }>(answer.text, summaryPrompt.shape);
-          let usage = answer.usage;
-
-          if (!parsed.ok) {
-            // One repair: the broken answer back, fixed. A second failure is a failure.
-            const retry = await deps.provider.structured(
-              {
-                tier: 'fast',
-                system: 'You fix malformed JSON. Return only the corrected object.',
-                input: repairPrompt(parsed.error, answer.text),
-              },
-              signal,
-            );
-            parsed = parse<{ summary: string }>(retry.text, summaryPrompt.shape);
-            usage = {
-              inputTokens: usage.inputTokens + retry.usage.inputTokens,
-              outputTokens: usage.outputTokens + retry.usage.outputTokens,
-              costUsd: usage.costUsd + retry.usage.costUsd,
-              durationMs: usage.durationMs + retry.usage.durationMs,
-            };
-          }
-
-          if (!parsed.ok) throw new ProviderError('failed', parsed.error);
-
-          const text = parsed.value.summary.trim();
-          if (!text) throw new ProviderError('failed', 'the summary was empty');
+          if (!result.ok) throw new ProviderError('failed', result.error);
 
           // Cached only now, after the caller has accepted it.
-          await deps.cache.set(key, text);
-          return { text, usage };
+          await deps.cache.set(key, result.value);
+          return { text: result.value, usage };
         });
 
         tally.summarised += 1;
@@ -113,7 +80,14 @@ export async function summariseFiles(
   return tally;
 }
 
-function isWorthSummarising(file: FileChange): boolean {
+function acceptSummary(text: string): Accepted<string> {
+  const parsed = parse<{ summary: string }>(text, summaryPrompt.shape);
+  if (!parsed.ok) return { ok: false, error: parsed.error, repairable: true };
+  const summary = parsed.value.summary.trim();
+  return summary ? { ok: true, value: summary } : { ok: false, error: 'the summary was empty', repairable: false };
+}
+
+export function isWorthSummarising(file: FileChange): boolean {
   if (file.binary) return false;
   if (file.hunks.some((hunk) => hunk.scaffolding)) return false;
   return file.hunks.some((hunk) => hunk.kind === 'text');

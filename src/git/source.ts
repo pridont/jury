@@ -32,33 +32,30 @@ const DIFF_ARGS = [
 ];
 
 export async function acquire(repo: Repo, spec: ReviewSpec): Promise<Acquired> {
+  const { base, head, args } = await sides(repo, spec);
+  const text = await runOk('git', [...DIFF_ARGS, ...args], { cwd: repo.root, timeoutMs: 60_000 });
+  const files = parseDiff(text);
+  if (spec.kind === 'worktree') files.push(...(await untrackedFiles(repo)));
+  return { base, head, files };
+}
 
+/** What to compare: the revisions to record, and the arguments that make git diff them. */
+async function sides(repo: Repo, spec: ReviewSpec): Promise<{ base: string; head: string; args: string[] }> {
   switch (spec.kind) {
     case 'worktree': {
-      const head = await headOrEmptyTree(repo);
-      const text = await runOk('git', [...DIFF_ARGS, head], { cwd: repo.root, timeoutMs: 60_000 });
-      const files = parseDiff(text);
-      files.push(...(await untrackedFiles(repo)));
-      return { base: head, head: 'worktree', files };
+      const base = (await revParse(repo, 'HEAD')) ?? EMPTY_TREE;
+      return { base, head: 'worktree', args: [base] };
     }
 
     case 'staged': {
-      const head = await headOrEmptyTree(repo);
-      const text = await runOk('git', [...DIFF_ARGS, '--cached', head], {
-        cwd: repo.root,
-        timeoutMs: 60_000,
-      });
-      return { base: head, head: 'index', files: parseDiff(text) };
+      const base = (await revParse(repo, 'HEAD')) ?? EMPTY_TREE;
+      return { base, head: 'index', args: ['--cached', base] };
     }
 
     case 'range': {
       const head = await resolve(repo, spec.head);
       const base = spec.threeDot ? await mergeBase(repo, spec.base, spec.head) : await resolve(repo, spec.base);
-      const text = await runOk('git', [...DIFF_ARGS, base, head], {
-        cwd: repo.root,
-        timeoutMs: 60_000,
-      });
-      return { base, head, files: parseDiff(text) };
+      return { base, head, args: [base, head] };
     }
 
     case 'commit': {
@@ -66,23 +63,14 @@ export async function acquire(repo: Repo, spec: ReviewSpec): Promise<Acquired> {
       // Read against the first parent: for a merge that is the branch it landed on, so the
       // diff is what merging brought in. A root commit has no parent and reads against the
       // empty tree, the same base a first commit gets everywhere else here.
-      const base = (await firstParent(repo, head)) ?? EMPTY_TREE;
-      const text = await runOk('git', [...DIFF_ARGS, base, head], {
-        cwd: repo.root,
-        timeoutMs: 60_000,
-      });
-      return { base, head, files: parseDiff(text) };
+      const base = (await revParse(repo, `${head}^1`)) ?? EMPTY_TREE;
+      return { base, head, args: [base, head] };
     }
 
-    case 'pr': {
+    case 'pr':
       // The head is already fetched into a ref of our own by the caller; nothing is checked
       // out, and both sides of the diff are read straight from git.
-      const text = await runOk('git', [...DIFF_ARGS, spec.base, spec.head], {
-        cwd: repo.root,
-        timeoutMs: 60_000,
-      });
-      return { base: spec.base, head: spec.head, files: parseDiff(text) };
-    }
+      return { base: spec.base, head: spec.head, args: [spec.base, spec.head] };
   }
 }
 
@@ -94,20 +82,13 @@ async function resolve(repo: Repo, rev: string): Promise<string> {
   return out.trim();
 }
 
-async function firstParent(repo: Repo, commit: string): Promise<string | null> {
-  const result = await run('git', ['rev-parse', '--verify', '--quiet', `${commit}^1^{commit}`], {
+/** The commit `rev` names, or null when it names none. */
+async function revParse(repo: Repo, rev: string): Promise<string | null> {
+  const result = await run('git', ['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], {
     cwd: repo.root,
     timeoutMs: 10_000,
   });
   return result.code === 0 ? result.stdout.trim() : null;
-}
-
-async function headOrEmptyTree(repo: Repo): Promise<string> {
-  const result = await run('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], {
-    cwd: repo.root,
-    timeoutMs: 10_000,
-  });
-  return result.code === 0 ? result.stdout.trim() : EMPTY_TREE;
 }
 
 /**

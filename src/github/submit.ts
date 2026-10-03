@@ -3,7 +3,7 @@ import { run } from '../util/exec.js';
 import type { Repo } from '../git/repo.js';
 import type { Comment, Hunk } from '../model/types.js';
 import { commentLine } from '../model/comments.js';
-import { GhError, type PullRequest } from './pr.js';
+import type { PullRequest } from './pr.js';
 
 export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -143,10 +143,10 @@ export async function submit(
     { cwd: repo.root, stdin: JSON.stringify(payload), timeoutMs: 60_000 },
   ).catch(() => null);
 
-  if (!result) throw new GhError('not-installed', 'gh is not on PATH');
+  if (!result) throw new Error('gh is not on PATH');
   if (result.code !== 0) {
     const detail = (result.stderr || result.stdout).trim().split('\n').slice(0, 3).join(' ');
-    throw new GhError(/auth|login|token/i.test(detail) ? 'not-authenticated' : 'failed', detail);
+    throw new Error(detail);
   }
 
   const parsed = JSON.parse(result.stdout) as { html_url?: string; id?: number };

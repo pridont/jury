@@ -1,3 +1,5 @@
+import type { Provider, Request, Usage } from './provider.js';
+
 export type Shape = Record<string, 'string' | 'number' | 'boolean' | 'array' | 'object'>;
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -116,6 +118,49 @@ export function repairPrompt(error: string, broken: string): string {
     'value as they are — only the JSON itself is wrong. No prose, no code fence. Newlines',
     'inside a string must be written \\n.',
   ].join('\n');
+}
+
+/** A checked answer. A `repairable` failure is malformed JSON, worth asking for back fixed. */
+export type Accepted<T> = { ok: true; value: T } | { ok: false; error: string; repairable: boolean };
+
+/**
+ * Ask, check the answer, and if only its JSON is broken, ask once for it back fixed.
+ *
+ * The repair sends the broken answer back, not the question again: the task was done, only
+ * the JSON is wrong, and re-asking costs the same as the first call for no better odds. A
+ * second failure is a failure.
+ */
+export async function askForJson<T>(
+  provider: Provider,
+  request: Request,
+  signal: AbortSignal,
+  accept: (text: string) => Accepted<T>,
+  onRepair: (error: string) => void = () => {},
+): Promise<{ result: Accepted<T>; usage: Usage }> {
+  const answer = await provider.structured(request, signal);
+  let usage = answer.usage;
+  let result = accept(answer.text);
+
+  if (!result.ok && result.repairable) {
+    onRepair(result.error);
+    const retry = await provider.structured(
+      {
+        tier: request.tier,
+        system: 'You fix malformed JSON. Return only the corrected object.',
+        input: repairPrompt(result.error, answer.text),
+      },
+      signal,
+    );
+    usage = {
+      inputTokens: usage.inputTokens + retry.usage.inputTokens,
+      outputTokens: usage.outputTokens + retry.usage.outputTokens,
+      costUsd: usage.costUsd + retry.usage.costUsd,
+      durationMs: usage.durationMs + retry.usage.durationMs,
+    };
+    result = accept(retry.text);
+  }
+
+  return { result, usage };
 }
 
 function matches(value: unknown, kind: Shape[string]): boolean {

@@ -55,6 +55,12 @@ export type RunOptions = {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /**
+   * Hand each non-blank line of stdout over as it arrives instead of buffering it, for a
+   * stream that has to reach the reader while it is still being written. `stdout` then
+   * comes back empty.
+   */
+  onLine?: (line: string) => void;
 };
 
 /**
@@ -68,7 +74,6 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
       env: options.env ? { ...process.env, ...options.env } : process.env,
       shell: false,
     });
-
     live.add(child);
 
     let stdout = '';
@@ -97,84 +102,25 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
     };
     options.signal?.addEventListener('abort', onAbort, { once: true });
 
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => (stdout += chunk));
-    child.stderr.on('data', (chunk: string) => (stderr += chunk));
-
-    child.on('error', (err) => finish(() => reject(err)));
-    child.on('close', (code) => finish(() => resolve({ code: code ?? -1, stdout, stderr })));
-
-    if (options.stdin !== undefined) {
-      child.stdin.end(options.stdin);
-    } else {
-      child.stdin.end();
-    }
-  });
-}
-
-export type StreamOptions = RunOptions & { onLine: (line: string) => void };
-
-/**
- * Run a command, handing each line of stdout over as it arrives.
- *
- * The buffering `run` above is right for a call whose answer is one object; a stream has to
- * reach the reader while it is still being written, which is the whole point of streaming.
- */
-export function runStreaming(command: string, args: string[], options: StreamOptions): Promise<RunResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env ? { ...process.env, ...options.env } : process.env,
-      shell: false,
-    });
-    live.add(child);
-
-    let pending = '';
-    let stderr = '';
-    let settled = false;
-
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      live.delete(child);
-      clearTimeout(timer);
-      options.signal?.removeEventListener('abort', onAbort);
-      fn();
-    };
-
-    const timer = options.timeoutMs
-      ? setTimeout(() => {
-          child.kill('SIGTERM');
-          finish(() => reject(new Error(`${command} timed out after ${options.timeoutMs}ms`)));
-        }, options.timeoutMs)
-      : (undefined as unknown as NodeJS.Timeout);
-
-    const onAbort = () => {
-      child.kill('SIGTERM');
-      finish(() => reject(new Error(`${command} cancelled`)));
-    };
-    options.signal?.addEventListener('abort', onAbort, { once: true });
-
+    const { onLine } = options;
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
-      pending += chunk;
-      const lines = pending.split('\n');
-      pending = lines.pop() ?? '';
-      for (const line of lines) {
-        if (line.trim()) options.onLine(line);
-      }
+      stdout += chunk;
+      if (!onLine) return;
+      const lines = stdout.split('\n');
+      stdout = lines.pop() ?? '';
+      for (const line of lines) if (line.trim()) onLine(line);
     });
     child.stderr.on('data', (chunk: string) => (stderr += chunk));
 
     child.on('error', (err) => finish(() => reject(err)));
     child.on('close', (code) => {
-      if (pending.trim()) options.onLine(pending);
-      finish(() => resolve({ code: code ?? -1, stdout: '', stderr }));
+      if (onLine && stdout.trim()) onLine(stdout);
+      finish(() => resolve({ code: code ?? -1, stdout: onLine ? '' : stdout, stderr }));
     });
 
-    child.stdin.end(options.stdin ?? '');
+    child.stdin.end(options.stdin);
   });
 }
 

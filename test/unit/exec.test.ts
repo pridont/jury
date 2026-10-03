@@ -30,6 +30,14 @@ describe('run', () => {
     await expect(run('node', ['-e', 'setTimeout(()=>{},5000)'], { timeoutMs: 100 })).rejects.toThrow(/timed out/);
   });
 
+  it('hands over stdout line by line, including a last line with no newline', async () => {
+    const lines: string[] = [];
+    const script = 'process.stdout.write("a\\nb");setTimeout(()=>process.stdout.write("c\\n\\nd"),20)';
+    const result = await run('node', ['-e', script], { onLine: (line) => lines.push(line) });
+    expect(lines).toEqual(['a', 'bc', 'd']);
+    expect(result.stdout).toBe('');
+  });
+
   it('cancels on an abort signal', async () => {
     const controller = new AbortController();
     const promise = run('node', ['-e', 'setTimeout(()=>{},5000)'], { signal: controller.signal });
