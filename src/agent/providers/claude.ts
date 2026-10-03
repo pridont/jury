@@ -1,4 +1,4 @@
-import { run, runStreaming, isOnPath } from '../../util/exec.js';
+import { run, isOnPath } from '../../util/exec.js';
 import {
   ProviderError,
   type Answer,
@@ -98,16 +98,11 @@ export class ClaudeProvider implements Provider {
         signal,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (signal.aborted) throw new ProviderError('cancelled', 'cancelled');
-      if (/timed out/.test(message)) throw new ProviderError('timeout', message);
-      if (/ENOENT/.test(message)) throw new ProviderError('not-installed', `${this.settings.command} not found`);
-      throw new ProviderError('failed', message);
+      throw this.failure(error, signal);
     }
 
     if (result.code !== 0) {
-      const detail = (result.stderr || result.stdout).trim().split('\n')[0] ?? `exit ${result.code}`;
-      throw new ProviderError(kindOf(detail), detail);
+      throw new ProviderError('failed', (result.stderr || result.stdout).trim().split('\n')[0] ?? `exit ${result.code}`);
     }
 
     let envelope: Envelope;
@@ -118,8 +113,7 @@ export class ClaudeProvider implements Provider {
     }
 
     if (envelope.is_error || (envelope.subtype && envelope.subtype !== 'success') || envelope.result === undefined) {
-      const detail = envelope.result ?? envelope.subtype ?? 'the request failed';
-      throw new ProviderError(kindOf(detail), detail);
+      throw new ProviderError('failed', envelope.result ?? envelope.subtype ?? 'the request failed');
     }
 
     return {
@@ -183,7 +177,7 @@ export class ClaudeProvider implements Provider {
     const openTools = new Map<number, { name: string; json: string }>();
 
     const started = Date.now();
-    const result = await runStreaming(this.settings.command, args, {
+    const result = await run(this.settings.command, args, {
       stdin: request.input,
       ...(request.cwd ? { cwd: request.cwd } : {}),
       timeoutMs: TIMEOUT_MS,
@@ -244,22 +238,23 @@ export class ClaudeProvider implements Provider {
         }
       },
     }).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      if (signal.aborted) throw new ProviderError('cancelled', 'cancelled');
-      if (/timed out/.test(message)) throw new ProviderError('timeout', message);
-      if (/ENOENT/.test(message)) throw new ProviderError('not-installed', `${this.settings.command} not found`);
-      throw new ProviderError('failed', message);
+      throw this.failure(error, signal);
     });
 
-    if (failure) throw new ProviderError(kindOf(failure), failure);
+    if (failure) throw new ProviderError('failed', failure);
     if (result.code !== 0) {
-      const detail = result.stderr.trim().split('\n')[0] ?? `exit ${result.code}`;
-      throw new ProviderError(kindOf(detail), detail);
+      throw new ProviderError('failed', result.stderr.trim().split('\n')[0] ?? `exit ${result.code}`);
     }
 
     const answer: Answer = { text, model, usage };
     if (session) answer.session = session;
     return answer;
+  }
+
+  private failure(error: unknown, signal: AbortSignal): ProviderError {
+    if (signal.aborted) return new ProviderError('cancelled', 'cancelled');
+    const message = error instanceof Error ? error.message : String(error);
+    return new ProviderError('failed', /ENOENT/.test(message) ? `${this.settings.command} not found` : message);
   }
 }
 
@@ -300,7 +295,3 @@ type StreamLine = {
     delta?: { type?: string; text?: string; partial_json?: string };
   };
 };
-
-function kindOf(detail: string): ProviderError['kind'] {
-  return /log ?in|authenticat|credential|unauthori[sz]ed|api key/i.test(detail) ? 'not-authenticated' : 'failed';
-}

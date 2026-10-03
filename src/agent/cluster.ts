@@ -1,19 +1,10 @@
 import type { FileChange } from '../git/parse.js';
 import { Cache } from './cache.js';
-import { parse, repairPrompt } from './json.js';
+import { askForJson, parse, type Accepted } from './json.js';
 import { clusterPrompt } from './prompts/cluster.js';
-import { ProviderError, type Provider, type Usage } from './provider.js';
-import type { Queue } from './queue.js';
-import { buildDigest } from './digest.js';
+import { ProviderError, type PassDeps, type Usage } from './provider.js';
+import { buildDigest, type Digest } from './digest.js';
 import { merge, type ClusterOutput, type Merged } from '../model/merge.js';
-
-export type ClusterDeps = {
-  provider: Provider;
-  queue: Queue;
-  cache: Cache;
-  owner: string;
-  log: (line: string) => void;
-};
 
 export type ClusterResult =
   | { ok: true; merged: Merged; usage: Usage | null; cached: boolean }
@@ -28,7 +19,7 @@ export type ClusterResult =
  * because a schema-valid non-answer cached is a known-bad result replayed on every open.
  */
 export async function clusterChange(
-  deps: ClusterDeps,
+  deps: PassDeps,
   files: readonly FileChange[],
   summaries: ReadonlyMap<string, string>,
 ): Promise<ClusterResult> {
@@ -46,52 +37,32 @@ export async function clusterChange(
     const fromCache = accept(hit, digest);
     // A cached answer is judged by the same standard when it is read back, so an entry
     // stored before a caller learned to reject it is forgotten rather than served forever.
-    if (fromCache.ok) return { ok: true, merged: fromCache.merged, usage: null, cached: true };
-    deps.log(`  cached clustering rejected (${fromCache.reason}); asking again`);
+    if (fromCache.ok) return { ok: true, merged: fromCache.value.merged, usage: null, cached: true };
+    deps.log(`  cached clustering rejected (${fromCache.error}); asking again`);
   }
 
   try {
     return await deps.queue.run(deps.owner, async (signal) => {
-      const answer = await deps.provider.structured(
+      const { result, usage } = await askForJson(
+        deps.provider,
         { tier: 'smart', system: clusterPrompt.system, input: digest.text },
         signal,
+        (answer) => accept(answer, digest),
+        (error) => deps.log(`  clustering answer did not parse (${error}); asking for it back, fixed`),
       );
-      let usage = answer.usage;
-      let verdict = accept(answer.text, digest);
 
-      if (!verdict.ok && verdict.parseError) {
-        // A repair sends the broken answer back, not the whole digest again: the task was
-        // done, only the JSON is wrong, and re-sending the question costs the same as the
-        // first call for no better odds.
-        deps.log(`  clustering answer did not parse (${verdict.parseError}); asking for it back, fixed`);
-        const retry = await deps.provider.structured(
-          {
-            tier: 'smart',
-            system: 'You fix malformed JSON. Return only the corrected object.',
-            input: repairPrompt(verdict.parseError, answer.text),
-          },
-          signal,
-        );
-        usage = {
-          inputTokens: usage.inputTokens + retry.usage.inputTokens,
-          outputTokens: usage.outputTokens + retry.usage.outputTokens,
-          costUsd: usage.costUsd + retry.usage.costUsd,
-          durationMs: usage.durationMs + retry.usage.durationMs,
-        };
-        verdict = accept(retry.text, digest);
+      if (!result.ok) {
+        deps.log(`  clustering declined: ${result.error}`);
+        return { ok: false, reason: result.error };
       }
 
-      if (!verdict.ok) {
-        deps.log(`  clustering declined: ${verdict.reason}`);
-        return { ok: false, reason: verdict.reason };
-      }
-
-      await deps.cache.set(key, verdict.text);
+      const { merged, text } = result.value;
+      await deps.cache.set(key, text);
       deps.log(
-        `  clustering: ${verdict.merged.cohorts.length} cohorts, ${usage.inputTokens} in, ` +
+        `  clustering: ${merged.cohorts.length} cohorts, ${usage.inputTokens} in, ` +
           `${usage.outputTokens} out, ${usage.durationMs}ms, $${usage.costUsd.toFixed(4)}`,
       );
-      return { ok: true, merged: verdict.merged, usage, cached: false };
+      return { ok: true, merged, usage, cached: false };
     });
   } catch (error) {
     if (error instanceof ProviderError && error.kind === 'cancelled') return { ok: false, reason: 'cancelled' };
@@ -100,16 +71,13 @@ export async function clusterChange(
   }
 }
 
-type Verdict =
-  | { ok: true; merged: Merged; text: string }
-  | { ok: false; reason: string; parseError?: string };
-
-function accept(text: string, digest: ReturnType<typeof buildDigest>): Verdict {
+/** The text rides along with the result, since it is what gets cached. */
+function accept(text: string, digest: Digest): Accepted<{ merged: Merged; text: string }> {
   const parsed = parse<ClusterOutput>(text, clusterPrompt.shape);
-  if (!parsed.ok) return { ok: false, reason: parsed.error, parseError: parsed.error };
+  if (!parsed.ok) return { ok: false, error: parsed.error, repairable: true };
 
   const result = merge(parsed.value, digest.labels, digest.scaffolding);
-  if (!result.ok) return { ok: false, reason: result.reason };
+  if (!result.ok) return { ok: false, error: result.reason, repairable: false };
 
-  return { ok: true, merged: result.merged, text };
+  return { ok: true, value: { merged: result.merged, text } };
 }

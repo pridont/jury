@@ -1,6 +1,7 @@
+import { basename, dirname } from 'node:path/posix';
 import * as vscode from 'vscode';
 import type { FileChange } from '../git/parse.js';
-import type { SessionHost } from '../session.js';
+import type { Session, SessionHost } from '../session.js';
 import type { Activity, ActivityKind } from './activity.js';
 import type { Cohort, Comment, Layer, Risk } from '../model/types.js';
 
@@ -28,17 +29,13 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
   private readonly changed = new vscode.EventEmitter<Node | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
 
-  private activity: Activity | null = null;
-  private extension: vscode.Uri | null = null;
-
-  constructor(private readonly host: SessionHost) {
-    this.host.onDidChange(() => this.refresh());
-  }
-
-  /** Show the running step, with its loading icon, as the first row of the tree. */
-  attach(activity: Activity, extension: vscode.Uri): void {
-    this.activity = activity;
-    this.extension = extension;
+  constructor(
+    private readonly host: SessionHost,
+    /** The running step, shown with its loading icon as the first row of the tree. */
+    private readonly activity: Activity,
+    private readonly extension: vscode.Uri,
+  ) {
+    host.onDidChange(() => this.refresh());
     activity.onDidChange(() => this.refresh());
   }
 
@@ -50,10 +47,9 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
    * runtime — a storage folder, say — add a directory the renderer may decline to serve and
    * a window in which the files do not exist yet.
    */
-  private loaderIcon(kind: ActivityKind, fallback: string): { light: vscode.Uri; dark: vscode.Uri } | vscode.ThemeIcon {
-    if (!this.extension) return new vscode.ThemeIcon(fallback);
+  private loaderIcon(kind: ActivityKind): { light: vscode.Uri; dark: vscode.Uri } {
     const file = (theme: 'light' | 'dark') =>
-      vscode.Uri.joinPath(this.extension!, 'dist', 'loaders', `jury-${kind}-${theme}.svg`);
+      vscode.Uri.joinPath(this.extension, 'dist', 'loaders', `jury-${kind}-${theme}.svg`);
     return { light: file('light'), dark: file('dark') };
   }
 
@@ -69,7 +65,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const item = new vscode.TreeItem(node.text, vscode.TreeItemCollapsibleState.None);
         item.id = 'message';
         item.contextValue = 'message';
-        if (node.loader) item.iconPath = this.loaderIcon(node.loader, node.icon ?? 'loading~spin');
+        if (node.loader) item.iconPath = this.loaderIcon(node.loader);
         else if (node.icon) item.iconPath = new vscode.ThemeIcon(node.icon);
         return item;
       }
@@ -78,7 +74,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const item = new vscode.TreeItem(node.text, vscode.TreeItemCollapsibleState.None);
         item.id = 'status';
         item.contextValue = 'status';
-        item.iconPath = this.loaderIcon(node.kind, 'loading~spin');
+        item.iconPath = this.loaderIcon(node.kind);
         return item;
       }
 
@@ -127,11 +123,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         else if (!onlyPath) item.iconPath = new vscode.ThemeIcon('layers');
         item.contextValue = scaffolding ? 'cohort-scaffolding' : 'cohort';
 
-        const hunkIds = node.cohort.layers.flatMap((layer) => layer.hunkIds);
-        item.checkboxState =
-          session && hunkIds.length > 0 && hunkIds.every((id) => session.marks.has(id))
-            ? vscode.TreeItemCheckboxState.Checked
-            : vscode.TreeItemCheckboxState.Unchecked;
+        item.checkboxState = tick(session, node.cohort.layers.flatMap((layer) => layer.hunkIds));
 
         if (only) {
           if (onlyPath) item.resourceUri = vscode.Uri.file(onlyPath);
@@ -171,12 +163,10 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
       }
 
       case 'layerFile': {
-        const item = new vscode.TreeItem(name(node.path), vscode.TreeItemCollapsibleState.None);
+        const item = new vscode.TreeItem(basename(node.path), vscode.TreeItemCollapsibleState.None);
         item.id = fileId(node.cohort, node.layer, node.path);
-        const hunks = hunksIn(session, node.layer, node.path);
-        const notes = session
-          ? session.comments.filter((c) => !c.orphaned && hunks.some((id) => id === c.hunkId)).length
-          : 0;
+        const hunks = session?.hunksIn(node.layer.hunkIds, node.path) ?? [];
+        const notes = notesOn(session, hunks);
         item.description = [
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
           statusNote(session, node.path),
@@ -187,10 +177,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           .join(' · ');
         item.resourceUri = vscode.Uri.file(node.path);
         item.tooltip = new vscode.MarkdownString(session?.summaries.get(node.path) ?? node.path);
-        item.checkboxState =
-          session && hunks.length > 0 && hunks.every((id) => session.marks.has(id))
-            ? vscode.TreeItemCheckboxState.Checked
-            : vscode.TreeItemCheckboxState.Unchecked;
+        item.checkboxState = tick(session, hunks);
         item.contextValue = 'layerFile';
         item.command = {
           command: 'jury.openLayerFile',
@@ -209,7 +196,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // parent" with `source.ts` turns the reading order back into the alphabetical file
         // list this whole thing exists to replace. So the file moves to the description.
         const named = single !== undefined && node.layer.title === single;
-        const label = named && single !== undefined ? name(single) : node.layer.title;
+        const label = named && single !== undefined ? basename(single) : node.layer.title;
         // A step that spans files opens as those files; it also expands to them, so what it
         // touches is visible without opening anything.
         const item = new vscode.TreeItem(
@@ -217,11 +204,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           single ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed,
         );
         item.id = layerId(node.cohort, node.layer);
-        const marked = session ? node.layer.hunkIds.every((id) => session.marks.has(id)) : false;
-        const notes = session
-          ? session.comments.filter((comment) => !comment.orphaned && node.layer.hunkIds.includes(comment.hunkId))
-              .length
-          : 0;
+        const notes = notesOn(session, node.layer.hunkIds);
         const summary = single ? session?.summaries.get(single) : undefined;
         const where = single
           ? named
@@ -242,9 +225,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         item.tooltip = new vscode.MarkdownString(node.layer.summary || summary || label);
         if (single) item.resourceUri = vscode.Uri.file(single);
         else item.iconPath = new vscode.ThemeIcon('layers');
-        item.checkboxState = marked
-          ? vscode.TreeItemCheckboxState.Checked
-          : vscode.TreeItemCheckboxState.Unchecked;
+        item.checkboxState = tick(session, node.layer.hunkIds);
         item.contextValue = 'layer';
         item.command = {
           command: 'jury.openLayer',
@@ -268,7 +249,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
       if (session.cohorts.length === 0) return [{ type: 'message', text: 'No changes to review.' }];
 
       const nodes: Node[] = session.cohorts.map((cohort, index) => ({ type: 'cohort', cohort, index }));
-      const running = this.activity?.current;
+      const running = this.activity.current;
       if (running) nodes.unshift({ type: 'status', text: running.text, kind: running.kind });
       // Orphaned notes get their own section rather than vanishing with the code they were
       // about. Last, so they never push the reading order down the view.
@@ -367,9 +348,15 @@ function fileId(cohort: Cohort, layer: Layer, path: string): string {
   return `${layerId(cohort, layer)}/f:${path}`;
 }
 
-function name(path: string): string {
-  const at = path.lastIndexOf('/');
-  return at === -1 ? path : path.slice(at + 1);
+/** Ticked when every one of `hunkIds` is marked. */
+function tick(session: Session | null, hunkIds: readonly string[]): vscode.TreeItemCheckboxState {
+  return session && hunkIds.length > 0 && hunkIds.every((id) => session.marks.has(id))
+    ? vscode.TreeItemCheckboxState.Checked
+    : vscode.TreeItemCheckboxState.Unchecked;
+}
+
+function notesOn(session: Session | null, hunkIds: readonly string[]): number {
+  return session?.comments.filter((comment) => !comment.orphaned && hunkIds.includes(comment.hunkId)).length ?? 0;
 }
 
 /**
@@ -382,9 +369,9 @@ function statusNote(session: { files: FileChange[] } | null, path: string): stri
   return session?.files.find((file) => file.path === path)?.status === 'deleted' ? 'deleted' : '';
 }
 
-function directory(path: string): string {
-  const at = path.lastIndexOf('/');
-  return at === -1 ? '' : path.slice(0, at);
+function directory(file: string): string {
+  const dir = dirname(file);
+  return dir === '.' ? '' : dir;
 }
 
 /**
@@ -404,16 +391,4 @@ function riskIcon(risk: Risk): vscode.ThemeIcon | undefined {
     case 'high':
       return new vscode.ThemeIcon('flame', new vscode.ThemeColor('charts.red'));
   }
-}
-
-/** The hunks of one layer that live in one file. */
-function hunksIn(
-  session: { files: { path: string; hunks: { id: string }[] }[] } | null,
-  layer: Layer,
-  path: string,
-): string[] {
-  const file = session?.files.find((candidate) => candidate.path === path);
-  if (!file) return [];
-  const own = new Set(file.hunks.map((hunk) => hunk.id));
-  return layer.hunkIds.filter((id) => own.has(id));
 }

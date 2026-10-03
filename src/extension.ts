@@ -15,12 +15,12 @@ import { Comments } from './ui/comments.js';
 import { reconcileComments } from './model/comments.js';
 import { toMarkdown } from './export.js';
 import * as providers from './agent/provider.js';
-import type { Provider } from './agent/provider.js';
+import type { PassDeps, Provider } from './agent/provider.js';
 import { ClaudeProvider } from './agent/providers/claude.js';
 import { VscodeLmProvider } from './agent/providers/vscodeLm.js';
 import { Cache } from './agent/cache.js';
 import { Queue } from './agent/queue.js';
-import { summariseFiles } from './agent/summaries.js';
+import { isWorthSummarising, summariseFiles } from './agent/summaries.js';
 import { clusterChange } from './agent/cluster.js';
 import { showWalkthrough } from './ui/walkthrough.js';
 import { Activity } from './ui/activity.js';
@@ -36,7 +36,7 @@ import { load as loadStored, list as listStored, reviewId } from './state/store.
 import { describeRefresh, reconcileMarks } from './state/reconcile.js';
 import { migrateLegacyState } from './state/migrate.js';
 import { describeSpec } from './model/types.js';
-import { fetchHead, listOpen, resolve, viewedFiles, GhError, type PullRequest } from './github/pr.js';
+import { fetchHead, listOpen, resolve, viewedFiles } from './github/pr.js';
 import { defaultBranch, describeCommit, listRefs, recentCommits, type Ref } from './git/refs.js';
 import { pickOrType } from './ui/pick.js';
 import { prepare, preview, recordPosted, submit, type ReviewEvent } from './github/submit.js';
@@ -58,7 +58,8 @@ export function activate(context: vscode.ExtensionContext): void {
   windowState = context.workspaceState;
 
   const host = new SessionHost();
-  const tree = new StackTree(host);
+  const activity = new Activity();
+  const tree = new StackTree(host, activity, context.extensionUri);
   const blobs = new BlobProvider();
   const view = vscode.window.createTreeView('jury.stack', {
     treeDataProvider: tree,
@@ -72,8 +73,6 @@ export function activate(context: vscode.ExtensionContext): void {
   providers.register(claude);
   providers.register(vscodeLm);
   const queue = new Queue(4);
-  const activity = new Activity();
-  tree.attach(activity, context.extensionUri);
   const documents = new Documents();
 
   context.subscriptions.push(
@@ -111,7 +110,7 @@ export function activate(context: vscode.ExtensionContext): void {
             : node.type === 'cohort'
               ? node.cohort.layers.flatMap((layer) => layer.hunkIds)
               : node.type === 'layerFile'
-                ? hunksOf(session, node.layer.hunkIds, node.path)
+                ? session.hunksIn(node.layer.hunkIds, node.path)
                 : [];
         const checked = state === vscode.TreeItemCheckboxState.Checked;
         for (const id of hunkIds) {
@@ -119,8 +118,7 @@ export function activate(context: vscode.ExtensionContext): void {
           else session.marks.delete(id);
         }
       }
-      updateBadge(view, nav, host);
-      void persist(session);
+      void marksChanged(session, ctx());
     }),
 
     vscode.window.onDidChangeTextEditorSelection((event) => {
@@ -195,8 +193,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.markCohortReviewed', (node?: Node) =>
       markCohort(host, node, ctx()),
     ),
-    vscode.commands.registerCommand('jury.toggleReviewed', () => toggleReviewed(host, nav, tree, view)),
-    vscode.commands.registerCommand('jury.markLayerReviewed', () => markLayer(host, nav, tree, view)),
+    vscode.commands.registerCommand('jury.toggleReviewed', () => toggleReviewed(host, ctx())),
+    vscode.commands.registerCommand('jury.markLayerReviewed', () => markLayer(host, ctx())),
     vscode.commands.registerCommand('jury.notScaffolding', (node?: Node) =>
       notScaffolding(host, node, ctx()),
     ),
@@ -206,7 +204,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   nav.onDidChange((entry) => {
-    updateBadge(view, nav, host);
+    updateBadge(view, nav, host.active);
     if (!entry) return;
     const node = tree.nodeForPosition(entry.cohortIndex, entry.layerIndex, entry.file.path);
     // `expand` so a file row inside a collapsed step is actually visible when selected.
@@ -243,8 +241,8 @@ type Context = {
   documents: Documents;
 };
 
-async function open(host: SessionHost, spec: ReviewSpec, ctx: Context): Promise<void> {
-  const repo = await resolveRepo();
+async function open(host: SessionHost, spec: ReviewSpec, ctx: Context, known?: Repo): Promise<void> {
+  const repo = known ?? (await resolveRepo());
   if (!repo) return;
 
   if (host.active) ctx.queue.cancel(host.active.id);
@@ -293,17 +291,9 @@ async function restoreLast(host: SessionHost, ctx: Context): Promise<void> {
   const cwd = workspaceCwd();
   const repo = cwd ? await findRepo(cwd) : null;
   if (!repo) return;
-  await migrate(repo);
 
-  const session = new Session(repo, spec);
-  const stored = await loadStored(repo, reviewId(repo, spec));
-  if (stored) session.hydrate(stored);
-
-  host.open(session);
-  ctx.nav.setSession(session);
-  ctx.comments.setSession(session);
-  await load(session, ctx);
-  log.appendLine(`  restored ${describeSpec(spec)} with ${session.marks.size} marks`);
+  await open(host, spec, ctx, repo);
+  log.appendLine(`  restored ${describeSpec(spec)} with ${host.active?.marks.size ?? 0} marks`);
 }
 
 /** Reopen the most recently touched review for this repository. */
@@ -368,7 +358,7 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
 
   ctx.comments.render();
   ctx.tree.refresh();
-  updateBadge(ctx.view, ctx.nav, host);
+  updateBadge(ctx.view, ctx.nav, session);
 
   if (notes.moved > 0 || notes.orphaned > 0) {
     log.appendLine(`  notes: ${notes.moved} moved, ${notes.orphaned} orphaned`);
@@ -428,7 +418,7 @@ async function load(session: Session, ctx: Context): Promise<void> {
 
   ctx.nav.setOrder(buildOrder(session.cohorts, session.files));
   ctx.comments.render();
-  updateBadge(ctx.view, ctx.nav, { active: session } as SessionHost);
+  updateBadge(ctx.view, ctx.nav, session);
 
   // Best-effort labelling; a missing language server costs a label, never the review.
   await enrichSymbols(session.files, (file) => uriForFile(session, file));
@@ -445,22 +435,25 @@ async function load(session: Session, ctx: Context): Promise<void> {
  * If anything here fails, the review is exactly what it was.
  */
 async function organise(session: Session, ctx: Context): Promise<void> {
-  const cache = new Cache(path.join(stateDir(session.repo), 'cache'));
-  const owner = session.id;
-  const write = (line: string) => log.appendLine(line);
-
   try {
     const summariser = worthSummarising(session) ? await providerFor('summaries') : null;
-    if (summariser) await summarise(session, ctx, { provider: summariser, queue: ctx.queue, cache, owner, log: write });
+    if (summariser) await summarise(session, ctx, passDeps(session, ctx, summariser));
 
     const clusterer = await providerFor('clustering');
-    if (clusterer) await cluster(session, ctx, { provider: clusterer, queue: ctx.queue, cache, owner, log: write });
+    if (clusterer) await cluster(session, ctx, passDeps(session, ctx, clusterer));
   } finally {
     ctx.activity.stop();
   }
 }
 
-type AgentDeps = Parameters<typeof clusterChange>[0];
+function passDeps(session: Session, ctx: Context, provider: Provider): PassDeps {
+  const write = (line: string) => log.appendLine(line);
+  return { provider, queue: ctx.queue, cache: cacheFor(session.repo), owner: session.id, log: write };
+}
+
+function cacheFor(repo: Repo): Cache {
+  return new Cache(path.join(stateDir(repo), 'cache'));
+}
 
 /**
  * Pass 2 lands once, and says so.
@@ -469,7 +462,7 @@ type AgentDeps = Parameters<typeof clusterChange>[0];
  * view that rearranges itself under the reader is worse than one that never improves. The
  * hunk being read stays selected across the change.
  */
-async function cluster(session: Session, ctx: Context, deps: AgentDeps): Promise<void> {
+async function cluster(session: Session, ctx: Context, deps: PassDeps): Promise<void> {
   if (session.clustered) return;
 
   ctx.activity.start('Grouping the change', 0, 'deliberating');
@@ -494,7 +487,7 @@ async function cluster(session: Session, ctx: Context, deps: AgentDeps): Promise
   ctx.nav.setOrder(buildOrder(session.cohorts, session.files));
   ctx.comments.render();
   ctx.tree.refresh();
-  updateBadge(ctx.view, ctx.nav, { active: session } as SessionHost);
+  updateBadge(ctx.view, ctx.nav, session);
   if (reading) void ctx.nav.goToHunk(reading);
 
   const count = session.cohorts.filter((cohort) => cohort.kind !== 'scaffolding').length;
@@ -518,13 +511,7 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
 
   session.clustered = false;
   try {
-    await cluster(session, ctx, {
-      provider,
-      queue: ctx.queue,
-      cache: new Cache(path.join(stateDir(session.repo), 'cache')),
-      owner: session.id,
-      log: (line: string) => log.appendLine(line),
-    });
+    await cluster(session, ctx, passDeps(session, ctx, provider));
   } finally {
     ctx.activity.stop();
   }
@@ -541,9 +528,7 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
  */
 function worthSummarising(session: Session): boolean {
   const limit = vscode.workspace.getConfiguration('jury').get<number>('ai.summariseUpTo', 60);
-  const files = session.files.filter(
-    (file) => !file.binary && file.hunks.some((hunk) => hunk.kind === 'text' && !hunk.scaffolding),
-  ).length;
+  const files = session.files.filter(isWorthSummarising).length;
 
   if (limit === 0 || files <= limit) return limit !== 0;
 
@@ -552,12 +537,9 @@ function worthSummarising(session: Session): boolean {
 }
 
 /** Pass 1: a sentence per file, appearing as each lands. */
-async function summarise(session: Session, ctx: Context, deps: AgentDeps): Promise<void> {
+async function summarise(session: Session, ctx: Context, deps: PassDeps): Promise<void> {
   const started = Date.now();
-  const worth = session.files.filter(
-    (file) => !file.binary && file.hunks.some((hunk) => hunk.kind === 'text' && !hunk.scaffolding),
-  ).length;
-  ctx.activity.start('Reading the change', worth, 'answering');
+  ctx.activity.start('Reading the change', session.files.filter(isWorthSummarising).length, 'answering');
 
   const tally = await summariseFiles(deps, session.files, (event) => {
     if (event.kind === 'summary') session.summaries.set(event.path, event.summary);
@@ -630,7 +612,7 @@ async function providerFor(pass: 'summaries' | 'clustering' | 'ask'): Promise<Pr
 async function clearCache(host: SessionHost): Promise<void> {
   const repo = host.active?.repo ?? (await resolveRepo());
   if (!repo) return;
-  const cache = new Cache(path.join(stateDir(repo), 'cache'));
+  const cache = cacheFor(repo);
   const size = await cache.size();
   await cache.clear();
   vscode.window.showInformationMessage(`Jury: cleared ${size} cached answers.`);
@@ -645,14 +627,6 @@ async function classify(session: Session): Promise<void> {
     overrides: session.notScaffolding,
     fromDisk: session.spec.kind === 'worktree',
   });
-}
-
-/** The hunks of a layer that live in one file. */
-function hunksOf(session: Session, hunkIds: readonly string[], path: string): string[] {
-  const file = session.files.find((candidate) => candidate.path === path);
-  if (!file) return [];
-  const own = new Set(file.hunks.map((hunk) => hunk.id));
-  return hunkIds.filter((id) => own.has(id));
 }
 
 /** Open every file of one layer together — the cohort action, at the scope of a step. */
@@ -689,38 +663,34 @@ async function markCohort(host: SessionHost, node: Node | undefined, ctx: Contex
   for (const layer of node.cohort.layers) {
     for (const id of layer.hunkIds) session.marks.add(id);
   }
-  ctx.tree.refresh();
-  updateBadge(ctx.view, ctx.nav, host);
-  await persist(session);
+  await marksChanged(session, ctx);
 }
 
-function toggleReviewed(host: SessionHost, nav: Navigator, tree: StackTree, view: vscode.TreeView<Node>): void {
+async function toggleReviewed(host: SessionHost, ctx: Context): Promise<void> {
   const session = host.active;
-  const entry = nav.current;
+  const entry = ctx.nav.current;
   if (!session || !entry) return;
 
   if (session.marks.has(entry.hunk.id)) session.marks.delete(entry.hunk.id);
   else session.marks.add(entry.hunk.id);
-  tree.refresh();
-  updateBadge(view, nav, host);
-  void persist(session);
+  await marksChanged(session, ctx);
 }
 
-async function markLayer(
-  host: SessionHost,
-  nav: Navigator,
-  tree: StackTree,
-  view: vscode.TreeView<Node>,
-): Promise<void> {
+async function markLayer(host: SessionHost, ctx: Context): Promise<void> {
   const session = host.active;
-  const entry = nav.current;
+  const entry = ctx.nav.current;
   if (!session || !entry) return;
 
   for (const id of entry.layer.hunkIds) session.marks.add(id);
-  tree.refresh();
-  updateBadge(view, nav, host);
+  await marksChanged(session, ctx);
+  await ctx.nav.stepLayer(1);
+}
+
+/** Show a change to the ticks everywhere they appear, and save it. */
+async function marksChanged(session: Session, ctx: Context): Promise<void> {
+  ctx.tree.refresh();
+  updateBadge(ctx.view, ctx.nav, session);
   await persist(session);
-  await nav.stepLayer(1);
 }
 
 /**
@@ -742,8 +712,8 @@ async function notScaffolding(host: SessionHost, node: Node | undefined, ctx: Co
   ctx.tree.refresh();
 }
 
-function updateBadge(view: vscode.TreeView<Node>, nav: Navigator, host: SessionHost): void {
-  if (!host.active) {
+function updateBadge(view: vscode.TreeView<Node>, nav: Navigator, session: Session | null): void {
+  if (!session) {
     view.badge = undefined;
     view.description = '';
     return;
@@ -872,9 +842,7 @@ async function pickCommit(repo: Repo): Promise<string | undefined> {
 }
 
 function describeRef(ref: Ref): string {
-  const kind =
-    ref.kind === 'commit' ? 'commit' : ref.kind === 'tag' ? 'tag' : ref.kind === 'remote' ? 'remote' : 'branch';
-  return `${kind} · ${ref.when}`;
+  return `${ref.kind} · ${ref.when}`;
 }
 
 /** Put an orphaned note back on a hunk the reviewer picks out of the reading order. */
@@ -972,13 +940,11 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
           }
           if (viewed.size > 0) {
             log.appendLine(`  ${viewed.size} files were already marked viewed on GitHub`);
-            await persist(session);
-            ctx.tree.refresh();
-            updateBadge(ctx.view, ctx.nav, host);
+            await marksChanged(session, ctx);
           }
         }
       } catch (error) {
-        const message = error instanceof GhError ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`Jury: ${message}`);
         log.appendLine(`  pull request review failed: ${message}`);
       }
@@ -1045,7 +1011,7 @@ async function submitReview(host: SessionHost, documents: Documents): Promise<vo
     const open = await vscode.window.showInformationMessage('Jury: review posted.', 'Open on GitHub');
     if (open === 'Open on GitHub') await vscode.env.openExternal(vscode.Uri.parse(url));
   } catch (error) {
-    const message = error instanceof GhError ? error.message : String(error);
+    const message = error instanceof Error ? error.message : String(error);
     log.appendLine(`  submitting failed: ${message}`);
     vscode.window.showErrorMessage(`Jury: the review was not posted — ${message}`);
   }

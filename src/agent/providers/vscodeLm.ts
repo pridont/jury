@@ -87,11 +87,7 @@ export class VscodeLmProvider implements Provider {
       }
     } catch (error) {
       if (signal.aborted) throw new ProviderError('cancelled', 'cancelled');
-      const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof vscode.LanguageModelError && error.code === 'NoPermissions') {
-        throw new ProviderError('not-authenticated', message);
-      }
-      throw new ProviderError('failed', message);
+      throw new ProviderError('failed', error instanceof Error ? error.message : String(error));
     } finally {
       cancellation.dispose();
     }
@@ -113,7 +109,7 @@ export class VscodeLmProvider implements Provider {
     const wanted = this.settings.models[tier];
     const models = await vscode.lm.selectChatModels(wanted ? { id: wanted } : {});
     const model = models[0] ?? (await vscode.lm.selectChatModels())[0];
-    if (!model) throw new ProviderError('not-installed', 'no chat model is available');
+    if (!model) throw new ProviderError('failed', 'no chat model is available');
     return model;
   }
 }

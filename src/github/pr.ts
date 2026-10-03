@@ -11,16 +11,6 @@ export type PullRequest = {
   nameWithOwner: string;
 };
 
-export class GhError extends Error {
-  constructor(
-    readonly kind: 'not-installed' | 'not-authenticated' | 'no-pr' | 'failed',
-    message: string,
-  ) {
-    super(message);
-    this.name = 'GhError';
-  }
-}
-
 /** The local ref a PR head is fetched into. Nothing is ever checked out. */
 export function refFor(number: number): string {
   return `refs/jury/pr-${number}`;
@@ -38,14 +28,13 @@ export async function resolve(repo: Repo, number?: number): Promise<PullRequest>
   const args = ['pr', 'view', ...(number ? [String(number)] : []), '--json', fields];
   const result = await run('gh', args, { cwd: repo.root, timeoutMs: 30_000 }).catch(() => null);
 
-  if (!result) throw new GhError('not-installed', 'gh is not on PATH');
+  if (!result) throw new Error('gh is not on PATH');
   if (result.code !== 0) {
     const detail = result.stderr.trim().split('\n')[0] ?? 'gh failed';
     if (/no pull requests found|no default remote/i.test(detail)) {
-      throw new GhError('no-pr', number ? `no pull request #${number}` : 'this branch has no pull request');
+      throw new Error(number ? `no pull request #${number}` : 'this branch has no pull request');
     }
-    if (/auth|login|token/i.test(detail)) throw new GhError('not-authenticated', detail);
-    throw new GhError('failed', detail);
+    throw new Error(detail);
   }
 
   const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
@@ -93,7 +82,7 @@ export async function fetchHead(repo: Repo, pr: PullRequest): Promise<{ base: st
     const base = await mergeBase(repo, candidate, head).catch(() => null);
     if (base) return { base, head };
   }
-  throw new GhError('failed', `could not find the merge base of ${pr.baseRef} and #${pr.number}`);
+  throw new Error(`could not find the merge base of ${pr.baseRef} and #${pr.number}`);
 }
 
 export type PullRequestSummary = {

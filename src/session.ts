@@ -3,7 +3,7 @@ import type { Repo } from './git/repo.js';
 import type { FileChange } from './git/parse.js';
 import type { Cohort, Comment, ReviewSpec } from './model/types.js';
 import { describeSpec } from './model/types.js';
-import { emptyReview, reviewId, save, type StoredReview } from './state/store.js';
+import { emptyReview, save, type StoredReview } from './state/store.js';
 import type { PullRequest } from './github/pr.js';
 
 /** The one review that is open, if any. */
@@ -67,6 +67,12 @@ export class Session {
     this.stored.notScaffolding = [...this.notScaffolding];
     this.stored.comments = this.comments;
     await save(this.repo, this.stored);
+  }
+
+  /** The hunks among `hunkIds` that live in `path`. */
+  hunksIn(hunkIds: readonly string[], path: string): string[] {
+    const own = new Set(this.files.find((file) => file.path === path)?.hunks.map((hunk) => hunk.id));
+    return hunkIds.filter((id) => own.has(id));
   }
 
   get hunkCount(): number {

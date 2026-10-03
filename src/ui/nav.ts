@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { contentSide, type FileChange } from '../git/parse.js';
+import { contentSide } from '../git/parse.js';
 import type { Session } from '../session.js';
-import { contentUri, openFileDiff, sidesFor } from './diff.js';
+import { contentUri, editorFor, openFileDiff, sidesFor } from './diff.js';
+import { covers } from '../model/comments.js';
 import { layerEntry, step, stepLayer, type Entry } from '../model/order.js';
 
 /** Code that did not change at all. Dim means "not part of this diff", one meaning only. */
@@ -100,7 +101,7 @@ export class Navigator implements vscode.Disposable {
       // One editor, on the file the position is in. A multi-file editor cannot host the
       // reading: its panes are not `visibleTextEditors`, so reveal and decorations have
       // nothing to attach to. Opening a whole step is an action.
-      const shown = this.showing(entry.file);
+      const shown = editorFor(contentUri(this.session, entry.file));
       const editor = changingFile || !shown ? await openFileDiff(this.session, entry.file) : shown;
 
       if (editor) {
@@ -113,18 +114,6 @@ export class Navigator implements vscode.Disposable {
     this.changed.fire(entry);
   }
 
-  /**
-   * The editor already showing this file's content.
-   *
-   * Matched on the exact URI of the side that holds it rather than on the path: the two
-   * sides of a deletion differ only by the revision in the query, so a path match can hand
-   * back the empty pane, where every reveal silently does nothing.
-   */
-  private showing(file: FileChange): vscode.TextEditor | undefined {
-    const uri = contentUri(this.session, file).toString();
-    return vscode.window.visibleTextEditors.find((editor) => editor.document.uri.toString() === uri);
-  }
-
   /** Map a cursor back onto a hunk, so clicking in the diff moves the review with it. */
   syncFromEditor(editor: vscode.TextEditor): void {
     // A move sets the selection itself; reading that back would undo the move it just made.
@@ -134,8 +123,8 @@ export class Navigator implements vscode.Disposable {
 
     const index = this.order.findIndex((entry) => {
       const { before, after } = sidesFor(this.session, entry.file);
-      if (uri === after.toString()) return contains(entry.hunk.newStart, entry.hunk.newCount, line);
-      if (uri === before.toString()) return contains(entry.hunk.oldStart, entry.hunk.oldCount, line);
+      if (uri === after.toString()) return covers(entry.hunk, 'new', line);
+      if (uri === before.toString()) return covers(entry.hunk, 'old', line);
       return false;
     });
 
@@ -162,10 +151,6 @@ export class Navigator implements vscode.Disposable {
       editor.setDecorations(ACTIVE, []);
     }
   }
-}
-
-function contains(start: number, count: number, line: number): boolean {
-  return count > 0 ? line >= start && line < start + count : line === start;
 }
 
 function reveal(editor: vscode.TextEditor, entry: Entry): void {
