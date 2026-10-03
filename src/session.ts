@@ -1,26 +1,16 @@
 import * as vscode from 'vscode';
 import type { Repo } from './git/repo.js';
 import type { FileChange } from './git/parse.js';
-import type { Cohort, Comment, Review, ReviewSpec } from './model/types.js';
+import type { Cohort, Comment, ReviewSpec } from './model/types.js';
 import { describeSpec } from './model/types.js';
 import { emptyReview, reviewId, save, type StoredReview } from './state/store.js';
 import type { PullRequest } from './github/pr.js';
 
-/**
- * The one review that is open, if any.
- *
- * A session owns everything a review allocates — subscriptions, decorations, and later
- * every in-flight model request — so that closing it leaves the editor exactly as it was
- * found and no subprocess behind.
- */
-export class Session implements vscode.Disposable {
-  private readonly subscriptions: vscode.Disposable[] = [];
-
+/** The one review that is open, if any. */
+export class Session {
   constructor(
     readonly repo: Repo,
     readonly spec: ReviewSpec,
-    /** Null until cohorts are built; the UI must render an opening review, not a lie. */
-    public review: Review | null = null,
   ) {
     this.stored = emptyReview(repo, spec);
   }
@@ -86,16 +76,6 @@ export class Session implements vscode.Disposable {
   get title(): string {
     return describeSpec(this.spec);
   }
-
-  register(disposable: vscode.Disposable): void {
-    this.subscriptions.push(disposable);
-  }
-
-  dispose(): void {
-    for (const d of this.subscriptions.splice(0)) {
-      d.dispose();
-    }
-  }
 }
 
 /** Holds the active session and announces when it is replaced or closed. */
@@ -119,7 +99,6 @@ export class SessionHost implements vscode.Disposable {
 
   close(): void {
     if (!this.current) return;
-    this.current.dispose();
     this.current = null;
     void vscode.commands.executeCommand('setContext', 'jury.active', false);
     void vscode.commands.executeCommand('setContext', 'jury.pr', false);

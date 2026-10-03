@@ -193,12 +193,6 @@ describe('Queue', () => {
     await other;
     expect(aborted).toBe(false);
   });
-
-  it('reports nothing in flight once it drains', async () => {
-    const queue = new Queue(2);
-    await Promise.all([queue.run('r', async () => {}), queue.run('r', async () => {})]);
-    expect(queue.inFlight).toBe(0);
-  });
 });
 
 const file = (path: string, over: Partial<FileChange> = {}): FileChange => ({
@@ -225,8 +219,6 @@ const file = (path: string, over: Partial<FileChange> = {}): FileChange => ({
 const stub = (answers: (request: Request) => string | Error): Provider => ({
   id: 'stub',
   capabilities: () => ({
-    structured: true,
-    streaming: false,
     repoTools: false,
     models: { fast: 'stub-fast' },
     maxInputChars: 100_000,
@@ -240,6 +232,9 @@ const stub = (answers: (request: Request) => string | Error): Provider => ({
       model: 'stub-fast',
       usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.0001, durationMs: 1 },
     };
+  },
+  stream: async () => {
+    throw new Error('not used');
   },
 });
 

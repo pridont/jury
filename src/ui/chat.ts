@@ -40,10 +40,6 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
       stream.markdown('No model provider is available. `Jury: Doctor` says why.');
       return;
     }
-    if (!provider.stream) {
-      stream.markdown(`\`${provider.id}\` cannot stream an answer.`);
-      return;
-    }
 
     if (!request.prompt.trim()) {
       stream.markdown('Ask a question about the change under the cursor.');
@@ -61,7 +57,7 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
 
     try {
       const ask = (resumeFrom: string | undefined) =>
-        provider.stream!(
+        provider.stream(
           {
             tier: 'smart',
             system: askPrompt.system,

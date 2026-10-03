@@ -17,8 +17,6 @@ type Params = { root: string; path: string; rev: string };
  */
 export class BlobProvider implements vscode.TextDocumentContentProvider {
   private readonly cache = new Map<string, string>();
-  private readonly changed = new vscode.EventEmitter<vscode.Uri>();
-  readonly onDidChange = this.changed.event;
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const key = uri.toString();

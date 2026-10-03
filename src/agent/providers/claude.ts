@@ -14,15 +14,9 @@ import {
 export type ClaudeSettings = {
   command: string;
   models: Partial<Record<Tier, string>>;
-  extraArgs?: readonly string[];
-  timeoutMs?: number;
 };
 
-const DEFAULTS: ClaudeSettings = {
-  command: 'claude',
-  models: { fast: 'haiku', smart: 'sonnet', deep: 'opus' },
-  timeoutMs: 90_000,
-};
+const TIMEOUT_MS = 90_000;
 
 /** The envelope `--output-format json` returns. Only the parts this adapter reads. */
 type Envelope = {
@@ -54,11 +48,7 @@ type Envelope = {
  */
 export class ClaudeProvider implements Provider {
   readonly id = 'claude';
-  private settings: ClaudeSettings;
-
-  constructor(settings: Partial<ClaudeSettings> = {}) {
-    this.settings = { ...DEFAULTS, ...settings, models: { ...DEFAULTS.models, ...settings.models } };
-  }
+  private settings: ClaudeSettings = { command: 'claude', models: { fast: 'haiku', smart: 'sonnet', deep: 'opus' } };
 
   configure(settings: Partial<ClaudeSettings>): void {
     this.settings = { ...this.settings, ...settings, models: { ...this.settings.models, ...settings.models } };
@@ -66,8 +56,6 @@ export class ClaudeProvider implements Provider {
 
   capabilities(): Capabilities {
     return {
-      structured: true,
-      streaming: true,
       repoTools: true,
       models: this.settings.models,
       maxInputChars: 400_000,
@@ -98,7 +86,6 @@ export class ClaudeProvider implements Provider {
       '--strict-mcp-config',
       '--system-prompt',
       request.system,
-      ...(this.settings.extraArgs ?? []),
     ];
 
     const started = Date.now();
@@ -107,7 +94,7 @@ export class ClaudeProvider implements Provider {
       result = await run(this.settings.command, args, {
         stdin: request.input,
         env: request.tier === 'deep' ? {} : { MAX_THINKING_TOKENS: '0' },
-        timeoutMs: this.settings.timeoutMs ?? DEFAULTS.timeoutMs!,
+        timeoutMs: TIMEOUT_MS,
         signal,
       });
     } catch (error) {
@@ -186,8 +173,6 @@ export class ClaudeProvider implements Provider {
     if (request.session?.resume) args.push('--resume', request.session.id);
     else args.push('--system-prompt', request.system);
 
-    args.push(...(this.settings.extraArgs ?? []));
-
     let text = '';
     let session = request.session?.id ?? '';
     let usage: Usage = { inputTokens: 0, outputTokens: 0, costUsd: 0, durationMs: 0 };
@@ -201,7 +186,7 @@ export class ClaudeProvider implements Provider {
     const result = await runStreaming(this.settings.command, args, {
       stdin: request.input,
       ...(request.cwd ? { cwd: request.cwd } : {}),
-      timeoutMs: this.settings.timeoutMs ?? DEFAULTS.timeoutMs!,
+      timeoutMs: TIMEOUT_MS,
       signal,
       onLine: (line) => {
         let parsed: StreamLine;

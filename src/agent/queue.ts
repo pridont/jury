@@ -14,10 +14,6 @@ export class Queue {
 
   constructor(private readonly concurrency: number) {}
 
-  get inFlight(): number {
-    return this.running;
-  }
-
   async run<T>(owner: string, job: Job<T>): Promise<T> {
     const controller = new AbortController();
     const owned = this.owners.get(owner) ?? new Set();

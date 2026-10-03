@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { run } from '../../src/util/exec.js';
 import { findRepo, stateDir, type Repo } from '../../src/git/repo.js';
-import { emptyReview, list, load, remove, reviewId, save } from '../../src/state/store.js';
+import { emptyReview, list, load, reviewId, save } from '../../src/state/store.js';
 
 let dir: string;
 let repo: Repo;
@@ -135,15 +135,5 @@ describe('list', () => {
     await save(repo, review);
     await fs.writeFile(path.join(stateDir(repo), 'broken.json'), 'not json');
     expect(await list(repo)).toHaveLength(1);
-  });
-});
-
-describe('remove', () => {
-  it('deletes a review and is quiet about one that is not there', async () => {
-    const review = emptyReview(repo, { kind: 'worktree' });
-    await save(repo, review);
-    await remove(repo, review.id);
-    expect(await load(repo, review.id)).toBeNull();
-    await expect(remove(repo, review.id)).resolves.toBeUndefined();
   });
 });

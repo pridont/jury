@@ -1,9 +1,5 @@
 /** What a provider can do. Drives feature gating and the digest budget, never a hardcode. */
 export type Capabilities = {
-  /** Can be asked for JSON and usually complies. */
-  structured: boolean;
-  /** Can emit tokens as they are produced. */
-  streaming: boolean;
   /** Can read the repository while answering. */
   repoTools: boolean;
   models: { fast?: string; smart?: string; deep?: string };
@@ -71,8 +67,8 @@ export interface Provider {
   /** Installed *and* signed in — a provider that cannot answer is not available. */
   available(): Promise<{ ok: boolean; reason?: string }>;
   structured(request: Request, signal: AbortSignal): Promise<Answer>;
-  /** Present when `capabilities().streaming`; chunks arrive as they are produced. */
-  stream?(request: Request, signal: AbortSignal, onChunk: (chunk: Chunk) => void): Promise<Answer>;
+  /** Chunks arrive as they are produced. */
+  stream(request: Request, signal: AbortSignal, onChunk: (chunk: Chunk) => void): Promise<Answer>;
 }
 
 const providers = new Map<string, Provider>();

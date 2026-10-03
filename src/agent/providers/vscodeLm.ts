@@ -35,8 +35,6 @@ export class VscodeLmProvider implements Provider {
 
   capabilities(): Capabilities {
     return {
-      structured: true,
-      streaming: true,
       // Honest, and load-bearing: asking a model to read the repository here needs a tool
       // loop this adapter does not yet run. Saying false makes Ask answer from the diff
       // alone and say so, which is the visible degradation the design asks for — rather

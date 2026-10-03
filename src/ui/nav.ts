@@ -1,10 +1,8 @@
 import * as vscode from 'vscode';
 import { contentSide, type FileChange } from '../git/parse.js';
 import type { Session } from '../session.js';
-import { contentUri, openFileDiff, openMultiDiff, sidesFor } from './diff.js';
+import { contentUri, openFileDiff, sidesFor } from './diff.js';
 import { layerEntry, step, stepLayer, type Entry } from '../model/order.js';
-
-export { buildOrder, type Entry } from '../model/order.js';
 
 /** Code that did not change at all. Dim means "not part of this diff", one meaning only. */
 const UNCHANGED = vscode.window.createTextEditorDecorationType({ opacity: '0.45' });
@@ -36,10 +34,6 @@ export class Navigator implements vscode.Disposable {
 
   setSession(session: Session): void {
     this.session = session;
-  }
-
-  get entries(): readonly Entry[] {
-    return this.order;
   }
 
   get current(): Entry | null {
@@ -103,8 +97,11 @@ export class Navigator implements vscode.Disposable {
     this.moving = true;
     try {
       const changingFile = !previous || previous.file.path !== entry.file.path;
+      // One editor, on the file the position is in. A multi-file editor cannot host the
+      // reading: its panes are not `visibleTextEditors`, so reveal and decorations have
+      // nothing to attach to. Opening a whole step is an action.
       const shown = this.showing(entry.file);
-      const editor = changingFile || !shown ? await this.open(entry) : shown;
+      const editor = changingFile || !shown ? await openFileDiff(this.session, entry.file) : shown;
 
       if (editor) {
         reveal(editor, entry);
@@ -114,17 +111,6 @@ export class Navigator implements vscode.Disposable {
       this.moving = false;
     }
     this.changed.fire(entry);
-  }
-
-  /**
-   * One editor, on the file the position is in.
-   *
-   * Opening a step's other files here too cost two view switches per move, and a multi-file
-   * editor cannot host the reading anyway: its panes are not `visibleTextEditors`, so the
-   * reveal and the decorations have nothing to attach to. Opening a whole step is an action.
-   */
-  private async open(entry: Entry): Promise<vscode.TextEditor | undefined> {
-    return openFileDiff(this.session, entry.file);
   }
 
   /**
@@ -158,16 +144,6 @@ export class Navigator implements vscode.Disposable {
       focusLayer(editor, this.order[index]!, this.order);
       this.changed.fire(this.current);
     }
-  }
-
-  /** Open every file of the current layer together, without moving the reading position. */
-  async openLayerFiles(): Promise<void> {
-    const entry = this.current;
-    if (!entry) return;
-    const files = entry.layer.paths
-      .map((path) => this.session.files.find((file) => file.path === path))
-      .filter((file): file is FileChange => file !== undefined);
-    await openMultiDiff(this.session, entry.layer.title, files);
   }
 
   /** Jump to a named file inside a layer, for the file rows under it in the tree. */

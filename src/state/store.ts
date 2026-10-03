@@ -73,10 +73,6 @@ export async function save(repo: Repo, review: StoredReview): Promise<void> {
   await fs.rename(temporary, target);
 }
 
-export async function remove(repo: Repo, id: string): Promise<void> {
-  await fs.rm(fileFor(repo, id), { force: true });
-}
-
 /** Every saved review for this repository, most recently touched first. */
 export async function list(repo: Repo): Promise<StoredReview[]> {
   let names: string[];
