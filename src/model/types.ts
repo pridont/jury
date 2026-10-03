@@ -97,16 +97,3 @@ export type Comment = {
    */
   posted?: { reviewId: number; bodyHash: string; at: number };
 };
-
-export type Review = {
-  id: string;
-  spec: ReviewSpec;
-  base: string;
-  head: string;
-  hunks: Record<string, Hunk>;
-  /** Array position is the reading order. */
-  cohorts: Cohort[];
-  comments: Comment[];
-  marks: Record<string, 'reviewed'>;
-  meta: { createdAt: number; updatedAt: number; promptVersion: number; schema: 1 };
-};

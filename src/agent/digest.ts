@@ -49,14 +49,10 @@ export function buildDigest(
 
   // Render at the fullest sample that fits, then progressively less. Structure is written
   // every time; only the samples give way.
-  for (const sample of [SAMPLE_LINES, 4, 2, 0]) {
+  for (const sample of [SAMPLE_LINES, 4, 2]) {
     const text = render(reviewable, summaries, labelOf, scaffolding, sample);
-    if (text.length <= budget || sample === 0) {
-      return { text, labels, scaffolding };
-    }
+    if (text.length <= budget) return { text, labels, scaffolding };
   }
-
-  /* c8 ignore next */
   return { text: render(reviewable, summaries, labelOf, scaffolding, 0), labels, scaffolding };
 }
 

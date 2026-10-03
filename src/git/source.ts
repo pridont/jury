@@ -28,15 +28,15 @@ const DIFF_ARGS = [
   '--find-copies',
   '--src-prefix=a/',
   '--dst-prefix=b/',
+  '-U3',
 ];
 
-export async function acquire(repo: Repo, spec: ReviewSpec, contextLines = 3): Promise<Acquired> {
-  const unified = [`-U${contextLines}`];
+export async function acquire(repo: Repo, spec: ReviewSpec): Promise<Acquired> {
 
   switch (spec.kind) {
     case 'worktree': {
       const head = await headOrEmptyTree(repo);
-      const text = await runOk('git', [...DIFF_ARGS, ...unified, head], { cwd: repo.root, timeoutMs: 60_000 });
+      const text = await runOk('git', [...DIFF_ARGS, head], { cwd: repo.root, timeoutMs: 60_000 });
       const files = parseDiff(text);
       files.push(...(await untrackedFiles(repo)));
       return { base: head, head: 'worktree', files };
@@ -44,7 +44,7 @@ export async function acquire(repo: Repo, spec: ReviewSpec, contextLines = 3): P
 
     case 'staged': {
       const head = await headOrEmptyTree(repo);
-      const text = await runOk('git', [...DIFF_ARGS, ...unified, '--cached', head], {
+      const text = await runOk('git', [...DIFF_ARGS, '--cached', head], {
         cwd: repo.root,
         timeoutMs: 60_000,
       });
@@ -54,7 +54,7 @@ export async function acquire(repo: Repo, spec: ReviewSpec, contextLines = 3): P
     case 'range': {
       const head = await resolve(repo, spec.head);
       const base = spec.threeDot ? await mergeBase(repo, spec.base, spec.head) : await resolve(repo, spec.base);
-      const text = await runOk('git', [...DIFF_ARGS, ...unified, base, head], {
+      const text = await runOk('git', [...DIFF_ARGS, base, head], {
         cwd: repo.root,
         timeoutMs: 60_000,
       });
@@ -67,7 +67,7 @@ export async function acquire(repo: Repo, spec: ReviewSpec, contextLines = 3): P
       // diff is what merging brought in. A root commit has no parent and reads against the
       // empty tree, the same base a first commit gets everywhere else here.
       const base = (await firstParent(repo, head)) ?? EMPTY_TREE;
-      const text = await runOk('git', [...DIFF_ARGS, ...unified, base, head], {
+      const text = await runOk('git', [...DIFF_ARGS, base, head], {
         cwd: repo.root,
         timeoutMs: 60_000,
       });
@@ -77,7 +77,7 @@ export async function acquire(repo: Repo, spec: ReviewSpec, contextLines = 3): P
     case 'pr': {
       // The head is already fetched into a ref of our own by the caller; nothing is checked
       // out, and both sides of the diff are read straight from git.
-      const text = await runOk('git', [...DIFF_ARGS, ...unified, spec.base, spec.head], {
+      const text = await runOk('git', [...DIFF_ARGS, spec.base, spec.head], {
         cwd: repo.root,
         timeoutMs: 60_000,
       });

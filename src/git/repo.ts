@@ -14,13 +14,6 @@ export type Repo = {
   linkedWorktree: boolean;
 };
 
-export class NotARepositoryError extends Error {
-  constructor(readonly cwd: string) {
-    super(`${cwd} is not inside a git repository`);
-    this.name = 'NotARepositoryError';
-  }
-}
-
 /**
  * Resolve the repository containing `cwd`, or null when there is none.
  *

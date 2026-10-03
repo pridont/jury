@@ -186,9 +186,9 @@ export async function runOk(command: string, args: string[], options: RunOptions
 }
 
 /** Whether an executable can be started at all. Cheap, and does not care what it prints. */
-export async function isOnPath(command: string, versionArg = '--version'): Promise<boolean> {
+export async function isOnPath(command: string): Promise<boolean> {
   try {
-    const result = await run(command, [versionArg], { timeoutMs: 5000 });
+    const result = await run(command, ['--version'], { timeoutMs: 5000 });
     return result.code === 0;
   } catch {
     return false;

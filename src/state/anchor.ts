@@ -26,7 +26,6 @@ const PAIRING_CAP = 120;
 export function reanchor(
   previous: readonly Hunk[],
   current: readonly Hunk[],
-  threshold = MOVED_THRESHOLD,
 ): Map<string, Anchor> {
   const byId = new Map(current.map((hunk) => [hunk.id, hunk]));
   const anchors = new Map<string, Anchor>();
@@ -50,7 +49,7 @@ export function reanchor(
       if (claimed.has(after.id)) continue;
       if (after.path !== before.path) continue;
       const score = similarity(before, after);
-      if (score >= threshold) candidates.push({ from: before.id, to: after.id, score });
+      if (score >= MOVED_THRESHOLD) candidates.push({ from: before.id, to: after.id, score });
     }
   }
   candidates.sort((a, b) => b.score - a.score);

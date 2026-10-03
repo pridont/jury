@@ -25,12 +25,9 @@ const pr: PullRequest = {
   number: 141,
   title: 'feat: course viewer',
   url: 'https://github.com/o/r/pull/141',
-  state: 'OPEN',
   baseRef: 'main',
-  headRef: 'feat/x',
   headOid: 'a'.repeat(40),
   nameWithOwner: 'o/r',
-  crossRepository: false,
 };
 
 describe('prepare', () => {

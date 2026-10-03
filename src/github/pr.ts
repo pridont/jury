@@ -5,13 +5,10 @@ export type PullRequest = {
   number: number;
   title: string;
   url: string;
-  state: string;
   baseRef: string;
-  headRef: string;
   headOid: string;
   /** owner/repo of the repository the PR targets. */
   nameWithOwner: string;
-  crossRepository: boolean;
 };
 
 export class GhError extends Error {
@@ -36,16 +33,7 @@ export function refFor(number: number): string {
  * where being asked for a number is annoying.
  */
 export async function resolve(repo: Repo, number?: number): Promise<PullRequest> {
-  const fields = [
-    'number',
-    'title',
-    'url',
-    'state',
-    'baseRefName',
-    'headRefName',
-    'headRefOid',
-    'isCrossRepository',
-  ].join(',');
+  const fields = ['number', 'title', 'url', 'baseRefName', 'headRefOid'].join(',');
 
   const args = ['pr', 'view', ...(number ? [String(number)] : []), '--json', fields];
   const result = await run('gh', args, { cwd: repo.root, timeoutMs: 30_000 }).catch(() => null);
@@ -67,12 +55,9 @@ export async function resolve(repo: Repo, number?: number): Promise<PullRequest>
     number: Number(parsed['number']),
     title: String(parsed['title'] ?? ''),
     url: String(parsed['url'] ?? ''),
-    state: String(parsed['state'] ?? ''),
     baseRef: String(parsed['baseRefName'] ?? 'main'),
-    headRef: String(parsed['headRefName'] ?? ''),
     headOid: String(parsed['headRefOid'] ?? ''),
     nameWithOwner: owner,
-    crossRepository: parsed['isCrossRepository'] === true,
   };
 }
 

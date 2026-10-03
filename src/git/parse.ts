@@ -12,8 +12,6 @@ export type FileChange = {
   binary: boolean;
   oldMode?: string;
   newMode?: string;
-  /** Rename/copy similarity, 0-100, when git reported one. */
-  similarity?: number;
   hunks: Hunk[];
   stats: { added: number; removed: number };
 };
@@ -69,7 +67,6 @@ function parseFile(lines: string[], start: number): [FileChange, number] {
   let binary = false;
   let oldMode: string | undefined;
   let newMode: string | undefined;
-  let similarity: number | undefined;
   const hunks: Hunk[] = [];
 
   let i = start + 1;
@@ -91,8 +88,6 @@ function parseFile(lines: string[], start: number): [FileChange, number] {
       oldMode = line.slice('old mode '.length).trim();
     } else if (line.startsWith('new mode ')) {
       newMode = line.slice('new mode '.length).trim();
-    } else if (line.startsWith('similarity index ')) {
-      similarity = Number.parseInt(line.slice('similarity index '.length), 10);
     } else if (line.startsWith('rename from ')) {
       status = 'renamed';
       oldPath = line.slice('rename from '.length);
@@ -148,7 +143,6 @@ function parseFile(lines: string[], start: number): [FileChange, number] {
   if (oldPath !== undefined && oldPath !== path) file.oldPath = oldPath;
   if (oldMode !== undefined) file.oldMode = oldMode;
   if (newMode !== undefined) file.newMode = newMode;
-  if (similarity !== undefined) file.similarity = similarity;
 
   if (hunks.length === 0) {
     file.hunks.push(syntheticHunk(file));

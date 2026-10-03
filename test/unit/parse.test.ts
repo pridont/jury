@@ -48,7 +48,6 @@ describe('parseDiff', () => {
       path: 'renamed.txt',
       oldPath: 'added.txt',
       status: 'renamed',
-      similarity: 100,
     });
     expect(file!.hunks).toHaveLength(1);
     expect(file!.hunks[0]!.kind).toBe('rename');
