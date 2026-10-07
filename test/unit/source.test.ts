@@ -215,3 +215,16 @@ async function commit_empty(): Promise<void> {
   await write('.keep', '');
   await commit('base');
 }
+
+describe('quoted paths', () => {
+  it('reads a path git has to quote as the path it is', async () => {
+    await write('plain.txt', 'x\n');
+    await commit('base');
+    await write('say "hi"\\now.txt', 'one\n');
+    await git('mv', 'plain.txt', 'tab\there.txt');
+
+    const { files } = await acquire(repo, { kind: 'worktree' });
+    expect(files.map((f) => f.path).sort()).toEqual(['say "hi"\\now.txt', 'tab\there.txt']);
+    expect(files.find((f) => f.path === 'tab\there.txt')?.oldPath).toBe('plain.txt');
+  });
+});

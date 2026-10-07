@@ -90,16 +90,16 @@ function parseFile(lines: string[], start: number): [FileChange, number] {
       newMode = line.slice('new mode '.length).trim();
     } else if (line.startsWith('rename from ')) {
       status = 'renamed';
-      oldPath = line.slice('rename from '.length);
+      oldPath = unquote(line.slice('rename from '.length));
     } else if (line.startsWith('rename to ')) {
       status = 'renamed';
-      path = line.slice('rename to '.length);
+      path = unquote(line.slice('rename to '.length));
     } else if (line.startsWith('copy from ')) {
       status = 'copied';
-      oldPath = line.slice('copy from '.length);
+      oldPath = unquote(line.slice('copy from '.length));
     } else if (line.startsWith('copy to ')) {
       status = 'copied';
-      path = line.slice('copy to '.length);
+      path = unquote(line.slice('copy to '.length));
     } else if (line.startsWith('Binary files ') || line.startsWith('GIT binary patch')) {
       binary = true;
     } else if (line.startsWith('--- ')) {
@@ -263,7 +263,7 @@ function assignIds(file: FileChange): void {
 
 /** `a/path` -> `path`; `/dev/null` -> null, which is how git says "this side is absent". */
 function stripPrefix(value: string): string | null {
-  const path = value.replace(/\t.*$/, '');
+  const path = unquote(value.replace(/\t.*$/, ''));
   if (path === '/dev/null') return null;
   if (path.startsWith('a/') || path.startsWith('b/')) return path.slice(2);
   return path;
@@ -277,6 +277,13 @@ function stripPrefix(value: string): string | null {
  * own `rename from`/`rename to` headers that override whatever this returns.
  */
 export function parseGitHeaderPaths(value: string): [string, string] | null {
+  if (value.includes('"')) {
+    // Quoted, because a path has a quote, a backslash or a control character in it.
+    const sides = value.match(/"(?:[^"\\]|\\.)*"|\S+/g)?.map(unquote);
+    const [a, b] = sides ?? [];
+    if (sides?.length === 2 && a?.startsWith('a/') && b?.startsWith('b/')) return [a.slice(2), b.slice(2)];
+  }
+
   let fallback: [string, string] | null = null;
   for (let at = value.indexOf(' b/'); at !== -1; at = value.indexOf(' b/', at + 1)) {
     const left = value.slice(0, at);
@@ -289,6 +296,27 @@ export function parseGitHeaderPaths(value: string): [string, string] | null {
   }
   return fallback;
 }
+
+/**
+ * Undo git's C-style quoting: `"fo\\"o"` -> `fo"o`. Octal escapes are bytes of UTF-8, so the
+ * result is decoded from bytes rather than built a character at a time. Unquoted values pass.
+ */
+export function unquote(value: string): string {
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) return value;
+  const body = value.slice(1, -1);
+  const parts: Buffer[] = [];
+  let last = 0;
+  for (const match of body.matchAll(/\\([0-7]{3}|.)/g)) {
+    const escape = match[1] ?? '';
+    const byte = escape.length === 3 ? parseInt(escape, 8) : (ESCAPES[escape] ?? escape.charCodeAt(0));
+    parts.push(Buffer.from(body.slice(last, match.index)), Buffer.from([byte]));
+    last = match.index + match[0].length;
+  }
+  parts.push(Buffer.from(body.slice(last)));
+  return Buffer.concat(parts).toString('utf8');
+}
+
+const ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 };
 
 /** Split on newlines, keeping any `\r` so CRLF content survives round-tripping. */
 function splitLines(text: string): string[] {
