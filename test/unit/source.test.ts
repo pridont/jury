@@ -220,10 +220,18 @@ describe('quoted paths', () => {
   it('reads a path git has to quote as the path it is', async () => {
     await write('plain.txt', 'x\n');
     await commit('base');
-    await write('say "hi"\\now.txt', 'one\n');
-    await git('mv', 'plain.txt', 'tab\there.txt');
 
-    const { files } = await acquire(repo, { kind: 'worktree' });
+    // Straight into the index: Windows cannot create these names on disk, but a commit made
+    // elsewhere can still carry them into a review there.
+    const stage = async (path: string, body: string) => {
+      const blob = (await run('git', ['hash-object', '-w', '--stdin'], { cwd: dir, stdin: body })).stdout.trim();
+      await git('update-index', '--add', '--cacheinfo', `100644,${blob},${path}`);
+    };
+    await stage('say "hi"\\now.txt', 'one\n');
+    await stage('tab\there.txt', 'x\n');
+    await git('update-index', '--force-remove', 'plain.txt');
+
+    const { files } = await acquire(repo, { kind: 'staged' });
     expect(files.map((f) => f.path).sort()).toEqual(['say "hi"\\now.txt', 'tab\there.txt']);
     expect(files.find((f) => f.path === 'tab\there.txt')?.oldPath).toBe('plain.txt');
   });
