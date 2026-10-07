@@ -55,7 +55,7 @@
     "viewsWelcome": [
       {
         "view": "jury.stack",
-        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a commit](command:jury.reviewCommit)\n[Review a pull request](command:jury.reviewPr)\n[Resume last review](command:jury.resume)\n",
+        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a commit](command:jury.reviewCommit)\n[Review a pull request](command:jury.reviewPr)\n[Resume last review](command:jury.resume)\n[Open a saved review](command:jury.list)\n\nSomething not working? [Run the doctor](command:jury.doctor)\n",
         "when": "!jury.active"
       }
     ],
@@ -246,6 +246,12 @@
         "icon": "$(sparkle)"
       },
       {
+        "command": "jury.cancel",
+        "title": "Stop Model Work",
+        "category": "Jury",
+        "icon": "$(debug-stop)"
+      },
+      {
         "command": "jury.openLayerFile",
         "title": "Open File",
         "category": "Jury"
@@ -270,6 +276,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "jury.cancel",
+          "when": "view == jury.stack && jury.busy",
+          "group": "navigation@0"
+        },
         {
           "command": "jury.walkthrough",
           "when": "view == jury.stack && jury.active",
@@ -475,6 +486,10 @@
         {
           "command": "jury.submitReview",
           "when": "jury.pr"
+        },
+        {
+          "command": "jury.cancel",
+          "when": "jury.busy"
         }
       ],
       "comments/commentThread/context": [
@@ -621,11 +636,6 @@
         "when": "jury.active"
       },
       {
-        "command": "jury.focusMode",
-        "key": "alt+z",
-        "when": "jury.active"
-      },
-      {
         "command": "jury.walkthrough",
         "key": "alt+s",
         "when": "jury.active"
@@ -633,11 +643,6 @@
       {
         "command": "jury.ask",
         "key": "alt+a",
-        "when": "jury.active"
-      },
-      {
-        "command": "jury.askStep",
-        "key": "alt+shift+a",
         "when": "jury.active"
       }
     ],

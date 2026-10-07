@@ -34,6 +34,7 @@ export class Activity implements vscode.Disposable {
     this.paint();
 
     if (this.finish) return;
+    void vscode.commands.executeCommand('setContext', 'jury.busy', true);
     void vscode.window.withProgress(
       { location: vscode.ProgressLocation.Window, title: 'Jury' },
       (progress) =>
@@ -53,6 +54,7 @@ export class Activity implements vscode.Disposable {
   stop(): void {
     if (!this.phase && !this.finish) return;
     this.phase = '';
+    void vscode.commands.executeCommand('setContext', 'jury.busy', false);
     this.finish?.();
     this.finish = null;
     this.report = null;
