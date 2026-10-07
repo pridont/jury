@@ -95,3 +95,11 @@ describe('toMarkdown', () => {
     expect(render([])).toContain('0 files · 0 hunks · 0 reviewed · 0 comments');
   });
 });
+
+describe('notes on generated files', () => {
+  it('are exported rather than silently dropped', () => {
+    const files = [file('src/a.ts'), file('package-lock.json', 10, true)];
+    const out = render(files, [newComment(files[1]!.hunks[0]!.id, 0, 'new', 'why did this bump?')]);
+    expect(out).toContain('why did this bump?');
+  });
+});

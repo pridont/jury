@@ -49,7 +49,10 @@ export function toMarkdown(input: ExportInput): string {
   lines.push('');
 
   for (const [index, cohort] of input.cohorts.entries()) {
-    if (cohort.kind === 'scaffolding') continue;
+    // Generated files are not read, but a note someone left on one still belongs in the export.
+    if (cohort.kind === 'scaffolding' && !cohort.layers.some((layer) => layer.hunkIds.some((id) => byHunk.has(id)))) {
+      continue;
+    }
 
     lines.push(`## ${index + 1}. ${cohort.title}`);
     lines.push('');
