@@ -1,4 +1,4 @@
-import { run, runOk } from '../util/exec.js';
+import { run, runOk, type RunOptions, type RunResult } from '../util/exec.js';
 import { mergeBase, type Repo } from '../git/repo.js';
 
 export type PullRequest = {
@@ -26,9 +26,8 @@ export async function resolve(repo: Repo, number?: number): Promise<PullRequest>
   const fields = ['number', 'title', 'url', 'baseRefName', 'headRefOid'].join(',');
 
   const args = ['pr', 'view', ...(number ? [String(number)] : []), '--json', fields];
-  const result = await run('gh', args, { cwd: repo.root, timeoutMs: 30_000 }).catch(() => null);
+  const result = await gh(args, { cwd: repo.root, timeoutMs: 30_000 });
 
-  if (!result) throw new Error('gh is not on PATH');
   if (result.code !== 0) {
     const detail = result.stderr.trim().split('\n')[0] ?? 'gh failed';
     if (/no pull requests found|no default remote/i.test(detail)) {
@@ -50,6 +49,17 @@ export async function resolve(repo: Repo, number?: number): Promise<PullRequest>
   };
 }
 
+/**
+ * Run `gh`, saying plainly when it is not installed. Anything else — a timeout above all — is
+ * passed on as it is: "not on PATH" for a request that may well have reached GitHub invites
+ * sending it again.
+ */
+export async function gh(args: string[], options: RunOptions): Promise<RunResult> {
+  return run('gh', args, options).catch((error: NodeJS.ErrnoException) => {
+    throw error.code === 'ENOENT' ? new Error('gh is not on PATH') : error;
+  });
+}
+
 async function nameWithOwner(repo: Repo): Promise<string> {
   const out = await runOk('gh', ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], {
     cwd: repo.root,
@@ -68,21 +78,41 @@ async function nameWithOwner(repo: Repo): Promise<string> {
  */
 export async function fetchHead(repo: Repo, pr: PullRequest): Promise<{ base: string; head: string }> {
   const ref = refFor(pr.number);
-  await runOk('git', ['fetch', '--quiet', 'origin', `pull/${pr.number}/head:${ref}`, '--force'], {
+  const remote = await remoteFor(repo, pr.nameWithOwner);
+  await runOk('git', ['fetch', '--quiet', remote, `pull/${pr.number}/head:${ref}`, '--force'], {
     cwd: repo.root,
     timeoutMs: 120_000,
   });
 
   // The base branch may not exist locally, and may be stale if it does.
-  await run('git', ['fetch', '--quiet', 'origin', pr.baseRef], { cwd: repo.root, timeoutMs: 120_000 });
+  await run('git', ['fetch', '--quiet', remote, pr.baseRef], { cwd: repo.root, timeoutMs: 120_000 });
 
   const head = (await runOk('git', ['rev-parse', ref], { cwd: repo.root, timeoutMs: 10_000 })).trim();
-  const baseCandidates = [`origin/${pr.baseRef}`, pr.baseRef];
+  const baseCandidates = [`${remote}/${pr.baseRef}`, pr.baseRef];
   for (const candidate of baseCandidates) {
     const base = await mergeBase(repo, candidate, head).catch(() => null);
     if (base) return { base, head };
   }
   throw new Error(`could not find the merge base of ${pr.baseRef} and #${pr.number}`);
+}
+
+/**
+ * The remote that points at the repository the pull request is on.
+ *
+ * In a fork that is usually `upstream`, not `origin` — and fetching `pull/N/head` from the
+ * fork gets a different pull request #N, or none. `origin` when nothing matches.
+ */
+export async function remoteFor(repo: Repo, nameWithOwner: string): Promise<string> {
+  if (!nameWithOwner) return 'origin';
+  const out = await runOk('git', ['remote', '-v'], { cwd: repo.root, timeoutMs: 10_000 }).catch(() => '');
+  const wanted = nameWithOwner.toLowerCase();
+  for (const line of out.split('\n')) {
+    const [name, url] = line.split(/\s+/);
+    // git@github.com:owner/repo.git, https://github.com/owner/repo, ssh://…/owner/repo.git
+    const path = url?.toLowerCase().replace(/\.git$/, '').replace(/\/$/, '');
+    if (name && path && (path.endsWith(`/${wanted}`) || path.endsWith(`:${wanted}`))) return name;
+  }
+  return 'origin';
 }
 
 export type PullRequestSummary = {

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { run } from '../util/exec.js';
+import { gh } from './pr.js';
 import type { Repo } from '../git/repo.js';
 import type { Comment, Hunk } from '../model/types.js';
 import { commentLine } from '../model/comments.js';
@@ -70,13 +70,23 @@ export function prepare(
       continue;
     }
 
+    // A note that moved keeps its old offset, which a shorter hunk may no longer reach. One
+    // line GitHub cannot place fails the whole review, so pull it back inside the hunk.
+    const count = comment.side === 'new' ? hunk.newCount : hunk.oldCount;
+    if (count === 0) {
+      skipped.push({ body: comment.body, reason: `its hunk has no ${comment.side} lines to attach it to` });
+      continue;
+    }
+    const offset = Math.min(comment.offset, count - 1);
+
     inline.push({
       path: hunk.path,
-      line: commentLine(hunk, comment),
+      line: commentLine(hunk, { side: comment.side, offset }),
       side: comment.side === 'old' ? 'LEFT' : 'RIGHT',
-      body: comment.moved
-        ? `${comment.body}\n\n_(position is approximate — the code moved since this was written)_`
-        : comment.body,
+      body:
+        comment.moved || offset !== comment.offset
+          ? `${comment.body}\n\n_(position is approximate — the code moved since this was written)_`
+          : comment.body,
       commentId: comment.id,
     });
   }
@@ -137,13 +147,11 @@ export async function submit(
     })),
   };
 
-  const result = await run(
-    'gh',
+  const result = await gh(
     ['api', '--method', 'POST', `repos/${pr.nameWithOwner}/pulls/${pr.number}/reviews`, '--input', '-'],
     { cwd: repo.root, stdin: JSON.stringify(payload), timeoutMs: 60_000 },
-  ).catch(() => null);
+  );
 
-  if (!result) throw new Error('gh is not on PATH');
   if (result.code !== 0) {
     const detail = (result.stderr || result.stdout).trim().split('\n').slice(0, 3).join(' ');
     throw new Error(detail);

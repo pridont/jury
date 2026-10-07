@@ -226,7 +226,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         if (single) item.resourceUri = vscode.Uri.file(single);
         else item.iconPath = new vscode.ThemeIcon('layers');
         item.checkboxState = tick(session, node.layer.hunkIds);
-        item.contextValue = 'layer';
+        item.contextValue = node.cohort.kind === 'scaffolding' ? 'layer-scaffolding' : 'layer';
         item.command = {
           command: 'jury.openLayer',
           title: 'Open',

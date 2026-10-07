@@ -35,8 +35,25 @@ export function reviewId(repo: Repo, spec: ReviewSpec): string {
  * A commit's subject rides along for the label, but the same commit opened from the graph
  * and from the palette has to be one review — not two whose progress depends on the way in.
  */
-function identity(spec: ReviewSpec): ReviewSpec | { kind: 'commit'; sha: string } {
-  return spec.kind === 'commit' ? { kind: 'commit', sha: spec.sha } : spec;
+function identity(spec: ReviewSpec): ReviewSpec | { kind: 'commit'; sha: string } | { kind: 'pr'; number: number } {
+  if (spec.kind === 'commit') return { kind: 'commit', sha: spec.sha };
+  // A pull request is the same review after every push, and after its title is edited.
+  if (spec.kind === 'pr') return { kind: 'pr', number: spec.number };
+  return spec;
+}
+
+/**
+ * The id a pull request review was saved under before its identity was only its number.
+ * Found when opened the same way again — reload, resume, or the saved list — and carried over.
+ */
+export function legacyReviewId(repo: Repo, spec: ReviewSpec): string | null {
+  if (spec.kind !== 'pr') return null;
+  return createHash('sha1').update(`${repo.root}\0${JSON.stringify(spec)}`).digest('hex').slice(0, 16);
+}
+
+/** Forget a saved review. */
+export async function remove(repo: Repo, id: string): Promise<void> {
+  await fs.rm(fileFor(repo, id), { force: true });
 }
 
 function fileFor(repo: Repo, id: string): string {
@@ -44,16 +61,27 @@ function fileFor(repo: Repo, id: string): string {
 }
 
 export async function load(repo: Repo, id: string): Promise<StoredReview | null> {
+  const file = fileFor(repo, id);
+  let text: string;
   try {
-    const text = await fs.readFile(fileFor(repo, id), 'utf8');
-    const parsed = JSON.parse(text) as StoredReview;
-    // A file from a future schema is not ours to interpret; starting fresh loses progress,
-    // guessing at it loses trust.
-    if (parsed.schema !== SCHEMA) return null;
-    return parsed;
+    text = await fs.readFile(file, 'utf8');
   } catch {
     return null;
   }
+
+  try {
+    const parsed = JSON.parse(text) as StoredReview;
+    // A file from a future schema is not ours to interpret; starting fresh loses progress,
+    // guessing at it loses trust.
+    if (parsed.schema === SCHEMA) return parsed;
+  } catch {
+    // Unreadable. Handled below with the future schema.
+  }
+
+  // Moved aside rather than left where the next save would overwrite it with an empty review:
+  // the notes in it are still there for someone to recover by hand.
+  await fs.rename(file, `${file}.unreadable-${Date.now()}`).catch(() => undefined);
+  return null;
 }
 
 /**
@@ -63,11 +91,21 @@ export async function load(repo: Repo, id: string): Promise<StoredReview | null>
  * State lives inside `.git`, so it is never committed and never dirties the working tree,
  * and it uses the common git dir so every worktree of the repository shares it.
  */
-export async function save(repo: Repo, review: StoredReview): Promise<void> {
-  const dir = stateDir(repo);
-  await fs.mkdir(dir, { recursive: true });
-
+export function save(repo: Repo, review: StoredReview): Promise<void> {
   const target = fileFor(repo, review.id);
+  // One write at a time per file. Two overlapping writes share the temp file, interleave in
+  // it, and the rename installs the mix — which the next load cannot parse.
+  const next = (writing.get(target) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => write(repo, target, review));
+  writing.set(target, next);
+  return next;
+}
+
+const writing = new Map<string, Promise<void>>();
+
+async function write(repo: Repo, target: string, review: StoredReview): Promise<void> {
+  await fs.mkdir(stateDir(repo), { recursive: true });
   const temporary = `${target}.${process.pid}.tmp`;
   await fs.writeFile(temporary, JSON.stringify({ ...review, updatedAt: Date.now() }, null, 2));
   await fs.rename(temporary, target);

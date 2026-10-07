@@ -29,10 +29,11 @@ import { Documents, DOC_SCHEME, offerToSave } from './ui/documents.js';
 import { stateDir } from './git/repo.js';
 import { buildOrder } from './model/order.js';
 import { heuristicCohorts } from './model/heuristic.js';
+import { scaffoldingCohort } from './model/merge.js';
 import { classifyScaffolding } from './model/classify.js';
 import type { ReviewSpec } from './model/types.js';
 import type { FileChange } from './git/parse.js';
-import { load as loadStored, list as listStored, reviewId } from './state/store.js';
+import { legacyReviewId, load as loadStored, list as listStored, remove as removeStored } from './state/store.js';
 import { describeRefresh, reconcileMarks } from './state/reconcile.js';
 import { migrateLegacyState } from './state/migrate.js';
 import { describeSpec } from './model/types.js';
@@ -181,9 +182,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.prevHunk', () => nav.previous()),
     vscode.commands.registerCommand('jury.nextLayer', () => nav.stepLayer(1)),
     vscode.commands.registerCommand('jury.prevLayer', () => nav.stepLayer(-1)),
-    vscode.commands.registerCommand('jury.openLayer', (cohortIndex: number, layerIndex: number) =>
-      nav.goToLayer(cohortIndex, layerIndex),
-    ),
+    // Clicking a row passes indices; the context menu passes the row itself.
+    vscode.commands.registerCommand('jury.openLayer', (target: number | Node, layerIndex?: number) => {
+      if (typeof target === 'number') return nav.goToLayer(target, layerIndex ?? 0);
+      if (target.type === 'layer') return nav.goToLayer(target.cohortIndex, target.layerIndex);
+    }),
     vscode.commands.registerCommand(
       'jury.openLayerFile',
       (cohortIndex: number, layerIndex: number, path: string) => nav.goToLayerFile(cohortIndex, layerIndex, path),
@@ -251,10 +254,19 @@ async function open(host: SessionHost, spec: ReviewSpec, ctx: Context, known?: R
   await migrate(repo);
   const session = new Session(repo, spec);
 
-  const stored = await loadStored(repo, reviewId(repo, spec));
+  const legacy = legacyReviewId(repo, spec);
+  const stored = (await loadStored(repo, session.id)) ?? (legacy ? await loadStored(repo, legacy) : null);
   if (stored) {
-    session.hydrate(stored);
+    // Under today's id and spec: a pull request carries its progress on to the newest head.
+    session.hydrate({ ...stored, id: session.id, spec, label: session.stored.label });
     log.appendLine(`  resumed ${stored.marks.length} marks from ${new Date(stored.updatedAt).toISOString()}`);
+    if (stored.id !== session.id) {
+      // Removed only once it is saved under the new id, so a failed write loses nothing.
+      await session
+        .persist()
+        .then(() => removeStored(repo, stored.id))
+        .catch((error) => log.appendLine(`  could not move saved review to its new id: ${String(error)}`));
+    }
   }
 
   forgetSessions();
@@ -343,8 +355,8 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   session.error = null;
   ctx.blobs.clear();
   ctx.tree.refresh();
-  await load(session, ctx);
-  if (session.error) return;
+  if (session.spec.kind === 'pr') await refetchPullRequest(session, session.spec.number);
+  if (!(await load(session, ctx)) || session.error) return;
 
   const current = session.files.flatMap((file) => file.hunks);
   const { marks, anchors, report } = reconcileMarks(previous, current, session.marks);
@@ -385,12 +397,14 @@ async function persist(session: Session): Promise<void> {
  * Failure is reported in the tree and the log, never as an empty review: "nothing changed"
  * and "we could not read it" must not look alike.
  */
-async function load(session: Session, ctx: Context): Promise<void> {
+async function load(session: Session, ctx: Context): Promise<boolean> {
+  const live = session.reload();
   const started = Date.now();
   log.appendLine(`[${new Date().toISOString()}] reading ${session.title} in ${session.repo.root}`);
 
   try {
     const acquired = await acquire(session.repo, session.spec);
+    if (!live()) return false;
     session.base = acquired.base;
     session.head = acquired.head;
     session.files = acquired.files;
@@ -414,7 +428,8 @@ async function load(session: Session, ctx: Context): Promise<void> {
     ctx.tree.refresh();
   }
 
-  if (session.error) return;
+  if (!live()) return false;
+  if (session.error) return true;
 
   ctx.nav.setOrder(buildOrder(session.cohorts, session.files));
   ctx.comments.render();
@@ -422,9 +437,11 @@ async function load(session: Session, ctx: Context): Promise<void> {
 
   // Best-effort labelling; a missing language server costs a label, never the review.
   await enrichSymbols(session.files, (file) => uriForFile(session, file));
+  if (!live()) return false;
   ctx.tree.refresh();
 
-  void organise(session, ctx);
+  void organise(session, ctx, live);
+  return true;
 }
 
 /**
@@ -434,15 +451,16 @@ async function load(session: Session, ctx: Context): Promise<void> {
  * arrive one at a time and make it slightly better; clustering arrives once and replaces it.
  * If anything here fails, the review is exactly what it was.
  */
-async function organise(session: Session, ctx: Context): Promise<void> {
+async function organise(session: Session, ctx: Context, live: () => boolean): Promise<void> {
   try {
     const summariser = worthSummarising(session) ? await providerFor('summaries') : null;
-    if (summariser) await summarise(session, ctx, passDeps(session, ctx, summariser));
+    if (summariser && live()) await summarise(session, ctx, passDeps(session, ctx, summariser));
 
-    const clusterer = await providerFor('clustering');
-    if (clusterer) await cluster(session, ctx, passDeps(session, ctx, clusterer));
+    const clusterer = live() ? await providerFor('clustering') : null;
+    if (clusterer && live()) await cluster(session, ctx, passDeps(session, ctx, clusterer), live);
   } finally {
-    ctx.activity.stop();
+    // The indicator is shared; a stale run must not stop the one a newer load started.
+    if (live()) ctx.activity.stop();
   }
 }
 
@@ -462,12 +480,14 @@ function cacheFor(repo: Repo): Cache {
  * view that rearranges itself under the reader is worse than one that never improves. The
  * hunk being read stays selected across the change.
  */
-async function cluster(session: Session, ctx: Context, deps: PassDeps): Promise<void> {
+async function cluster(session: Session, ctx: Context, deps: PassDeps, live: () => boolean): Promise<void> {
   if (session.clustered) return;
 
   ctx.activity.start('Grouping the change', 0, 'deliberating');
   const reading = ctx.nav.current?.hunk.id;
   const result = await clusterChange(deps, session.files, session.summaries);
+  // Grouped from files that are no longer on screen, or for a review that is gone.
+  if (!live()) return;
 
   if (!result.ok) {
     ctx.activity.stop();
@@ -509,11 +529,12 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
   const provider = await providerFor('clustering');
   if (!provider) return;
 
+  const live = session.live();
   session.clustered = false;
   try {
-    await cluster(session, ctx, passDeps(session, ctx, provider));
+    await cluster(session, ctx, passDeps(session, ctx, provider), live);
   } finally {
-    ctx.activity.stop();
+    if (live()) ctx.activity.stop();
   }
 }
 
@@ -702,12 +723,21 @@ async function notScaffolding(host: SessionHost, node: Node | undefined, ctx: Co
   if (!session || !node) return;
 
   const paths =
-    node.type === 'layer' ? [node.layer.title] : node.type === 'cohort' ? node.cohort.layers.map((l) => l.title) : [];
+    node.type === 'layer' ? node.layer.paths : node.type === 'cohort' ? node.cohort.layers.flatMap((l) => l.paths) : [];
   for (const path of paths) session.notScaffolding.add(path);
   await persist(session);
 
   await classify(session);
-  session.cohorts = heuristicCohorts(session.files);
+  // Freed files join the stack as groups of their own, just before the scaffolding. The rest
+  // keeps the grouping it has: the model's, if it answered, is not thrown away for this.
+  const freed = new Set(paths);
+  const rest = session.cohorts.filter((cohort) => cohort.kind !== 'scaffolding');
+  const generated = session.files.flatMap((file) => file.hunks).filter((hunk) => hunk.scaffolding);
+  session.cohorts = [
+    ...rest,
+    ...heuristicCohorts(session.files.filter((file) => freed.has(file.path))),
+    ...(generated.length > 0 ? [scaffoldingCohort(generated)] : []),
+  ];
   ctx.nav.setOrder(buildOrder(session.cohorts, session.files));
   ctx.tree.refresh();
 }
@@ -930,7 +960,7 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
 
         const session = host.active;
         if (session) {
-          session.pr = pr;
+          session.pr = { ...pr, headOid: head };
           // What GitHub already thinks was read. Marks stay ours — this only starts the
           // review where the reviewer left it on the web.
           const viewed = await viewedFiles(repo, pr);
@@ -960,11 +990,27 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
  * in front of the reviewer first.
  */
 async function submitReview(host: SessionHost, documents: Documents): Promise<void> {
+  if (submitting) return;
+  submitting = true;
+  try {
+    await submitReviewOnce(host, documents);
+  } finally {
+    submitting = false;
+  }
+}
+
+/** Set while a review is being sent, so a second submit cannot post the same notes again. */
+let submitting = false;
+
+async function submitReviewOnce(host: SessionHost, documents: Documents): Promise<void> {
   const session = host.active;
-  if (!session?.pr) {
+  if (session?.spec.kind !== 'pr') {
     vscode.window.showInformationMessage('Jury: open a pull request review first.');
     return;
   }
+  // A review reopened after a reload knows its number but not the rest; ask GitHub again.
+  if (!session.pr) await refetchPullRequest(session, session.spec.number, false);
+  if (!session.pr) return;
 
   const choice = await vscode.window.showQuickPick(
     [
@@ -1014,6 +1060,33 @@ async function submitReview(host: SessionHost, documents: Documents): Promise<vo
     const message = error instanceof Error ? error.message : String(error);
     log.appendLine(`  submitting failed: ${message}`);
     vscode.window.showErrorMessage(`Jury: the review was not posted — ${message}`);
+  }
+}
+
+/**
+ * Ask GitHub about the pull request again. With `fetch`, also bring its newest head in and
+ * move the review on to it, so a refresh shows what the author pushed since.
+ *
+ * Failing is not fatal: the review stays on the commits it already has, and says why.
+ */
+async function refetchPullRequest(session: Session, number: number, fetch = true): Promise<void> {
+  try {
+    const pr = await resolve(session.repo, number);
+    if (!fetch) {
+      // Comments are placed against the commit that was read, not whatever GitHub has now.
+      session.pr = { ...pr, headOid: session.head };
+      return;
+    }
+    const { base, head } = await fetchHead(session.repo, pr);
+    session.pr = { ...pr, headOid: head };
+    session.spec = { kind: 'pr', number: pr.number, base, head, title: pr.title };
+    session.stored.spec = session.spec;
+    session.stored.label = describeSpec(session.spec);
+    await windowState.update(LAST_REVIEW, session.spec);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.appendLine(`  could not reach pull request #${number}: ${message}`);
+    vscode.window.showWarningMessage(`Jury: could not reach pull request #${number} — ${message}`);
   }
 }
 
