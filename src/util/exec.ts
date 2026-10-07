@@ -120,6 +120,9 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
       finish(() => resolve({ code: code ?? -1, stdout: onLine ? '' : stdout, stderr }));
     });
 
+    // A child that exits before reading its input breaks the pipe. Its exit code and stderr
+    // already say what went wrong; unhandled, the EPIPE would take the extension host with it.
+    child.stdin.on('error', () => undefined);
     child.stdin.end(options.stdin);
   });
 }
