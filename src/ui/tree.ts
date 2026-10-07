@@ -110,9 +110,15 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           .join(' · ');
         const prose =
           node.cohort.summary || (onlyPath ? (session?.summaries.get(onlyPath) ?? '') : '') || node.cohort.title;
+        const risk = node.cohort.risk === 'low' ? '' : `${node.cohort.risk} risk`;
         item.tooltip = new vscode.MarkdownString(
-          prose + (node.cohort.riskReason ? `\n\n**Risk:** ${node.cohort.riskReason}` : ''),
+          prose +
+            (risk ? `\n\n**${risk[0]!.toUpperCase()}${risk.slice(1)}**${node.cohort.riskReason ? `: ${node.cohort.riskReason}` : ''}` : ''),
         );
+        // Medium and high differ only by colour on screen; a screen reader gets the word.
+        item.accessibilityInformation = {
+          label: [item.label, risk, item.description].filter(Boolean).join(', ') as string,
+        };
 
         // Every cohort row carries a tick and an icon, whatever shape the cohort is. Rows at
         // one depth have to line up: a row that alone has a checkbox and an icon starts its
