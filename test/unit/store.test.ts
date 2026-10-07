@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { run } from '../../src/util/exec.js';
 import { findRepo, stateDir, type Repo } from '../../src/git/repo.js';
-import { emptyReview, list, load, reviewId, save } from '../../src/state/store.js';
+import { emptyReview, legacyReviewId, list, load, reviewId, save } from '../../src/state/store.js';
 
 let dir: string;
 let repo: Repo;
@@ -135,5 +135,39 @@ describe('list', () => {
     await save(repo, review);
     await fs.writeFile(path.join(stateDir(repo), 'broken.json'), 'not json');
     expect(await list(repo)).toHaveLength(1);
+  });
+});
+
+describe('pull request identity', () => {
+  const pr = (head: string, title = 'a title') => ({ kind: 'pr', number: 7, base: 'b'.repeat(40), head, title }) as const;
+
+  it('is the same review after a push or a title edit', () => {
+    expect(reviewId(repo, pr('1'.repeat(40)))).toBe(reviewId(repo, pr('2'.repeat(40), 'renamed')));
+  });
+
+  it('still knows the id it was saved under before', () => {
+    expect(legacyReviewId(repo, pr('1'.repeat(40)))).not.toBe(reviewId(repo, pr('1'.repeat(40))));
+    expect(legacyReviewId(repo, { kind: 'worktree' })).toBeNull();
+  });
+});
+
+describe('save and load', () => {
+  it('survives saves that overlap, ending with the last one', async () => {
+    const review = emptyReview(repo, { kind: 'worktree' });
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) => save(repo, { ...review, marks: Array.from({ length: 20 - i }, (_, k) => String(k)) })),
+    );
+    expect((await load(repo, review.id))?.marks).toEqual(['0']);
+  });
+
+  it('moves an unreadable file aside instead of letting the next save overwrite it', async () => {
+    const file = path.join(stateDir(repo), 'broken.json');
+    await fs.mkdir(stateDir(repo), { recursive: true });
+    await fs.writeFile(file, '{"schema": 1, "marks": [');
+
+    expect(await load(repo, 'broken')).toBeNull();
+    const names = await fs.readdir(stateDir(repo));
+    expect(names.some((name) => name.startsWith('broken.json.unreadable-'))).toBe(true);
+    expect(names).not.toContain('broken.json');
   });
 });

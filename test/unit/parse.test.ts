@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { contentSide, parseDiff, parseGitHeaderPaths } from '../../src/git/parse.js';
+import { contentSide, parseDiff, parseGitHeaderPaths, unquote } from '../../src/git/parse.js';
 
 // vitest runs from the project root; keeping this a plain relative path avoids import.meta,
 // which tsc rejects under the CommonJS output the extension host loads.
@@ -157,5 +157,36 @@ describe('parseGitHeaderPaths', () => {
 
   it('is null when the header is not a pair', () => {
     expect(parseGitHeaderPaths('nonsense')).toBeNull();
+  });
+});
+
+describe('quoted paths', () => {
+  // Verbatim from `git diff --cached` with core.quotePath=false. Written out rather than
+  // produced by git here: Windows refuses to create or stage these names, but a commit made
+  // elsewhere can still carry them into a review there.
+  const diff = [
+    'diff --git "a/say \\"hi\\"\\\\now.txt" "b/say \\"hi\\"\\\\now.txt"',
+    'new file mode 100644',
+    'index 0000000..5626abf',
+    '--- /dev/null',
+    '+++ "b/say \\"hi\\"\\\\now.txt"\t',
+    '@@ -0,0 +1 @@',
+    '+one',
+    'diff --git a/plain.txt "b/tab\\there.txt"',
+    'similarity index 100%',
+    'rename from plain.txt',
+    'rename to "tab\\there.txt"',
+    '',
+  ].join('\n');
+
+  it('reads a path git has to quote as the path it is', () => {
+    const files = parseDiff(diff);
+    expect(files.map((f) => f.path)).toEqual(['say "hi"\\now.txt', 'tab\there.txt']);
+    expect(files[1]?.oldPath).toBe('plain.txt');
+  });
+
+  it('decodes octal escapes as UTF-8 bytes', () => {
+    expect(unquote('"caf\\303\\251"')).toBe('café');
+    expect(unquote('plain')).toBe('plain');
   });
 });

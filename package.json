@@ -334,12 +334,12 @@
         },
         {
           "command": "jury.notScaffolding",
-          "when": "view == jury.stack && viewItem == layer",
+          "when": "view == jury.stack && viewItem == layer-scaffolding",
           "group": "navigation@3"
         },
         {
           "command": "jury.openLayer",
-          "when": "view == jury.stack && viewItem == layer",
+          "when": "view == jury.stack && viewItem =~ /^layer(-scaffolding)?$/",
           "group": "navigation@1"
         },
         {
@@ -354,12 +354,12 @@
         },
         {
           "command": "jury.openLayerFiles",
-          "when": "view == jury.stack && viewItem == layer",
+          "when": "view == jury.stack && viewItem =~ /^layer(-scaffolding)?$/",
           "group": "inline@1"
         },
         {
           "command": "jury.openLayerFiles",
-          "when": "view == jury.stack && viewItem == layer",
+          "when": "view == jury.stack && viewItem =~ /^layer(-scaffolding)?$/",
           "group": "navigation@0"
         }
       ],

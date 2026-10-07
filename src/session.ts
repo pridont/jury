@@ -10,7 +10,8 @@ import type { PullRequest } from './github/pr.js';
 export class Session {
   constructor(
     readonly repo: Repo,
-    readonly spec: ReviewSpec,
+    /** Replaced only by a pull request refresh, which moves it to the newest head. */
+    public spec: ReviewSpec,
   ) {
     this.stored = emptyReview(repo, spec);
   }
@@ -45,6 +46,30 @@ export class Session {
   clustered = false;
   /** The record on disk. Written after every change the reviewer makes. */
   stored: StoredReview;
+
+  /** Bumped by every load, so work started for an older one can tell it has been overtaken. */
+  private generation = 0;
+  private closed = false;
+
+  /**
+   * A check that stays true until this review is reloaded or closed. Anything that awaits a
+   * model or git asks it before writing back, so a slow answer for a review that is gone
+   * cannot land on the one that replaced it.
+   */
+  live(): () => boolean {
+    const generation = this.generation;
+    return () => !this.closed && this.generation === generation;
+  }
+
+  /** Start a new load. Whatever is still running for the previous one is now stale. */
+  reload(): () => boolean {
+    this.generation += 1;
+    return this.live();
+  }
+
+  close(): void {
+    this.closed = true;
+  }
 
   get id(): string {
     return this.stored.id;
@@ -105,6 +130,7 @@ export class SessionHost implements vscode.Disposable {
 
   close(): void {
     if (!this.current) return;
+    this.current.close();
     this.current = null;
     void vscode.commands.executeCommand('setContext', 'jury.active', false);
     void vscode.commands.executeCommand('setContext', 'jury.pr', false);

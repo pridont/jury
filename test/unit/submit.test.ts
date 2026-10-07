@@ -155,3 +155,20 @@ describe('preview', () => {
     expect(text).toContain('0 inline comments');
   });
 });
+
+describe('prepare, out of range', () => {
+  it('pulls a moved note back inside a hunk that got shorter, and says it is approximate', () => {
+    const note = { ...newComment('h1', 9, 'new', 'still here?'), moved: true };
+    const [placed] = prepare([note], hunks, 'COMMENT', '').comments;
+    expect(placed?.line).toBe(42);
+    expect(placed?.body).toContain('position is approximate');
+  });
+
+  it('skips a note on a side the hunk has no lines on, rather than failing the review', () => {
+    const added = { ...hunk('h3', 'new.ts', 1), oldStart: 0, oldCount: 0 };
+    const note = newComment('h3', 0, 'old', 'gone side');
+    const { comments, skipped } = prepare([note], new Map([['h3', added]]), 'COMMENT', '');
+    expect(comments).toEqual([]);
+    expect(skipped[0]?.reason).toContain('no old lines');
+  });
+});
