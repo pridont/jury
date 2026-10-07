@@ -59,8 +59,21 @@ Open the command palette and run one of:
 | Jury: Review Staged Changes | Staged changes |
 | Jury: Review This Branch… | Everything the current branch adds, compared to a base branch you pick |
 | Jury: Review a Pull Request… | A pull request you pick from a list |
+| Jury: Review a Commit… | One commit, compared to its parent |
+| Jury: Resume Last Review | The review you had open most recently |
+| Jury: Open a Saved Review… | A review you started earlier, picked from a list |
 
 The review opens in the Jury panel in the activity bar.
+
+While a review is open you can also run:
+
+| Command | Does |
+|---|---|
+| Jury: Reorganise the Stack | Ask the model to group the change again |
+| Jury: Stop Model Work | Cancel summaries or grouping that are still running |
+| Jury: Mark Cohort Reviewed | Mark every hunk in a cohort |
+| Jury: Open All Files in This Cohort / Step | Open the files together in one diff editor |
+| Jury: Clear Model Answer Cache | Forget cached model answers, so the next run asks again |
 
 ### Keys
 
@@ -71,11 +84,12 @@ The review opens in the Jury panel in the activity bar.
 | `alt+m` | Mark this hunk as reviewed |
 | `alt+shift+m` | Mark this layer as reviewed and move to the next |
 | `alt+a` | Ask about this hunk |
-| `alt+shift+a` | Ask about this layer |
 | `alt+s` | Open the walkthrough |
-| `alt+z` | Focus mode |
 
-These only work while a review is open.
+These only work while a review is open. **Ask About This Step** and **Focus Mode** have no
+key by default, because the obvious ones are taken by VS Code (Toggle Block Comment, Toggle
+Word Wrap). Focus mode only hides the sidebar, which `ctrl+b` already does. Bind either one
+in Keyboard Shortcuts if you want a key for it.
 
 ### Marks
 

@@ -141,6 +141,16 @@ export function activate(context: vscode.ExtensionContext): void {
       host.close();
       void windowState.update(LAST_REVIEW, undefined);
     }),
+    vscode.commands.registerCommand('jury.cancel', () => {
+      const session = host.active;
+      if (!session) return;
+      // Everything running for this load is now stale, so a summary pass that swallows its
+      // cancellation does not go on to start grouping. Reorganise asks again.
+      session.reload();
+      queue.cancel(session.id);
+      activity.stop();
+      log.appendLine('  model work stopped');
+    }),
     vscode.commands.registerCommand('jury.clearCache', () => clearCache(host)),
     vscode.commands.registerCommand('jury.showLog', () => log.show(true)),
     vscode.commands.registerCommand('jury.resume', () => resume(host, ctx())),
@@ -349,6 +359,7 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   if (!session) return;
 
   ctx.queue.cancel(session.id);
+  const reading = ctx.nav.current?.hunk.id;
   const previous = session.files.flatMap((file) => file.hunks);
   session.clustered = false;
   session.loading = true;
@@ -371,6 +382,8 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   ctx.comments.render();
   ctx.tree.refresh();
   updateBadge(ctx.view, ctx.nav, session);
+  // Back to the hunk being read, if the push left it alone.
+  if (reading) void ctx.nav.goToHunk(reading);
 
   if (notes.moved > 0 || notes.orphaned > 0) {
     log.appendLine(`  notes: ${notes.moved} moved, ${notes.orphaned} orphaned`);
@@ -480,21 +493,22 @@ function cacheFor(repo: Repo): Cache {
  * view that rearranges itself under the reader is worse than one that never improves. The
  * hunk being read stays selected across the change.
  */
-async function cluster(session: Session, ctx: Context, deps: PassDeps, live: () => boolean): Promise<void> {
-  if (session.clustered) return;
+/** Returns why the stack was not replaced, or null when it was (or already had been). */
+async function cluster(session: Session, ctx: Context, deps: PassDeps, live: () => boolean): Promise<string | null> {
+  if (session.clustered) return null;
 
   ctx.activity.start('Grouping the change', 0, 'deliberating');
   const reading = ctx.nav.current?.hunk.id;
   const result = await clusterChange(deps, session.files, session.summaries);
   // Grouped from files that are no longer on screen, or for a review that is gone.
-  if (!live()) return;
+  if (!live()) return 'cancelled';
 
   if (!result.ok) {
     ctx.activity.stop();
     if (result.reason !== 'cancelled') {
       log.appendLine(`  clustering did not replace the stack: ${result.reason}`);
     }
-    return;
+    return result.reason;
   }
 
   session.cohorts = result.merged.cohorts;
@@ -519,6 +533,7 @@ async function cluster(session: Session, ctx: Context, deps: PassDeps, live: () 
   if (vscode.workspace.getConfiguration('jury').get<boolean>('walkthrough.autoOpen', true)) {
     await showWalkthrough(session, ctx.documents);
   }
+  return null;
 }
 
 /** Ask again after a refresh, or when the order looks wrong. */
@@ -526,13 +541,21 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
   const session = host.active;
   if (!session) return;
 
-  const provider = await providerFor('clustering');
+  // Asked for by name, so failing says so every time, not once per window.
+  const provider = await providerFor('clustering', true);
   if (!provider) return;
 
   const live = session.live();
   session.clustered = false;
   try {
-    await cluster(session, ctx, passDeps(session, ctx, provider), live);
+    const failed = await cluster(session, ctx, passDeps(session, ctx, provider), live);
+    if (failed && failed !== 'cancelled') {
+      const choice = await vscode.window.showWarningMessage(
+        `Jury: could not reorganise the stack — ${failed}`,
+        'Show Log',
+      );
+      if (choice === 'Show Log') log.show(true);
+    }
   } finally {
     if (live()) ctx.activity.stop();
   }
@@ -609,22 +632,29 @@ function applyProviderSettings(claude: ClaudeProvider, vscodeLm: VscodeLmProvide
  * clustering is one call that decides the whole product. Routing them separately is the
  * reason the tiers exist.
  */
-async function providerFor(pass: 'summaries' | 'clustering' | 'ask'): Promise<Provider | null> {
+/** With `loud`, every reason there is no provider is said, for a pass the reviewer asked for. */
+async function providerFor(pass: 'summaries' | 'clustering' | 'ask', loud = false): Promise<Provider | null> {
   const config = vscode.workspace.getConfiguration('jury');
-  if (!config.get<boolean>('ai.enabled', true)) return null;
+  const say = (message: string) => loud && void vscode.window.showWarningMessage(`Jury: ${message}`);
+  if (!config.get<boolean>('ai.enabled', true)) {
+    say('the model is turned off (jury.ai.enabled).');
+    return null;
+  }
 
   const passes = config.get<Record<string, string>>('passes', {});
   const id = passes[pass] ?? config.get<string>('provider', 'claude');
   const provider = providers.get(id);
   if (!provider) {
     log.appendLine(`  no provider called "${id}" is registered`);
+    say(`no provider called "${id}".`);
     return null;
   }
 
   const { ok, reason } = await provider.available();
   if (!ok) {
     log.appendLine(`  ${provider.id} unavailable: ${reason ?? 'unknown'}`);
-    announceUnavailable(provider.id, reason);
+    if (loud) say(`${provider.id} is unavailable — ${reason ?? 'unknown reason'}.`);
+    else announceUnavailable(provider.id, reason);
     return null;
   }
   return provider;
@@ -962,8 +992,9 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
         if (session) {
           session.pr = { ...pr, headOid: head };
           // What GitHub already thinks was read. Marks stay ours — this only starts the
-          // review where the reviewer left it on the web.
-          const viewed = await viewedFiles(repo, pr);
+          // review where the reviewer left it on the web, so once anything is marked here,
+          // a file unmarked here stays unmarked.
+          const viewed = session.marks.size === 0 ? await viewedFiles(repo, pr) : new Set<string>();
           for (const file of session.files) {
             if (!viewed.has(file.path)) continue;
             for (const hunk of file.hunks) session.marks.add(hunk.id);
@@ -1029,12 +1060,17 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
   const body = await vscode.window.showInputBox({
     title: 'Review summary',
     prompt: 'A sentence or two for the review as a whole. Optional.',
-    value: session.overview.split('. ').slice(0, 2).join('. '),
+    // Never pre-filled: one keystroke would post the model's words as the reviewer's own.
   });
   if (body === undefined) return;
 
   const hunks = new Map(session.files.flatMap((file) => file.hunks).map((hunk) => [hunk.id, hunk]));
   const submission = prepare(session.comments, hunks, choice.event, body);
+
+  if (submission.comments.length === 0 && !submission.body.trim() && choice.event === 'COMMENT') {
+    vscode.window.showInformationMessage('Jury: nothing to send — no new notes and no summary.');
+    return;
+  }
 
   await documents.show(`Review of #${session.pr.number}.md`, preview(session.pr, submission));
 
@@ -1092,7 +1128,8 @@ async function refetchPullRequest(session: Session, number: number, fetch = true
 
 async function runDoctor(): Promise<void> {
   const checks = await doctor(workspaceCwd());
-  log.clear();
+  // Appended, not cleared: the log is also the record of every model call and its cost.
+  log.appendLine('');
   log.appendLine('Jury — doctor');
   log.appendLine('');
   log.appendLine(formatChecks(checks));
