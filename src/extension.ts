@@ -40,6 +40,7 @@ import { describeSpec } from './model/types.js';
 import { fetchHead, listOpen, resolve, viewedFiles } from './github/pr.js';
 import { defaultBranch, describeCommit, listRefs, recentCommits, type Ref } from './git/refs.js';
 import { pickOrType } from './ui/pick.js';
+import { reviewComments } from './github/comments.js';
 import { prepare, preview, recordPosted, submit, type ReviewEvent } from './github/submit.js';
 
 let log: vscode.OutputChannel;
@@ -382,6 +383,7 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   ctx.comments.render();
   ctx.tree.refresh();
   updateBadge(ctx.view, ctx.nav, session);
+  void loadRemoteComments(session, ctx);
   // Back to the hunk being read, if the push left it alone.
   if (reading) void ctx.nav.goToHunk(reading);
 
@@ -991,6 +993,7 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
         const session = host.active;
         if (session) {
           session.pr = { ...pr, headOid: head };
+          void loadRemoteComments(session, ctx);
           // What GitHub already thinks was read. Marks stay ours — this only starts the
           // review where the reviewer left it on the web, so once anything is marked here,
           // a file unmarked here stays unmarked.
@@ -1011,6 +1014,25 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
       }
     },
   );
+}
+
+/**
+ * Show what other reviewers have said on the pull request, alongside the reviewer's notes.
+ *
+ * Not fatal: without them this is still the same review, and the pull request page has them.
+ */
+async function loadRemoteComments(session: Session, ctx: Context): Promise<void> {
+  if (!session.pr) return;
+  const live = session.live();
+  try {
+    const remote = await reviewComments(session.repo, session.pr);
+    if (!live()) return;
+    session.remoteComments = remote;
+    ctx.comments.render();
+    log.appendLine(`  ${remote.length} review comments on #${session.pr.number}`);
+  } catch (error) {
+    log.appendLine(`  could not read review comments: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**

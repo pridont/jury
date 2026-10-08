@@ -5,6 +5,7 @@ import type { Cohort, Comment, ReviewSpec } from './model/types.js';
 import { describeSpec } from './model/types.js';
 import { emptyReview, save, type StoredReview } from './state/store.js';
 import type { PullRequest } from './github/pr.js';
+import type { RemoteComment } from './github/comments.js';
 
 /** The one review that is open, if any. */
 export class Session {
@@ -42,6 +43,8 @@ export class Session {
   diagram = '';
   /** Set for a pull request review, and what makes submitting possible. */
   pr: PullRequest | null = null;
+  /** What other reviewers said on the pull request. Shown, never saved, exported or sent. */
+  remoteComments: RemoteComment[] = [];
   /** True once clustering has replaced the heuristic stack — which happens exactly once. */
   clustered = false;
   /** The record on disk. Written after every change the reviewer makes. */

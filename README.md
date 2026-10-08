@@ -113,6 +113,11 @@ Jury fetches the pull request into a separate ref and compares it to the base br
 branch and working tree are not changed. Files you marked as viewed on GitHub start out
 marked.
 
+Comments other reviewers left on the pull request are shown on the diff, labelled **on
+GitHub**. They are read-only, and are never exported or posted. Comments on code that has
+changed since (outdated on GitHub) are not shown. Run **Jury: Refresh Review** to fetch new
+ones.
+
 **Jury: Submit Review to GitHub…** posts your notes as inline comments. It shows you exactly
 what will be sent and asks before sending. Notes that were already posted are not posted
 again.
