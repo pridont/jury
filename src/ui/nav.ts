@@ -3,7 +3,7 @@ import { contentSide } from '../git/parse.js';
 import type { Session } from '../session.js';
 import { contentUri, editorFor, openFileDiff, sidesFor } from './diff.js';
 import { covers } from '../model/comments.js';
-import { layerEntry, step, stepLayer, type Entry } from '../model/order.js';
+import { layerEntry, progress, step, stepLayer, type Entry } from '../model/order.js';
 
 /** Code that did not change at all. Dim means "not part of this diff", one meaning only. */
 const UNCHANGED = vscode.window.createTextEditorDecorationType({ opacity: '0.45' });
@@ -43,11 +43,16 @@ export class Navigator implements vscode.Disposable {
 
   /** How much of the review a person is expected to read — scaffolding is not counted. */
   get progress(): { reviewed: number; total: number } {
-    const total = this.order.filter((entry) => !entry.scaffolding).length;
-    const reviewed = this.order.filter(
-      (entry) => !entry.scaffolding && this.session.marks.has(entry.hunk.id),
-    ).length;
-    return { reviewed, total };
+    return progress(this.order, (id) => this.session.marks.has(id));
+  }
+
+  /** The same count, for the part of the review a cohort or layer row stands for. */
+  progressOf(hunkIds: readonly string[]): { reviewed: number; total: number } {
+    const ids = new Set(hunkIds);
+    return progress(
+      this.order.filter((entry) => ids.has(entry.hunk.id)),
+      (id) => this.session.marks.has(id),
+    );
   }
 
   /** Step forward, stopping only at hunks `matches` accepts — every hunk when it is left out. */

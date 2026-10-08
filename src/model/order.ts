@@ -68,6 +68,18 @@ export function step(
   return from;
 }
 
+/**
+ * How much of `entries` a person is expected to read, and how much of that they have.
+ * Scaffolding is not counted: it is out of the reading order, so it is out of the score too.
+ */
+export function progress(
+  entries: readonly Entry[],
+  isMarked: (hunkId: string) => boolean,
+): { reviewed: number; total: number } {
+  const read = entries.filter((entry) => !entry.scaffolding);
+  return { reviewed: read.filter((entry) => isMarked(entry.hunk.id)).length, total: read.length };
+}
+
 /** The next position that belongs to a different layer than the one at `from`. */
 export function stepLayer(order: readonly Entry[], from: number, direction: 1 | -1): number {
   const current = order[from];

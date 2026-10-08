@@ -12,7 +12,9 @@ read. A language model does the grouping. You do the reviewing.
   reading order: new code first, then the code that uses it, then tests.
 - A short walkthrough of what the change does before you read any code.
 - Step through every hunk with one key, across files.
-- Mark hunks as reviewed. Marks are saved and survive a rebase.
+- Mark hunks as reviewed. Marks are saved and survive a rebase. Each cohort and layer shows
+  how much of it is reviewed, and the status bar shows the total; click it to go to the next
+  unreviewed hunk.
 - Leave notes on the diff and export them as markdown.
 - Review GitHub pull requests without checking them out, and post your notes back as review
   comments.

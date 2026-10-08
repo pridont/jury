@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import type { FileChange } from '../git/parse.js';
 import type { Session, SessionHost } from '../session.js';
 import type { Activity, ActivityKind } from './activity.js';
+import type { Navigator } from './nav.js';
 import type { Cohort, Comment, Layer, Risk } from '../model/types.js';
 
 export type Node =
@@ -34,6 +35,8 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     /** The running step, shown with its loading icon as the first row of the tree. */
     private readonly activity: Activity,
     private readonly extension: vscode.Uri,
+    /** The reading order, which is what decides what counts towards progress. */
+    private readonly nav: Navigator,
   ) {
     host.onDidChange(() => this.refresh());
     activity.onDidChange(() => this.refresh());
@@ -58,6 +61,12 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
    * stepping still lands on them, the tree simply has no row to select.
    */
   hideReviewed = false;
+
+  /** "3/7", counted the way the view's own total is, so the rows add up to it. */
+  private progressNote(hunkIds: readonly string[]): string {
+    const { reviewed, total } = this.nav.progressOf(hunkIds);
+    return total > 0 ? `${reviewed}/${total}` : '';
+  }
 
   private hidden(session: Session, hunkIds: readonly string[]): boolean {
     return this.hideReviewed && reviewed(session, hunkIds);
@@ -114,6 +123,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // A cohort of one layer stands in for that layer, so it says what the layer row would.
         item.description = [
           only ? changedNote(session, only.hunkIds) : '',
+          this.progressNote(node.cohort.layers.flatMap((layer) => layer.hunkIds)),
           onlyPath ? statusNote(session, onlyPath) : '',
           where,
           `${hunks} hunk${hunks === 1 ? '' : 's'}`,
@@ -235,6 +245,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         item.description = [
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
           changedNote(session, node.layer.hunkIds),
+          this.progressNote(node.layer.hunkIds),
           single ? statusNote(session, single) : '',
           where,
           `${node.layer.hunkIds.length} hunk${node.layer.hunkIds.length === 1 ? '' : 's'}`,

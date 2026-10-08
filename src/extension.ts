@@ -54,20 +54,26 @@ const LAST_REVIEW = 'jury.lastReview';
 /** The same key under the extension's old name, read once so a reload after the rename still restores. */
 const LEGACY_LAST_REVIEW = 'changestack.lastReview';
 
+/** "Jury 12/40" while a review is open. Clicking it goes on to the next unread hunk. */
+let progressItem: vscode.StatusBarItem;
+
 export function activate(context: vscode.ExtensionContext): void {
   log = vscode.window.createOutputChannel('Jury');
   windowState = context.workspaceState;
+  progressItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+  progressItem.command = 'jury.nextUnreviewed';
+  progressItem.tooltip = 'Jury: next unreviewed hunk';
 
   const host = new SessionHost();
   const activity = new Activity();
-  const tree = new StackTree(host, activity, context.extensionUri);
+  const nav = new Navigator(new Session({ root: '', commonDir: '', linkedWorktree: false }, { kind: 'worktree' }));
+  const tree = new StackTree(host, activity, context.extensionUri, nav);
   const blobs = new BlobProvider();
   const view = vscode.window.createTreeView('jury.stack', {
     treeDataProvider: tree,
     showCollapseAll: true,
   });
 
-  const nav = new Navigator(new Session({ root: '', commonDir: '', linkedWorktree: false }, { kind: 'worktree' }));
   const comments = new Comments();
   const claude = new ClaudeProvider();
   const vscodeLm = new VscodeLmProvider();
@@ -78,6 +84,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     log,
+    progressItem,
     host,
     view,
     nav,
@@ -221,6 +228,11 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility'),
     ),
   );
+
+  // Closing has no load to recount after it, so the counts are taken down here.
+  host.onDidChange((session) => {
+    if (!session) updateBadge(view, nav, null);
+  });
 
   nav.onDidChange((entry) => {
     updateBadge(view, nav, host.active);
@@ -799,10 +811,13 @@ function updateBadge(view: vscode.TreeView<Node>, nav: Navigator, session: Sessi
   if (!session) {
     view.badge = undefined;
     view.description = '';
+    progressItem.hide();
     return;
   }
   const { reviewed, total } = nav.progress;
   view.description = total > 0 ? `${reviewed}/${total} reviewed` : '';
+  progressItem.text = `Jury ${reviewed}/${total}`;
+  progressItem.show();
   view.badge = total - reviewed > 0 ? { value: total - reviewed, tooltip: `${total - reviewed} hunks to read` } : undefined;
 }
 
