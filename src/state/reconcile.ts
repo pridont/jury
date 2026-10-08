@@ -58,7 +58,9 @@ export function reconcileMarks(
     }
   }
 
-  const changed = new Set(current.filter((hunk) => anchors.get(hunk.id)?.kind !== 'exact').map((hunk) => hunk.id));
+  // Anchors are keyed by the old id, so read where they point rather than looking up new ids.
+  const exact = new Set([...anchors.values()].flatMap((anchor) => (anchor.kind === 'exact' ? [anchor.hunkId] : [])));
+  const changed = new Set(current.filter((hunk) => !exact.has(hunk.id)).map((hunk) => hunk.id));
   return { marks: carried, changed, anchors, report };
 }
 
