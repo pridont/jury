@@ -37,7 +37,7 @@ import { legacyReviewId, load as loadStored, list as listStored, remove as remov
 import { describeRefresh, reconcileMarks } from './state/reconcile.js';
 import { migrateLegacyState } from './state/migrate.js';
 import { describeSpec } from './model/types.js';
-import { fetchHead, fullyMarked, listOpen, resolve, setViewed, viewedFiles } from './github/pr.js';
+import { fetchHead, fullyMarked, listOpen, resolve, setViewed, viewedFiles, type PullRequest } from './github/pr.js';
 import { defaultBranch, describeCommit, listRefs, recentCommits, type Ref } from './git/refs.js';
 import { pickOrType } from './ui/pick.js';
 import { reviewComments } from './github/comments.js';
@@ -257,7 +257,13 @@ type Context = {
   documents: Documents;
 };
 
-async function open(host: SessionHost, spec: ReviewSpec, ctx: Context, known?: Repo): Promise<void> {
+async function open(
+  host: SessionHost,
+  spec: ReviewSpec,
+  ctx: Context,
+  known?: Repo,
+  pr?: PullRequest,
+): Promise<void> {
   const repo = known ?? (await resolveRepo());
   if (!repo) return;
 
@@ -287,7 +293,12 @@ async function open(host: SessionHost, spec: ReviewSpec, ctx: Context, known?: R
   ctx.nav.setSession(session);
   ctx.comments.setSession(session);
   await windowState.update(LAST_REVIEW, spec);
-  await load(session, ctx);
+  if (!(await load(session, ctx)) || spec.kind !== 'pr') return;
+
+  // From the picker the pull request is in hand. Restored, resumed or reopened from the saved
+  // list, it is looked up behind the review rather than in front of it.
+  if (pr) await attachPullRequest(session, ctx, pr);
+  else void attachPullRequest(session, ctx);
 }
 
 /** Move state saved under the old name, once, and say so in the log if anything moved. */
@@ -1024,28 +1035,8 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
         const { base, head } = await fetchHead(repo, pr);
         log.appendLine(`  #${pr.number} ${pr.title} — ${base.slice(0, 12)}..${head.slice(0, 12)}`);
 
-        await open(host, { kind: 'pr', number: pr.number, base, head, title: pr.title }, ctx);
-
-        const session = host.active;
-        if (session) {
-          session.pr = { ...pr, headOid: head };
-          void loadRemoteComments(session, ctx);
-          // What GitHub already thinks was read. Marks stay ours — this only starts the
-          // review where the reviewer left it on the web, so once anything is marked here,
-          // a file unmarked here stays unmarked.
-          const viewed = session.marks.size === 0 ? await viewedFiles(repo, pr) : new Set<string>();
-          for (const file of session.files) {
-            if (!viewed.has(file.path)) continue;
-            for (const hunk of file.hunks) session.marks.add(hunk.id);
-          }
-          // Where GitHub starts from: what is fully marked now is viewed there already, or was
-          // marked here before anything was synced. Either way, nothing to send for it yet.
-          session.viewed = fullyMarked(session.files, session.marks);
-          if (viewed.size > 0) {
-            log.appendLine(`  ${viewed.size} files were already marked viewed on GitHub`);
-            await marksChanged(session, ctx);
-          }
-        }
+        const spec: ReviewSpec = { kind: 'pr', number: pr.number, base, head, title: pr.title };
+        await open(host, spec, ctx, undefined, { ...pr, headOid: head });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`Jury: ${message}`);
@@ -1053,6 +1044,50 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
       }
     },
   );
+}
+
+/**
+ * Everything a pull request review has beyond its diff: the pull request itself, what other
+ * reviewers said on it, and where GitHub's viewed boxes start.
+ *
+ * Without `pr` it is asked for first, and quietly: a review reopened offline still opens, it
+ * just cannot submit or sync until a refresh reaches GitHub.
+ */
+async function attachPullRequest(session: Session, ctx: Context, known?: PullRequest): Promise<void> {
+  if (session.spec.kind !== 'pr') return;
+  const live = session.live();
+
+  let pr = known;
+  if (!pr) {
+    try {
+      // Comments are placed against the commit that was read, not whatever GitHub has now.
+      pr = { ...(await resolve(session.repo, session.spec.number)), headOid: session.head };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.appendLine(`  could not reach pull request #${session.spec.number}: ${message}`);
+      return;
+    }
+    if (!live()) return;
+  }
+  session.pr = pr;
+  void loadRemoteComments(session, ctx);
+
+  // What GitHub already thinks was read. Marks stay ours — this only starts the review where
+  // the reviewer left it on the web, so once anything is marked here, a file unmarked here
+  // stays unmarked.
+  const viewed = session.marks.size === 0 ? await viewedFiles(session.repo, pr) : new Set<string>();
+  if (!live()) return;
+  for (const file of session.files) {
+    if (!viewed.has(file.path)) continue;
+    for (const hunk of file.hunks) session.marks.add(hunk.id);
+  }
+  // Where GitHub starts from: what is fully marked now is viewed there already, or was
+  // marked here before anything was synced. Either way, nothing to send for it yet.
+  session.viewed = fullyMarked(session.files, session.marks);
+  if (viewed.size > 0) {
+    log.appendLine(`  ${viewed.size} files were already marked viewed on GitHub`);
+    await marksChanged(session, ctx);
+  }
 }
 
 /**
