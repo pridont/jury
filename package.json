@@ -657,6 +657,10 @@
           {
             "name": "step",
             "description": "Ask about the whole step, not just this hunk"
+          },
+          {
+            "name": "cohort",
+            "description": "Ask about the whole cohort, every step in it"
           }
         ]
       }

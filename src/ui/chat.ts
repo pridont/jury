@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import type { SessionHost } from '../session.js';
 import type { Navigator } from './nav.js';
-import { askPrompt } from '../agent/prompts/ask.js';
+import { askContext, askPrompt, type AskScope } from '../agent/prompts/ask.js';
 import { ProviderError, type Chunk, type Provider } from '../agent/provider.js';
 import type { Entry } from '../model/order.js';
 
@@ -46,11 +46,14 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
       return;
     }
 
-    const wide = request.command === 'step';
+    const scope: AskScope = request.command === 'step' || request.command === 'cohort' ? request.command : 'hunk';
     const resume = continuing(context) ? sessions.get(session.id) : undefined;
     if (!resume) sessions.delete(session.id);
 
-    stream.progress(resume ? 'Thinking' : `Reading ${scopeName(entry, wide)}`);
+    stream.progress(resume ? 'Thinking' : `Reading ${scopeName(entry, scope)}`);
+    // The same ceiling clustering uses: a question about a cohort should not cost more than
+    // grouping the whole change did.
+    const budget = Math.min(provider.capabilities().maxInputChars, 60_000);
 
     const controller = new AbortController();
     token.onCancellationRequested(() => controller.abort());
@@ -61,7 +64,7 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
           {
             tier: 'smart',
             system: askPrompt.system,
-            input: resumeFrom ? request.prompt : `${context_(entry, wide)}\n\nQuestion: ${request.prompt}`,
+            input: resumeFrom ? request.prompt : `${askContext(entry, scope, session.files, budget)}\n\nQuestion: ${request.prompt}`,
             // Read-only by design: a review tool must never edit the code it is reviewing.
             tools: provider.capabilities().repoTools ? ['readFile', 'search', 'listFiles'] : [],
             cwd: session.repo.root,
@@ -130,21 +133,7 @@ function continuing(context: vscode.ChatContext): boolean {
   return context.history.length > 0;
 }
 
-function scopeName(entry: Entry, wide: boolean): string {
-  return wide ? entry.layer.title : `${entry.hunk.path}:${entry.hunk.newStart}`;
-}
-
-/** What the model is asked about: this hunk, or the whole step it belongs to. */
-function context_(entry: Entry, wide: boolean): string {
-  const lines: string[] = [`Change being reviewed: ${entry.cohort.title}`, entry.cohort.summary, ''];
-
-  if (wide) {
-    lines.push(`Step: ${entry.layer.title}`, entry.layer.summary, `Files: ${entry.layer.paths.join(', ')}`, '');
-  }
-
-  lines.push(`Hunk in ${entry.hunk.path}${entry.hunk.symbol ? `, in ${entry.hunk.symbol}` : ''}:`);
-  lines.push(`@@ -${entry.hunk.oldStart},${entry.hunk.oldCount} +${entry.hunk.newStart},${entry.hunk.newCount} @@`);
-  lines.push(...entry.hunk.lines);
-
-  return lines.join('\n');
+function scopeName(entry: Entry, scope: AskScope): string {
+  if (scope === 'cohort') return entry.cohort.title;
+  return scope === 'step' ? entry.layer.title : `${entry.hunk.path}:${entry.hunk.newStart}`;
 }
