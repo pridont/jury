@@ -37,7 +37,7 @@ import { legacyReviewId, load as loadStored, list as listStored, remove as remov
 import { describeRefresh, reconcileMarks } from './state/reconcile.js';
 import { migrateLegacyState } from './state/migrate.js';
 import { describeSpec } from './model/types.js';
-import { fetchHead, listOpen, resolve, viewedFiles } from './github/pr.js';
+import { fetchHead, fullyMarked, listOpen, resolve, setViewed, viewedFiles } from './github/pr.js';
 import { defaultBranch, describeCommit, listRefs, recentCommits, type Ref } from './git/refs.js';
 import { pickOrType } from './ui/pick.js';
 import { reviewComments } from './github/comments.js';
@@ -380,6 +380,8 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   // couple of lines off, and the flag says not to trust the position.
   const notes = reconcileComments(session.comments, anchors);
   session.comments = notes.comments;
+  // GitHub unticks a file the author changed, as the lost marks do here: start over from now.
+  session.viewed = session.pr ? fullyMarked(session.files, session.marks) : null;
   await persist(session);
 
   ctx.comments.render();
@@ -745,7 +747,39 @@ async function markLayer(host: SessionHost, ctx: Context): Promise<void> {
 async function marksChanged(session: Session, ctx: Context): Promise<void> {
   ctx.tree.refresh();
   updateBadge(ctx.view, ctx.nav, session);
+  syncViewed(session);
   await persist(session);
+}
+
+/**
+ * Tick "Viewed" on GitHub for a file once every hunk of it is marked here, and untick it
+ * when one is unmarked again. Only what changed since GitHub was last told is sent.
+ *
+ * Fire-and-forget: a mark is the reviewer's own record and holds either way. A failure is
+ * logged, and the box on GitHub is one click to fix.
+ */
+function syncViewed(session: Session): void {
+  const pr = session.pr;
+  if (!pr || session.spec.kind !== 'pr') return;
+
+  const before = session.viewed;
+  const now = fullyMarked(session.files, session.marks);
+  session.viewed = now;
+  // No starting point, so no way to tell a change from a state GitHub already has.
+  if (!before) return;
+
+  const changes = [
+    ...[...now].filter((path) => !before.has(path)).map((path) => ({ path, viewed: true })),
+    ...[...before].filter((path) => !now.has(path)).map((path) => ({ path, viewed: false })),
+  ];
+  for (const { path, viewed } of changes) {
+    setViewed(session.repo, pr, path, viewed).catch((error) =>
+      log.appendLine(
+        `  could not mark ${path} as ${viewed ? '' : 'not '}viewed on GitHub: ` +
+          (error instanceof Error ? error.message : String(error)),
+      ),
+    );
+  }
 }
 
 /**
@@ -1004,6 +1038,9 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
             if (!viewed.has(file.path)) continue;
             for (const hunk of file.hunks) session.marks.add(hunk.id);
           }
+          // Where GitHub starts from: what is fully marked now is viewed there already, or was
+          // marked here before anything was synced. Either way, nothing to send for it yet.
+          session.viewed = fullyMarked(session.files, session.marks);
           if (viewed.size > 0) {
             log.appendLine(`  ${viewed.size} files were already marked viewed on GitHub`);
             await marksChanged(session, ctx);

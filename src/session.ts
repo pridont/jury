@@ -45,6 +45,11 @@ export class Session {
   pr: PullRequest | null = null;
   /** What other reviewers said on the pull request. Shown, never saved, exported or sent. */
   remoteComments: RemoteComment[] = [];
+  /**
+   * Files that were fully marked when GitHub was last told, so only a change is sent. Null
+   * until a pull request review knows where it starts from.
+   */
+  viewed: Set<string> | null = null;
   /** True once clustering has replaced the heuristic stack — which happens exactly once. */
   clustered = false;
   /** The record on disk. Written after every change the reviewer makes. */

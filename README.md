@@ -114,7 +114,9 @@ resolved note is kept, and marked resolved in the export, but is not posted to G
 
 Jury fetches the pull request into a separate ref and compares it to the base branch. Your
 branch and working tree are not changed. Files you marked as viewed on GitHub start out
-marked.
+marked. It works the other way too: once every hunk of a file is marked, Jury ticks
+**Viewed** for that file on GitHub, and unticks it if you unmark one again. A review
+reopened after reloading the window starts doing this after **Jury: Refresh Review**.
 
 Comments other reviewers left on the pull request are shown on the diff, labelled **on
 GitHub**. They are read-only, and are never exported or posted. Comments on code that has

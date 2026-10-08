@@ -22,6 +22,7 @@ const hunks = new Map<string, Hunk>([
 ]);
 
 const pr: PullRequest = {
+  id: 'PR_kwDO',
   number: 141,
   title: 'feat: course viewer',
   url: 'https://github.com/o/r/pull/141',
