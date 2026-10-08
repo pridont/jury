@@ -201,7 +201,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.prevLayer', () => nav.stepLayer(-1)),
     vscode.commands.registerCommand('jury.nextChanged', () => nav.next(changedSinceRefresh)),
     vscode.commands.registerCommand('jury.prevChanged', () => nav.previous(changedSinceRefresh)),
-    vscode.commands.registerCommand('jury.nextUnreviewed', () => nav.next(unreviewed)),
+    vscode.commands.registerCommand('jury.nextUnreviewed', async () => {
+      // Stepping never wraps, so unread hunks behind the cursor are why this can stop short.
+      if (!host.active || (await nav.next(unreviewed))) return;
+      const { reviewed, total } = nav.progress;
+      vscode.window.setStatusBarMessage(
+        reviewed === total ? 'Jury: nothing left to review' : 'Jury: nothing unreviewed further on',
+        4000,
+      );
+    }),
     vscode.commands.registerCommand('jury.prevUnreviewed', () => nav.previous(unreviewed)),
     vscode.commands.registerCommand('jury.hideReviewed', () => hideReviewed(tree, true)),
     vscode.commands.registerCommand('jury.showReviewed', () => hideReviewed(tree, false)),
@@ -817,7 +825,8 @@ function updateBadge(view: vscode.TreeView<Node>, nav: Navigator, session: Sessi
   const { reviewed, total } = nav.progress;
   view.description = total > 0 ? `${reviewed}/${total} reviewed` : '';
   progressItem.text = `Jury ${reviewed}/${total}`;
-  progressItem.show();
+  if (total > 0) progressItem.show();
+  else progressItem.hide();
   view.badge = total - reviewed > 0 ? { value: total - reviewed, tooltip: `${total - reviewed} hunks to read` } : undefined;
 }
 
