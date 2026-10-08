@@ -1074,6 +1074,11 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
         detail: 'Block the pull request until the notes are addressed',
         event: 'REQUEST_CHANGES' as ReviewEvent,
       },
+      {
+        label: 'Draft',
+        detail: 'Start a pending review that only you can see, to finish and submit on GitHub',
+        event: 'PENDING' as ReviewEvent,
+      },
     ],
     { title: `Submit review of #${session.pr.number}`, placeHolder: 'How should this review be submitted?' },
   );
@@ -1089,7 +1094,8 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
   const hunks = new Map(session.files.flatMap((file) => file.hunks).map((hunk) => [hunk.id, hunk]));
   const submission = prepare(session.comments, hunks, choice.event, body);
 
-  if (submission.comments.length === 0 && !submission.body.trim() && choice.event === 'COMMENT') {
+  const draft = choice.event === 'PENDING';
+  if (submission.comments.length === 0 && !submission.body.trim() && (choice.event === 'COMMENT' || draft)) {
     vscode.window.showInformationMessage('Jury: nothing to send — no new notes and no summary.');
     return;
   }
@@ -1097,8 +1103,16 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
   await documents.show(`Review of #${session.pr.number}.md`, preview(session.pr, submission));
 
   const confirmed = await vscode.window.showWarningMessage(
-    `Send this review to ${session.pr.nameWithOwner}#${session.pr.number}?`,
-    { modal: true, detail: `${submission.comments.length} inline comments will be posted to GitHub.` },
+    draft
+      ? `Send this as a draft review to ${session.pr.nameWithOwner}#${session.pr.number}?`
+      : `Send this review to ${session.pr.nameWithOwner}#${session.pr.number}?`,
+    {
+      modal: true,
+      detail: draft
+        ? `${submission.comments.length} inline comments will go into a pending review on GitHub. ` +
+          'Nobody else sees them until you submit that review on GitHub.'
+        : `${submission.comments.length} inline comments will be posted to GitHub.`,
+    },
     'Send',
   );
   if (confirmed !== 'Send') return;
@@ -1111,8 +1125,11 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
     recordPosted(session.comments, submission, reviewId);
     await persist(session);
 
-    log.appendLine(`  review posted: ${url}`);
-    const open = await vscode.window.showInformationMessage('Jury: review posted.', 'Open on GitHub');
+    log.appendLine(`  ${draft ? 'draft review saved' : 'review posted'}: ${url}`);
+    const open = await vscode.window.showInformationMessage(
+      draft ? 'Jury: draft review saved on GitHub. Submit it there when you are done.' : 'Jury: review posted.',
+      'Open on GitHub',
+    );
     if (open === 'Open on GitHub') await vscode.env.openExternal(vscode.Uri.parse(url));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

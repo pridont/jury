@@ -5,7 +5,11 @@ import type { Comment, Hunk } from '../model/types.js';
 import { commentLine } from '../model/comments.js';
 import type { PullRequest } from './pr.js';
 
-export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+/**
+ * `PENDING` is not an event GitHub knows: it is sending none, which leaves the review as a
+ * draft only the reviewer can see, to finish and submit on the web.
+ */
+export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES' | 'PENDING';
 
 export type InlineComment = {
   path: string;
@@ -120,6 +124,7 @@ export function preview(pr: PullRequest, submission: Submission): string {
 }
 
 function verb(event: ReviewEvent): string {
+  if (event === 'PENDING') return 'Draft review (pending, not submitted) on';
   return event === 'APPROVE' ? 'Approve' : event === 'REQUEST_CHANGES' ? 'Request changes on' : 'Comment on';
 }
 
@@ -135,21 +140,9 @@ export async function submit(
   pr: PullRequest,
   submission: Submission,
 ): Promise<{ url: string; reviewId: number }> {
-  const payload = {
-    commit_id: pr.headOid,
-    body: submission.body,
-    event: submission.event,
-    comments: submission.comments.map((comment) => ({
-      path: comment.path,
-      line: comment.line,
-      side: comment.side,
-      body: comment.body,
-    })),
-  };
-
   const result = await gh(
     ['api', '--method', 'POST', `repos/${pr.nameWithOwner}/pulls/${pr.number}/reviews`, '--input', '-'],
-    { cwd: repo.root, stdin: JSON.stringify(payload), timeoutMs: 60_000 },
+    { cwd: repo.root, stdin: JSON.stringify(payload(pr, submission)), timeoutMs: 60_000 },
   );
 
   if (result.code !== 0) {
@@ -161,7 +154,27 @@ export async function submit(
   return { url: parsed.html_url ?? pr.url, reviewId: Number(parsed.id ?? 0) };
 }
 
-/** Record what was posted, so the next submission does not send it again. */
+/** The request body. A draft sends no `event` at all, which is what keeps it pending. */
+export function payload(pr: PullRequest, submission: Submission): Record<string, unknown> {
+  return {
+    commit_id: pr.headOid,
+    body: submission.body,
+    ...(submission.event === 'PENDING' ? {} : { event: submission.event }),
+    comments: submission.comments.map((comment) => ({
+      path: comment.path,
+      line: comment.line,
+      side: comment.side,
+      body: comment.body,
+    })),
+  };
+}
+
+/**
+ * Record what was posted, so the next submission does not send it again.
+ *
+ * A draft counts: its comments are on GitHub, waiting in the reviewer's pending review, and
+ * sending them again would put a second copy in the same draft.
+ */
 export function recordPosted(comments: Comment[], submission: Submission, reviewId: number): void {
   const sent = new Map(submission.comments.map((comment) => [comment.commentId, comment.body]));
   const at = Date.now();

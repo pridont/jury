@@ -122,6 +122,10 @@ ones.
 what will be sent and asks before sending. Notes that were already posted are not posted
 again.
 
+Pick **Draft** to send the notes as a pending review instead. Only you can see it until you
+finish and submit it on GitHub. Its notes count as posted, so if you delete the draft on
+GitHub, edit a note to send it again.
+
 ### Asking questions
 
 Type `@jury` in the Chat view, followed by your question. It answers about the hunk you are
