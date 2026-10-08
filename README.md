@@ -71,6 +71,8 @@ While a review is open you can also run:
 |---|---|
 | Jury: Reorganise the Stack | Ask the model to group the change again |
 | Jury: Stop Model Work | Cancel summaries or grouping that are still running |
+| Jury: Next / Previous Unreviewed Hunk | Step through only the hunks you have not marked |
+| Jury: Hide Reviewed / Show Reviewed | Hide fully reviewed cohorts and layers in the panel (also a button in its title bar) |
 | Jury: Next / Previous Changed Hunk | Step through only the hunks the last refresh found new or changed |
 | Jury: Mark Cohort Reviewed | Mark every hunk in a cohort |
 | Jury: Open All Files in This Cohort / Step | Open the files together in one diff editor |

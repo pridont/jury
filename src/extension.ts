@@ -194,6 +194,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.prevLayer', () => nav.stepLayer(-1)),
     vscode.commands.registerCommand('jury.nextChanged', () => nav.next(changedSinceRefresh)),
     vscode.commands.registerCommand('jury.prevChanged', () => nav.previous(changedSinceRefresh)),
+    vscode.commands.registerCommand('jury.nextUnreviewed', () => nav.next(unreviewed)),
+    vscode.commands.registerCommand('jury.prevUnreviewed', () => nav.previous(unreviewed)),
+    vscode.commands.registerCommand('jury.hideReviewed', () => hideReviewed(tree, true)),
+    vscode.commands.registerCommand('jury.showReviewed', () => hideReviewed(tree, false)),
     // Clicking a row passes indices; the context menu passes the row itself.
     vscode.commands.registerCommand('jury.openLayer', (target: number | Node, layerIndex?: number) => {
       if (typeof target === 'number') return nav.goToLayer(target, layerIndex ?? 0);
@@ -223,7 +227,8 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!entry) return;
     const node = tree.nodeForPosition(entry.cohortIndex, entry.layerIndex, entry.file.path);
     // `expand` so a file row inside a collapsed step is actually visible when selected.
-    if (node && view.visible) void view.reveal(node, { select: true, focus: false, expand: true });
+    // With reviewed rows hidden the hunk may have no row; the reading carries on without one.
+    if (node && view.visible) view.reveal(node, { select: true, focus: false, expand: true }).then(undefined, () => {});
   });
 
   context.subscriptions.push(
@@ -233,6 +238,10 @@ export function activate(context: vscode.ExtensionContext): void {
   applyProviderSettings(claude, vscodeLm);
   void vscode.commands.executeCommand('setContext', 'jury.active', false);
   void restoreLast(host, ctx());
+
+  function unreviewed(entry: Entry): boolean {
+    return !host.active?.marks.has(entry.hunk.id);
+  }
 
   function changedSinceRefresh(entry: Entry): boolean {
     return host.active?.changed.has(entry.hunk.id) ?? false;
@@ -742,6 +751,13 @@ async function markLayer(host: SessionHost, ctx: Context): Promise<void> {
   for (const id of entry.layer.hunkIds) session.marks.add(id);
   await marksChanged(session, ctx);
   await ctx.nav.stepLayer(1);
+}
+
+/** A view preference rather than review state, so it outlives the review and is not saved. */
+function hideReviewed(tree: StackTree, hide: boolean): void {
+  tree.hideReviewed = hide;
+  void vscode.commands.executeCommand('setContext', 'jury.hideReviewed', hide);
+  tree.refresh();
 }
 
 /** Show a change to the ticks everywhere they appear, and save it. */

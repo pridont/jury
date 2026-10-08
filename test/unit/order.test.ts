@@ -136,6 +136,11 @@ describe('step with a filter', () => {
     expect(step(order, 1, -1, matches)).toBe(1);
   });
 
+  it('finds the next unreviewed hunk by skipping marked ones', () => {
+    const marked = new Set(order.slice(1, 4).map((e) => e.hunk.id));
+    expect(step(order, 0, 1, (e) => !marked.has(e.hunk.id))).toBe(4);
+  });
+
   it('still skips scaffolding from outside it', () => {
     const scaffold = order.findIndex((e) => e.scaffolding);
     expect(step(order, 4, 1, (e) => e.scaffolding)).toBe(4);
