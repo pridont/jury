@@ -101,7 +101,9 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const onlyPath = only?.paths.length === 1 ? only.paths[0] : undefined;
         const files = new Set(node.cohort.layers.flatMap((layer) => layer.paths)).size;
         const where = onlyPath ?? `${files} file${files === 1 ? '' : 's'}`;
+        // A cohort of one layer stands in for that layer, so it says what the layer row would.
         item.description = [
+          only ? changedNote(session, only.hunkIds) : '',
           onlyPath ? statusNote(session, onlyPath) : '',
           where,
           `${hunks} hunk${hunks === 1 ? '' : 's'}`,
@@ -175,6 +177,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const notes = notesOn(session, hunks);
         item.description = [
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
+          changedNote(session, hunks),
           statusNote(session, node.path),
           directory(node.path),
           `${hunks.length} hunk${hunks.length === 1 ? '' : 's'}`,
@@ -221,6 +224,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // something written here" matters more than the hunk count it would push off.
         item.description = [
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
+          changedNote(session, node.layer.hunkIds),
           single ? statusNote(session, single) : '',
           where,
           `${node.layer.hunkIds.length} hunk${node.layer.hunkIds.length === 1 ? '' : 's'}`,
@@ -363,6 +367,15 @@ function tick(session: Session | null, hunkIds: readonly string[]): vscode.TreeI
 
 function notesOn(session: Session | null, hunkIds: readonly string[]): number {
   return session?.comments.filter((comment) => !comment.orphaned && hunkIds.includes(comment.hunkId)).length ?? 0;
+}
+
+/**
+ * The word that says the last refresh brought something new into this row. Only a word in
+ * the description: an icon would push the label out of line with its siblings, see the
+ * cohort row.
+ */
+function changedNote(session: Session | null, hunkIds: readonly string[]): string {
+  return session && hunkIds.some((id) => session.changed.has(id)) ? 'changed' : '';
 }
 
 /**

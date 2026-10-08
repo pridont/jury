@@ -50,12 +50,13 @@ export class Navigator implements vscode.Disposable {
     return { reviewed, total };
   }
 
-  async next(): Promise<void> {
-    await this.step(1);
+  /** Step forward, stopping only at hunks `matches` accepts — every hunk when it is left out. */
+  async next(matches?: (entry: Entry) => boolean): Promise<void> {
+    await this.step(1, matches);
   }
 
-  async previous(): Promise<void> {
-    await this.step(-1);
+  async previous(matches?: (entry: Entry) => boolean): Promise<void> {
+    await this.step(-1, matches);
   }
 
   /** Jump to a layer's first unreviewed hunk, or its first hunk when all are reviewed. */
@@ -75,9 +76,9 @@ export class Navigator implements vscode.Disposable {
    * Scaffolding is skipped, because it is not what the reviewer is here to read — unless
    * they deliberately went there, in which case walking it works like anywhere else.
    */
-  private async step(direction: 1 | -1): Promise<void> {
+  private async step(direction: 1 | -1, matches?: (entry: Entry) => boolean): Promise<void> {
     if (this.order.length === 0) return;
-    const next = step(this.order, this.position, direction);
+    const next = step(this.order, this.position, direction, matches);
     if (next !== this.position) await this.moveTo(next);
   }
 

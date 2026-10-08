@@ -118,3 +118,27 @@ describe('layerEntry', () => {
     expect(layerEntry(order, 9, 9, () => false)).toBe(-1);
   });
 });
+
+describe('step with a filter', () => {
+  const files = [file('src/a.ts', 3), file('src/b.ts', 2), file('yarn.lock', 2, true)];
+  const order = buildOrder(heuristicCohorts(files), files);
+  const wanted = new Set([order[1]!.hunk.id, order[4]!.hunk.id]);
+  const matches = (e: { hunk: Hunk }) => wanted.has(e.hunk.id);
+
+  it('stops only at matching hunks, across files', () => {
+    expect(step(order, 0, 1, matches)).toBe(1);
+    expect(step(order, 1, 1, matches)).toBe(4);
+    expect(step(order, 4, -1, matches)).toBe(1);
+  });
+
+  it('stays put when nothing further matches', () => {
+    expect(step(order, 4, 1, matches)).toBe(4);
+    expect(step(order, 1, -1, matches)).toBe(1);
+  });
+
+  it('still skips scaffolding from outside it', () => {
+    const scaffold = order.findIndex((e) => e.scaffolding);
+    expect(step(order, 4, 1, (e) => e.scaffolding)).toBe(4);
+    expect(step(order, scaffold, 1, (e) => e.scaffolding)).toBe(scaffold + 1);
+  });
+});

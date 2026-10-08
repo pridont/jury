@@ -71,6 +71,7 @@ While a review is open you can also run:
 |---|---|
 | Jury: Reorganise the Stack | Ask the model to group the change again |
 | Jury: Stop Model Work | Cancel summaries or grouping that are still running |
+| Jury: Next / Previous Changed Hunk | Step through only the hunks the last refresh found new or changed |
 | Jury: Mark Cohort Reviewed | Mark every hunk in a cohort |
 | Jury: Open All Files in This Cohort / Step | Open the files together in one diff editor |
 | Jury: Clear Model Answer Cache | Forget cached model answers, so the next run asks again |
@@ -97,7 +98,8 @@ Marks are stored in `.git/jury/`, so they are not committed and survive restarti
 
 After the author pushes again, run **Jury: Refresh Review**. Hunks that are unchanged keep
 their mark, even if they moved. Hunks whose content changed lose their mark, so you review
-them again.
+them again. Rows with new or changed hunks say **changed**, and **Next / Previous Changed
+Hunk** steps through just those, until you open a different review.
 
 ### Notes
 

@@ -140,6 +140,16 @@
         "category": "Jury"
       },
       {
+        "command": "jury.nextChanged",
+        "title": "Next Changed Hunk",
+        "category": "Jury"
+      },
+      {
+        "command": "jury.prevChanged",
+        "title": "Previous Changed Hunk",
+        "category": "Jury"
+      },
+      {
         "command": "jury.openLayer",
         "title": "Open Layer",
         "category": "Jury"
@@ -409,6 +419,14 @@
         },
         {
           "command": "jury.prevLayer",
+          "when": "jury.active"
+        },
+        {
+          "command": "jury.nextChanged",
+          "when": "jury.active"
+        },
+        {
+          "command": "jury.prevChanged",
           "when": "jury.active"
         },
         {

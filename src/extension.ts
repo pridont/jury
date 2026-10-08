@@ -27,7 +27,7 @@ import { Activity } from './ui/activity.js';
 import { forgetSessions, registerChat } from './ui/chat.js';
 import { Documents, DOC_SCHEME, offerToSave } from './ui/documents.js';
 import { stateDir } from './git/repo.js';
-import { buildOrder } from './model/order.js';
+import { buildOrder, type Entry } from './model/order.js';
 import { heuristicCohorts } from './model/heuristic.js';
 import { scaffoldingCohort } from './model/merge.js';
 import { classifyScaffolding } from './model/classify.js';
@@ -192,6 +192,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.prevHunk', () => nav.previous()),
     vscode.commands.registerCommand('jury.nextLayer', () => nav.stepLayer(1)),
     vscode.commands.registerCommand('jury.prevLayer', () => nav.stepLayer(-1)),
+    vscode.commands.registerCommand('jury.nextChanged', () => nav.next(changedSinceRefresh)),
+    vscode.commands.registerCommand('jury.prevChanged', () => nav.previous(changedSinceRefresh)),
     // Clicking a row passes indices; the context menu passes the row itself.
     vscode.commands.registerCommand('jury.openLayer', (target: number | Node, layerIndex?: number) => {
       if (typeof target === 'number') return nav.goToLayer(target, layerIndex ?? 0);
@@ -231,6 +233,10 @@ export function activate(context: vscode.ExtensionContext): void {
   applyProviderSettings(claude, vscodeLm);
   void vscode.commands.executeCommand('setContext', 'jury.active', false);
   void restoreLast(host, ctx());
+
+  function changedSinceRefresh(entry: Entry): boolean {
+    return host.active?.changed.has(entry.hunk.id) ?? false;
+  }
 
   function ctx(): Context {
     return { tree, nav, view, blobs, comments, queue, activity, documents };
@@ -370,8 +376,9 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   if (!(await load(session, ctx)) || session.error) return;
 
   const current = session.files.flatMap((file) => file.hunks);
-  const { marks, anchors, report } = reconcileMarks(previous, current, session.marks);
+  const { marks, changed, anchors, report } = reconcileMarks(previous, current, session.marks);
   session.marks = marks;
+  session.changed = changed;
 
   // Comments take the fuzzy matches marks refuse: losing a note is worse than showing it a
   // couple of lines off, and the flag says not to trust the position.
@@ -388,7 +395,7 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   if (notes.moved > 0 || notes.orphaned > 0) {
     log.appendLine(`  notes: ${notes.moved} moved, ${notes.orphaned} orphaned`);
   }
-  const message = describeRefresh(report);
+  const message = describeRefresh(report, changed.size);
   log.appendLine(`  ${message}`);
   vscode.window.setStatusBarMessage(`Jury: ${message}`, 6000);
 }

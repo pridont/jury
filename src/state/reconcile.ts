@@ -12,6 +12,12 @@ export type RefreshReport = {
 
 export type Reconciled = {
   marks: Set<string>;
+  /**
+   * Hunks of the new diff with no exact match in the old one: new, or edited since. A moved
+   * match counts — its content is not what was read, which is the same reason it loses its
+   * mark.
+   */
+  changed: Set<string>;
   anchors: Map<string, Anchor>;
   report: RefreshReport;
 };
@@ -52,11 +58,16 @@ export function reconcileMarks(
     }
   }
 
-  return { marks: carried, anchors, report };
+  const changed = new Set(current.filter((hunk) => anchors.get(hunk.id)?.kind !== 'exact').map((hunk) => hunk.id));
+  return { marks: carried, changed, anchors, report };
 }
 
-export function describeRefresh(report: RefreshReport): string {
-  const parts = [`${report.kept} mark${report.kept === 1 ? '' : 's'} kept`];
+/** `changed` is the count of hunks that are new or edited, marked or not. */
+export function describeRefresh(report: RefreshReport, changed: number): string {
+  const parts = [
+    `${changed} hunk${changed === 1 ? '' : 's'} new or changed`,
+    `${report.kept} mark${report.kept === 1 ? '' : 's'} kept`,
+  ];
   if (report.changed > 0) parts.push(`${report.changed} changed`);
   if (report.gone > 0) parts.push(`${report.gone} gone`);
   return `refreshed · ${parts.join(' · ')}`;

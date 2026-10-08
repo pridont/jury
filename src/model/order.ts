@@ -44,11 +44,24 @@ export function buildOrder(cohorts: readonly Cohort[], files: readonly FileChang
   return order;
 }
 
-/** The next position in the reading order, skipping scaffolding unless already inside it. */
-export function step(order: readonly Entry[], from: number, direction: 1 | -1): number {
+/**
+ * The next position in the reading order, skipping scaffolding unless already inside it.
+ *
+ * `matches` narrows the walk to the hunks worth stopping at — the unreviewed ones, say, or
+ * the ones a refresh brought in — so every kind of "next" is this one walk with a filter,
+ * and none of them can disagree about scaffolding or about where the ends are.
+ */
+export function step(
+  order: readonly Entry[],
+  from: number,
+  direction: 1 | -1,
+  matches: (entry: Entry) => boolean = () => true,
+): number {
   const insideScaffolding = order[from]?.scaffolding ?? false;
   for (let index = from + direction; index >= 0 && index < order.length; index += direction) {
-    if (order[index]!.scaffolding && !insideScaffolding) continue;
+    const entry = order[index]!;
+    if (entry.scaffolding && !insideScaffolding) continue;
+    if (!matches(entry)) continue;
     return index;
   }
   // Stop at the ends rather than wrapping: silently starting over reads as a bug.
