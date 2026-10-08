@@ -105,6 +105,9 @@ Hover a changed line and click **+** to leave a note. Notes stay attached to the
 it moves. If the code is removed, the note is listed at the bottom of the panel so you can
 move it or delete it.
 
+Click **Resolve** on a note's thread once it is settled, and **Reopen** to undo it. A
+resolved note is kept, and marked resolved in the export, but is not posted to GitHub.
+
 **Jury: Export Review as Markdown** writes all notes out, grouped by cohort.
 
 ### Pull requests

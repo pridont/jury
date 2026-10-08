@@ -54,6 +54,10 @@ export function prepare(
   const skipped: { body: string; reason: string }[] = [];
 
   for (const comment of comments) {
+    if (comment.resolved) {
+      skipped.push({ body: comment.body, reason: 'marked resolved' });
+      continue;
+    }
     if (comment.posted && comment.posted.bodyHash === bodyHash(comment.body)) {
       // Already on the pull request, unchanged. Posting it again would put a second copy in
       // front of the author, who has no way to tell it is the same note.

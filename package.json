@@ -205,6 +205,18 @@
         "icon": "$(trash)"
       },
       {
+        "command": "jury.resolveComment",
+        "title": "Resolve",
+        "category": "Jury",
+        "icon": "$(check)"
+      },
+      {
+        "command": "jury.reopenComment",
+        "title": "Reopen",
+        "category": "Jury",
+        "icon": "$(issue-reopened)"
+      },
+      {
         "command": "jury.repinComment",
         "title": "Re-pin to a Hunk…",
         "category": "Jury",
@@ -448,6 +460,14 @@
           "when": "false"
         },
         {
+          "command": "jury.resolveComment",
+          "when": "false"
+        },
+        {
+          "command": "jury.reopenComment",
+          "when": "false"
+        },
+        {
           "command": "jury.repinComment",
           "when": "false"
         },
@@ -497,6 +517,18 @@
           "command": "jury.createComment",
           "group": "inline@1",
           "when": "commentController == jury"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "jury.resolveComment",
+          "group": "inline@1",
+          "when": "commentController == jury && commentThread == open"
+        },
+        {
+          "command": "jury.reopenComment",
+          "group": "inline@1",
+          "when": "commentController == jury && commentThread == resolved"
         }
       ],
       "comments/comment/title": [

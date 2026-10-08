@@ -74,7 +74,8 @@ export function toMarkdown(input: ExportInput): string {
       for (const comment of notes) {
         const hunk = hunks.get(comment.hunkId);
         const where = hunk ? `${hunk.path}:${commentLine(hunk, comment)}` : comment.hunkId;
-        lines.push(`- **${where}**${comment.moved ? ' _(position is approximate)_' : ''}`);
+        const flags = `${comment.moved ? ' _(position is approximate)_' : ''}${comment.resolved ? ' _(resolved)_' : ''}`;
+        lines.push(`- **${where}**${flags}`);
         for (const line of comment.body.trim().split('\n')) {
           lines.push(`  ${line}`);
         }

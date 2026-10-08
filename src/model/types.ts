@@ -96,4 +96,6 @@ export type Comment = {
    * editing a note after posting makes it new again rather than silently never being sent.
    */
   posted?: { reviewId: number; bodyHash: string; at: number };
+  /** Settled, by the reviewer's say-so. Kept for the record, but not sent to GitHub. */
+  resolved?: boolean;
 };

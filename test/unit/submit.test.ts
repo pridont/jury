@@ -69,6 +69,14 @@ describe('prepare', () => {
     expect(skipped[0]!.reason).toContain('binary');
   });
 
+  it('does not send a resolved note, and lists it as skipped', () => {
+    const note = { ...newComment('h1', 0, 'new', 'settled in chat'), resolved: true };
+    const { comments, skipped } = prepare([note], hunks, 'COMMENT', '');
+
+    expect(comments).toHaveLength(0);
+    expect(skipped).toEqual([{ body: 'settled in chat', reason: 'marked resolved' }]);
+  });
+
   it('skips a note whose hunk is not in this diff at all', () => {
     const note = newComment('gone', 0, 'new', 'stale');
     expect(prepare([note], hunks, 'COMMENT', '').skipped).toHaveLength(1);

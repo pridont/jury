@@ -165,6 +165,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.saveComment', (c: vscode.Comment) => comments.save(c)),
     vscode.commands.registerCommand('jury.cancelComment', (c: vscode.Comment) => comments.cancel(c)),
     vscode.commands.registerCommand('jury.deleteComment', (c: vscode.Comment) => comments.remove(c)),
+    vscode.commands.registerCommand('jury.resolveComment', (t: vscode.CommentThread) => comments.resolve(t, true)),
+    vscode.commands.registerCommand('jury.reopenComment', (t: vscode.CommentThread) => comments.resolve(t, false)),
     vscode.commands.registerCommand('jury.repinComment', (node?: Node) => repin(host, comments, node)),
     vscode.commands.registerCommand('jury.discardComment', (node?: Node) => {
       if (node?.type === 'orphan') comments.discard(node.comment);

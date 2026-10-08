@@ -52,6 +52,7 @@ export class Comments implements vscode.Disposable {
       const thread = this.threadFor(comment.hunkId, comment, [this.toRendered(comment)]);
       if (!thread) continue;
       if (comment.moved) thread.label = 'position is approximate';
+      showResolved(thread, comment);
       this.threads.set(comment.id, thread);
     }
 
@@ -95,6 +96,7 @@ export class Comments implements vscode.Disposable {
     // describing something that already happened.
     (reply.thread as { label?: string | undefined }).label = undefined;
     reply.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    showResolved(reply.thread, comment);
     this.threads.set(comment.id, reply.thread);
     this.changed.fire();
   }
@@ -143,6 +145,18 @@ export class Comments implements vscode.Disposable {
     session.comments = session.comments.filter((existing) => existing.id !== stored.id);
     this.threads.get(stored.id)?.dispose();
     this.threads.delete(stored.id);
+    this.changed.fire();
+  }
+
+  /** Settle a note, or reopen it. A resolved note stays, but is not sent to GitHub. */
+  resolve(thread: vscode.CommentThread, resolved: boolean): void {
+    const id = [...this.threads].find(([, candidate]) => candidate === thread)?.[0];
+    const comment = this.session?.comments.find((existing) => existing.id === id);
+    if (!comment) return;
+
+    comment.resolved = resolved;
+    showResolved(thread, comment);
+    if (resolved) thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
     this.changed.fire();
   }
 
@@ -245,4 +259,10 @@ export class Comments implements vscode.Disposable {
       stored: comment,
     };
   }
+}
+
+/** The thread's resolved state, and the context value that picks Resolve or Reopen for it. */
+function showResolved(thread: vscode.CommentThread, comment: Comment): void {
+  thread.state = comment.resolved ? vscode.CommentThreadState.Resolved : vscode.CommentThreadState.Unresolved;
+  thread.contextValue = comment.resolved ? 'resolved' : 'open';
 }
