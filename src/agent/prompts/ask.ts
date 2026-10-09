@@ -1,4 +1,3 @@
-import type { FileChange } from '../../git/parse.js';
 import type { Entry } from '../../model/order.js';
 import type { Hunk } from '../../model/types.js';
 
@@ -34,46 +33,46 @@ export const askPrompt = {
 export type AskScope = 'hunk' | 'step' | 'cohort';
 
 /**
- * What the model is asked about. A hunk or a step is sent as it always was; a cohort can be
- * most of the change, so its hunks share `budget` in reading order and the ones that do not
- * fit are named but not shown. The model can read those from the repository, and is told
- * which they are rather than left to assume it saw everything.
+ * What the model is asked about. A hunk is sent as it always was; a step or a cohort can be
+ * most of the change, so everything sent shares `budget` and the hunks that do not fit are
+ * named but not shown. The current hunk is paid for first, so it is never the one shed. The
+ * model can read the rest from the repository, and is told which they are rather than left
+ * to assume it saw everything.
  */
-export function askContext(entry: Entry, scope: AskScope, files: readonly FileChange[], budget: number): string {
-  const lines: string[] = [`Change being reviewed: ${entry.cohort.title}`, entry.cohort.summary, ''];
+export function askContext(entry: Entry, scope: AskScope, order: readonly Entry[], budget: number): string {
+  if (scope === 'hunk') return [...header(entry), ...hunkBlock(entry.hunk)].join('\n');
 
-  if (scope === 'step') {
-    lines.push(`Step: ${entry.layer.title}`, entry.layer.summary, `Files: ${entry.layer.paths.join(', ')}`, '');
+  const inScope = order.filter(
+    (other) =>
+      other.cohortIndex === entry.cohortIndex && (scope === 'cohort' || other.layerIndex === entry.layerIndex),
+  );
+  // Shed the detail, never the structure: a hunk the model is not told about is one it
+  // cannot know to go and read. So the structure is paid for up front, and showing a hunk
+  // costs only what its body adds over its stub.
+  const shown = new Set<Entry>();
+  let left = budget - render(entry, inScope, shown).length;
+  for (const candidate of [entry, ...inScope.filter((other) => other !== entry)]) {
+    const extra = hunkBlock(candidate.hunk).join('\n').length - stub(candidate.hunk).length;
+    if (extra > left) continue;
+    shown.add(candidate);
+    left -= extra;
   }
+  return render(entry, inScope, shown);
+}
 
-  if (scope !== 'cohort') {
-    lines.push(...hunkBlock(entry.hunk));
-    return lines.join('\n');
-  }
-
-  const byId = new Map(files.flatMap((file) => file.hunks.map((hunk) => [hunk.id, hunk] as const)));
-  let left = budget;
-  let hidden = 0;
-  entry.cohort.layers.forEach((layer, index) => {
-    lines.push(`Step ${index + 1}: ${layer.title}`, layer.summary, `Files: ${layer.paths.join(', ')}`, '');
-    for (const id of layer.hunkIds) {
-      const hunk = byId.get(id);
-      if (!hunk) continue;
-      const block = hunkBlock(hunk);
-      const size = block.join('\n').length;
-      if (size > left) {
-        // Shed the detail, never the structure: a hunk the model is not told about is one
-        // it cannot know to go and read.
-        hidden += 1;
-        lines.push(`${block[0]} ${block[1]} (${hunk.stats.added} added, ${hunk.stats.removed} removed, not shown)`, '');
-        continue;
-      }
-      left -= size;
-      lines.push(...block, '');
+function render(entry: Entry, inScope: readonly Entry[], shown: ReadonlySet<Entry>): string {
+  const lines = header(entry);
+  let layer = -1;
+  for (const other of inScope) {
+    if (other.layerIndex !== layer) {
+      layer = other.layerIndex;
+      lines.push(`Step ${layer + 1}: ${other.layer.title}`, other.layer.summary, `Files: ${other.layer.paths.join(', ')}`, '');
     }
-  });
+    lines.push(...(shown.has(other) ? hunkBlock(other.hunk) : [stub(other.hunk)]), '');
+  }
 
   lines.push(`The reviewer is on the hunk in ${entry.hunk.path}:${entry.hunk.newStart}.`);
+  const hidden = inScope.length - shown.size;
   if (hidden > 0) {
     lines.push(
       `${hidden} hunk${hidden === 1 ? ' is' : 's are'} not shown, to keep this short. ` +
@@ -81,6 +80,15 @@ export function askContext(entry: Entry, scope: AskScope, files: readonly FileCh
     );
   }
   return lines.join('\n');
+}
+
+function header(entry: Entry): string[] {
+  return [`Change being reviewed: ${entry.cohort.title}`, entry.cohort.summary, ''];
+}
+
+function stub(hunk: Hunk): string {
+  const [title, range] = hunkBlock(hunk);
+  return `${title} ${range} (${hunk.stats.added} added, ${hunk.stats.removed} removed, not shown)`;
 }
 
 function hunkBlock(hunk: Hunk): string[] {

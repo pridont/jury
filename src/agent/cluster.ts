@@ -2,7 +2,7 @@ import type { FileChange } from '../git/parse.js';
 import { Cache } from './cache.js';
 import { askForJson, parse, type Accepted } from './json.js';
 import { clusterPrompt } from './prompts/cluster.js';
-import { ProviderError, type PassDeps, type Usage } from './provider.js';
+import { inputBudget, ProviderError, type PassDeps, type Usage } from './provider.js';
 import { buildDigest, type Digest } from './digest.js';
 import { merge, type ClusterOutput, type Merged } from '../model/merge.js';
 
@@ -23,7 +23,7 @@ export async function clusterChange(
   files: readonly FileChange[],
   summaries: ReadonlyMap<string, string>,
 ): Promise<ClusterResult> {
-  const budget = Math.min(deps.provider.capabilities().maxInputChars, 60_000);
+  const budget = inputBudget(deps.provider);
   const digest = buildDigest(files, summaries, budget);
 
   if (digest.labels.size === 0) return { ok: false, reason: 'nothing to organise' };

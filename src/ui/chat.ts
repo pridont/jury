@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { SessionHost } from '../session.js';
 import type { Navigator } from './nav.js';
 import { askContext, askPrompt, type AskScope } from '../agent/prompts/ask.js';
-import { ProviderError, type Chunk, type Provider } from '../agent/provider.js';
+import { inputBudget, ProviderError, type Chunk, type Provider } from '../agent/provider.js';
 import type { Entry } from '../model/order.js';
 
 export type ChatDeps = {
@@ -50,10 +50,9 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
     const resume = continuing(context) ? sessions.get(session.id) : undefined;
     if (!resume) sessions.delete(session.id);
 
-    stream.progress(resume ? 'Thinking' : `Reading ${scopeName(entry, scope)}`);
-    // The same ceiling clustering uses: a question about a cohort should not cost more than
-    // grouping the whole change did.
-    const budget = Math.min(provider.capabilities().maxInputChars, 60_000);
+    stream.progress(resume && !request.command ? 'Thinking' : `Reading ${scopeName(entry, scope)}`);
+    // What is left of the input budget once the instructions and the question are paid for.
+    const budget = inputBudget(provider) - askPrompt.system.length - request.prompt.length - '\n\nQuestion: '.length;
 
     const controller = new AbortController();
     token.onCancellationRequested(() => controller.abort());
@@ -64,7 +63,12 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
           {
             tier: 'smart',
             system: askPrompt.system,
-            input: resumeFrom ? request.prompt : `${askContext(entry, scope, session.files, budget)}\n\nQuestion: ${request.prompt}`,
+            // A resumed conversation already has the hunk, but not a step or cohort it was
+            // never shown: a scope command always sends its context.
+            input:
+              resumeFrom && !request.command
+                ? request.prompt
+                : `${askContext(entry, scope, deps.nav.entries, budget)}\n\nQuestion: ${request.prompt}`,
             // Read-only by design: a review tool must never edit the code it is reviewing.
             tools: provider.capabilities().repoTools ? ['readFile', 'search', 'listFiles'] : [],
             cwd: session.repo.root,

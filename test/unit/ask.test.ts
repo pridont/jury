@@ -33,18 +33,24 @@ const cohort: Cohort = {
     { id: 'l2', title: 'Wiring', summary: 'The use.', hunkIds: ['hb', 'hc'], paths: ['b.ts', 'c.ts'] },
   ],
 };
-const entry = buildOrder([cohort], files)[0]!;
+const order = buildOrder([cohort], files);
+const entry = order[0]!;
 
 describe('askContext', () => {
   it('sends only the hunk, or its step, outside a cohort question', () => {
-    const step = askContext(entry, 'step', files, 0);
-    expect(step).toContain('Step: Types');
+    expect(askContext(entry, 'hunk', order, 0)).toContain('+alpha');
+    const step = askContext(entry, 'step', order, 100_000);
+    expect(step).toContain('Step 1: Types');
     expect(step).toContain('+alpha');
     expect(step).not.toContain('Wiring');
+
+    const wiring = askContext(order[1]!, 'step', order, 100_000);
+    expect(wiring).toContain('+gamma');
+    expect(wiring).toContain('betabeta');
   });
 
   it('sends every layer and hunk of the cohort when it fits', () => {
-    const text = askContext(entry, 'cohort', files, 100_000);
+    const text = askContext(entry, 'cohort', order, 100_000);
     expect(text).toContain('Step 1: Types');
     expect(text).toContain('Step 2: Wiring');
     expect(text).toContain('Files: b.ts, c.ts');
@@ -53,11 +59,27 @@ describe('askContext', () => {
   });
 
   it('names the hunks past the budget instead of dropping them', () => {
-    const text = askContext(entry, 'cohort', files, 100);
+    const text = askContext(entry, 'cohort', order, 500);
+    expect(text.length).toBeLessThanOrEqual(500);
     expect(text).toContain('+alpha');
     expect(text).toContain('+gamma');
     expect(text).not.toContain('betabeta');
     expect(text).toContain('Hunk in b.ts: @@ -1,1 +1,1 @@ (1 added, 0 removed, not shown)');
     expect(text).toContain('1 hunk is not shown');
+  });
+
+  it('shows the hunk being read before any other, and stays within the budget', () => {
+    const first = hunk('h1', 'one.ts', 'first'.repeat(100));
+    const second = hunk('h2', 'two.ts', 'second'.repeat(100));
+    const both = [first, second].map((h) => ({ path: h.path, hunks: [h] }) as unknown as FileChange);
+    const big: Cohort = {
+      ...cohort,
+      layers: [{ id: 'l1', title: 'Both', summary: 'Two.', hunkIds: ['h1', 'h2'], paths: ['one.ts', 'two.ts'] }],
+    };
+    const bigOrder = buildOrder([big], both);
+    const text = askContext(bigOrder[1]!, 'cohort', bigOrder, 1100);
+    expect(text.length).toBeLessThanOrEqual(1100);
+    expect(text).toContain('secondsecond');
+    expect(text).not.toContain('firstfirst');
   });
 });

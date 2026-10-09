@@ -37,6 +37,10 @@ export class Navigator implements vscode.Disposable {
     this.session = session;
   }
 
+  get entries(): readonly Entry[] {
+    return this.order;
+  }
+
   get current(): Entry | null {
     return this.order[this.position] ?? null;
   }
