@@ -50,6 +50,8 @@ export class Session {
    * until a pull request review knows where it starts from.
    */
   viewed: Set<string> | null = null;
+  /** The last sync of viewed boxes. Each waits for the one before, so they land in order. */
+  viewedSync: Promise<void> = Promise.resolve();
   /** True once clustering has replaced the heuristic stack — which happens exactly once. */
   clustered = false;
   /** The record on disk. Written after every change the reviewer makes. */

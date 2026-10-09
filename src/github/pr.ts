@@ -234,12 +234,25 @@ export function fullyMarked(files: readonly FileChange[], marks: ReadonlySet<str
   );
 }
 
-/** Tick, or untick, the "Viewed" box on one file of the pull request, for this reviewer. */
-export async function setViewed(repo: Repo, pr: PullRequest, path: string, viewed: boolean): Promise<void> {
-  const mutation = viewed ? 'markFileAsViewed' : 'unmarkFileAsViewed';
-  const query = `mutation($id:ID!,$path:String!){ ${mutation}(input:{pullRequestId:$id,path:$path}){ clientMutationId } }`;
+/**
+ * Tick, or untick, the "Viewed" box on files of the pull request, for this reviewer. One
+ * request however many files: GitHub runs the aliased mutations in order.
+ */
+export async function setViewed(
+  repo: Repo,
+  pr: PullRequest,
+  changes: readonly { path: string; viewed: boolean }[],
+): Promise<void> {
+  if (changes.length === 0) return;
+  const fields = changes.map(
+    (change, i) =>
+      `f${i}: ${change.viewed ? 'markFileAsViewed' : 'unmarkFileAsViewed'}` +
+      `(input:{pullRequestId:$id,path:$p${i}}){ clientMutationId }`,
+  );
+  const query = `mutation($id:ID!,${changes.map((_, i) => `$p${i}:String!`).join(',')}){ ${fields.join(' ')} }`;
   // `-f`, not `-F`: a path that looks like a number must still go as a string.
-  const result = await gh(['api', 'graphql', '-f', `query=${query}`, '-f', `id=${pr.id}`, '-f', `path=${path}`], {
+  const paths = changes.flatMap((change, i) => ['-f', `p${i}=${change.path}`]);
+  const result = await gh(['api', 'graphql', '-f', `query=${query}`, '-f', `id=${pr.id}`, ...paths], {
     cwd: repo.root,
     timeoutMs: 30_000,
   });

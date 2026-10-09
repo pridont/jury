@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bodyHash, payload, prepare, preview, recordPosted } from '../../src/github/submit.js';
+import { bodyHash, payload, pendingMutation, prepare, preview, recordPosted } from '../../src/github/submit.js';
 import { newComment } from '../../src/model/comments.js';
 import type { Hunk } from '../../src/model/types.js';
 import type { PullRequest } from '../../src/github/pr.js';
@@ -196,5 +196,20 @@ describe('a draft review', () => {
     const note = newComment('h1', 0, 'new', 'off by one?');
     recordPosted([note], prepare([note], hunks, 'PENDING', ''), 12);
     expect(prepare([note], hunks, 'PENDING', '').comments).toHaveLength(0);
+  });
+});
+
+describe('a draft added to the pending review', () => {
+  it('adds a thread per comment, and the summary, in one mutation', () => {
+    const note = newComment('h1', 2, 'new', 'off by one?');
+    const { query, variables } = pendingMutation('PRR_1', prepare([note], hunks, 'PENDING', 'looks close'));
+    expect(query).toContain('c0: addPullRequestReviewThread(');
+    expect(query).toContain('updatePullRequestReview(');
+    expect(variables).toMatchObject({ review: 'PRR_1', p0: 'src/auth.ts', l0: 42, s0: 'RIGHT', body: 'looks close' });
+  });
+
+  it('leaves the review body alone without a summary', () => {
+    const { query } = pendingMutation('PRR_1', prepare([], hunks, 'PENDING', ''));
+    expect(query).not.toContain('updatePullRequestReview');
   });
 });

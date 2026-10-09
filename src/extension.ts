@@ -391,14 +391,14 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   // couple of lines off, and the flag says not to trust the position.
   const notes = reconcileComments(session.comments, anchors);
   session.comments = notes.comments;
-  // GitHub unticks a file the author changed, as the lost marks do here: start over from now.
-  session.viewed = session.pr ? fullyMarked(session.files, session.marks) : null;
   await persist(session);
 
   ctx.comments.render();
   ctx.tree.refresh();
   updateBadge(ctx.view, ctx.nav, session);
   void loadRemoteComments(session, ctx);
+  // GitHub unticks a file the author changed: start again from what it really has ticked.
+  void syncViewed(session, viewedOnGitHub(session, ctx, false));
   // Back to the hunk being read, if the push left it alone.
   if (reading) void ctx.nav.goToHunk(reading);
 
@@ -758,7 +758,7 @@ async function markLayer(host: SessionHost, ctx: Context): Promise<void> {
 async function marksChanged(session: Session, ctx: Context): Promise<void> {
   ctx.tree.refresh();
   updateBadge(ctx.view, ctx.nav, session);
-  syncViewed(session);
+  void syncViewed(session);
   await persist(session);
 }
 
@@ -766,31 +766,74 @@ async function marksChanged(session: Session, ctx: Context): Promise<void> {
  * Tick "Viewed" on GitHub for a file once every hunk of it is marked here, and untick it
  * when one is unmarked again. Only what changed since GitHub was last told is sent.
  *
- * Fire-and-forget: a mark is the reviewer's own record and holds either way. A failure is
- * logged, and the box on GitHub is one click to fix.
+ * Syncs run one after another, so a tick and an untick of the same file land in the order
+ * they were made, and `session.viewed` only moves once GitHub has taken the change: a failed
+ * sync is sent again with the next one. `baseline`, when given, first replaces what GitHub
+ * is believed to have.
+ *
+ * Not awaited by marking: a mark is the reviewer's own record and holds either way. A failure
+ * is logged, and the box on GitHub is one click to fix.
  */
-function syncViewed(session: Session): void {
-  const pr = session.pr;
-  if (!pr || session.spec.kind !== 'pr') return;
+function syncViewed(session: Session, baseline?: () => Promise<Set<string> | null>): Promise<void> {
+  if (session.spec.kind !== 'pr') return Promise.resolve();
 
-  const before = session.viewed;
-  const now = fullyMarked(session.files, session.marks);
-  session.viewed = now;
-  // No starting point, so no way to tell a change from a state GitHub already has.
-  if (!before) return;
+  session.viewedSync = session.viewedSync.then(async () => {
+    if (baseline) session.viewed = await baseline();
+    const pr = session.pr;
+    const before = session.viewed;
+    // No starting point, so no way to tell a change from a state GitHub already has.
+    if (!pr || !before) return;
 
-  const changes = [
-    ...[...now].filter((path) => !before.has(path)).map((path) => ({ path, viewed: true })),
-    ...[...before].filter((path) => !now.has(path)).map((path) => ({ path, viewed: false })),
-  ];
-  for (const { path, viewed } of changes) {
-    setViewed(session.repo, pr, path, viewed).catch((error) =>
+    const now = fullyMarked(session.files, session.marks);
+    const changes = [
+      ...[...now].filter((path) => !before.has(path)).map((path) => ({ path, viewed: true })),
+      ...[...before].filter((path) => !now.has(path)).map((path) => ({ path, viewed: false })),
+    ];
+    try {
+      await setViewed(session.repo, pr, changes);
+      session.viewed = now;
+    } catch (error) {
       log.appendLine(
-        `  could not mark ${path} as ${viewed ? '' : 'not '}viewed on GitHub: ` +
+        `  could not sync ${changes.length} viewed boxes on GitHub: ` +
           (error instanceof Error ? error.message : String(error)),
-      ),
-    );
-  }
+      );
+    }
+  });
+  return session.viewedSync;
+}
+
+/**
+ * What GitHub really has ticked, as the baseline to sync from. GitHub unticks a file the
+ * author changed, so a file fully marked here is not assumed viewed there.
+ *
+ * A box ticked on the web for a file not marked here is left alone rather than unticked:
+ * only files fully marked here when this started, or by the time GitHub answers, count.
+ * With `seed`, a review with nothing marked yet starts where the web left it.
+ */
+function viewedOnGitHub(session: Session, ctx: Context, seed: boolean): () => Promise<Set<string> | null> {
+  const live = session.live();
+  const start = fullyMarked(session.files, session.marks);
+  return async () => {
+    const pr = session.pr;
+    if (!pr) return null;
+    const viewed = await viewedFiles(session.repo, pr);
+    if (!live()) return null;
+
+    // Checked now, not before asking: a mark made while GitHub was answering is the reviewer's.
+    if (seed && session.marks.size === 0 && viewed.size > 0) {
+      for (const file of session.files) {
+        if (!viewed.has(file.path)) continue;
+        for (const hunk of file.hunks) session.marks.add(hunk.id);
+      }
+      log.appendLine(`  ${viewed.size} files were already marked viewed on GitHub`);
+      ctx.tree.refresh();
+      updateBadge(ctx.view, ctx.nav, session);
+      void persist(session);
+    }
+
+    const now = fullyMarked(session.files, session.marks);
+    return new Set([...viewed].filter((path) => start.has(path) || now.has(path)));
+  };
 }
 
 /**
@@ -1057,37 +1100,15 @@ async function attachPullRequest(session: Session, ctx: Context, known?: PullReq
   if (session.spec.kind !== 'pr') return;
   const live = session.live();
 
-  let pr = known;
-  if (!pr) {
-    try {
-      // Comments are placed against the commit that was read, not whatever GitHub has now.
-      pr = { ...(await resolve(session.repo, session.spec.number)), headOid: session.head };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      log.appendLine(`  could not reach pull request #${session.spec.number}: ${message}`);
-      return;
-    }
-    if (!live()) return;
-  }
-  session.pr = pr;
+  if (known) session.pr = known;
+  else await refetchPullRequest(session, session.spec.number, false, true);
+  if (!live() || !session.pr) return;
   void loadRemoteComments(session, ctx);
 
   // What GitHub already thinks was read. Marks stay ours — this only starts the review where
   // the reviewer left it on the web, so once anything is marked here, a file unmarked here
   // stays unmarked.
-  const viewed = session.marks.size === 0 ? await viewedFiles(session.repo, pr) : new Set<string>();
-  if (!live()) return;
-  for (const file of session.files) {
-    if (!viewed.has(file.path)) continue;
-    for (const hunk of file.hunks) session.marks.add(hunk.id);
-  }
-  // Where GitHub starts from: what is fully marked now is viewed there already, or was
-  // marked here before anything was synced. Either way, nothing to send for it yet.
-  session.viewed = fullyMarked(session.files, session.marks);
-  if (viewed.size > 0) {
-    log.appendLine(`  ${viewed.size} files were already marked viewed on GitHub`);
-    await marksChanged(session, ctx);
-  }
+  await syncViewed(session, viewedOnGitHub(session, ctx, true));
 }
 
 /**
@@ -1102,7 +1123,7 @@ async function loadRemoteComments(session: Session, ctx: Context): Promise<void>
     const remote = await reviewComments(session.repo, session.pr);
     if (!live()) return;
     session.remoteComments = remote;
-    ctx.comments.render();
+    ctx.comments.renderRemote();
     log.appendLine(`  ${remote.length} review comments on #${session.pr.number}`);
   } catch (error) {
     log.appendLine(`  could not read review comments: ${error instanceof Error ? error.message : String(error)}`);
@@ -1197,6 +1218,7 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
     // Recorded before anything else can go wrong: a note that reached GitHub and is not
     // marked as sent will be sent again, and the author gets two copies of it.
     recordPosted(session.comments, submission, reviewId);
+    session.stored.postedReviews = [...new Set([...(session.stored.postedReviews ?? []), reviewId])];
     await persist(session);
 
     log.appendLine(`  ${draft ? 'draft review saved' : 'review posted'}: ${url}`);
@@ -1218,7 +1240,7 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
  *
  * Failing is not fatal: the review stays on the commits it already has, and says why.
  */
-async function refetchPullRequest(session: Session, number: number, fetch = true): Promise<void> {
+async function refetchPullRequest(session: Session, number: number, fetch = true, quiet = false): Promise<void> {
   try {
     const pr = await resolve(session.repo, number);
     if (!fetch) {
@@ -1235,7 +1257,7 @@ async function refetchPullRequest(session: Session, number: number, fetch = true
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.appendLine(`  could not reach pull request #${number}: ${message}`);
-    vscode.window.showWarningMessage(`Jury: could not reach pull request #${number} — ${message}`);
+    if (!quiet) vscode.window.showWarningMessage(`Jury: could not reach pull request #${number} — ${message}`);
   }
 }
 

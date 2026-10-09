@@ -11,8 +11,12 @@ export type RemoteComment = {
   /** The review it was posted in, which is how Jury recognises its own. */
   reviewId: number | null;
   path: string;
-  /** Null once the code it was on has changed: GitHub calls the comment outdated. */
+  /** On `commit`, the pull request's head. Null once the code it was on has changed: outdated. */
   line: number | null;
+  commit: string;
+  /** Where it was first left, which still holds for the commit it was left on. */
+  originalLine: number | null;
+  originalCommit: string;
   side: 'LEFT' | 'RIGHT';
   author: string;
   body: string;
@@ -52,6 +56,9 @@ export function parseReviewComments(out: string): RemoteComment[] {
         pull_request_review_id?: number | null;
         path?: string;
         line?: number | null;
+        commit_id?: string;
+        original_line?: number | null;
+        original_commit_id?: string;
         side?: string;
         user?: { login?: string } | null;
         body?: string;
@@ -62,6 +69,9 @@ export function parseReviewComments(out: string): RemoteComment[] {
         reviewId: raw.pull_request_review_id ?? null,
         path: raw.path ?? '',
         line: raw.line ?? null,
+        commit: raw.commit_id ?? '',
+        originalLine: raw.original_line ?? null,
+        originalCommit: raw.original_commit_id ?? '',
         side: raw.side === 'LEFT' ? ('LEFT' as const) : ('RIGHT' as const),
         author: raw.user?.login ?? 'unknown',
         body: raw.body ?? '',
@@ -76,13 +86,16 @@ export function parseReviewComments(out: string): RemoteComment[] {
  * screen, and a second copy of it under their GitHub name would look like someone agreeing.
  * A reply to one of those is still someone else's, so it stays, as a thread of its own.
  *
- * Outdated comments, and comments on lines this diff does not show, are not placed — there
- * is nowhere true to put them, and the pull request page still has them.
+ * GitHub's line is on the pull request's head now, which need not be the `head` this diff
+ * was read at; a comment is placed by whichever of its lines is on `head`, or not at all.
+ * Neither are comments on lines this diff does not show — there is nowhere true to put them,
+ * and the pull request page still has them.
  */
 export function placeRemote(
   comments: readonly RemoteComment[],
   files: readonly FileChange[],
   ownReviews: ReadonlySet<number>,
+  head: string,
 ): RemoteThread[] {
   const threads = new Map<number, RemoteComment[]>();
   for (const comment of comments) {
@@ -94,14 +107,15 @@ export function placeRemote(
   const placed: RemoteThread[] = [];
   for (const thread of threads.values()) {
     const first = thread[0]!;
-    if (first.line === null) continue;
+    const line = first.commit === head ? first.line : first.originalCommit === head ? first.originalLine : null;
+    if (line === null) continue;
 
     const side = first.side === 'LEFT' ? 'old' : 'new';
     const file = files.find((candidate) => candidate.path === first.path);
-    const hunk = file ? hunkAt(file.hunks, side, first.line) : null;
+    const hunk = file ? hunkAt(file.hunks, side, line) : null;
     if (!hunk || hunk.kind !== 'text') continue;
 
-    placed.push({ hunkId: hunk.id, offset: commentOffset(hunk, side, first.line), side, comments: thread });
+    placed.push({ hunkId: hunk.id, offset: commentOffset(hunk, side, line), side, comments: thread });
   }
   return placed;
 }

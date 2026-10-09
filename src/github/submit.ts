@@ -144,6 +144,15 @@ export async function submit(
   pr: PullRequest,
   submission: Submission,
 ): Promise<{ url: string; reviewId: number }> {
+  // GitHub allows one pending review per reviewer: a second draft goes into the first.
+  if (submission.event === 'PENDING') {
+    const pending = await pendingReview(repo, pr);
+    if (pending) {
+      await addToPending(repo, pending.nodeId, submission);
+      return { url: pending.url || pr.url, reviewId: pending.id };
+    }
+  }
+
   const result = await gh(
     ['api', '--method', 'POST', `repos/${pr.nameWithOwner}/pulls/${pr.number}/reviews`, '--input', '-'],
     { cwd: repo.root, stdin: JSON.stringify(payload(pr, submission)), timeoutMs: 60_000 },
@@ -156,6 +165,65 @@ export async function submit(
 
   const parsed = JSON.parse(result.stdout) as { html_url?: string; id?: number };
   return { url: parsed.html_url ?? pr.url, reviewId: Number(parsed.id ?? 0) };
+}
+
+/** The reviewer's pending review on the pull request. GitHub lists no one else's. */
+async function pendingReview(repo: Repo, pr: PullRequest): Promise<{ id: number; nodeId: string; url: string } | null> {
+  const result = await gh(
+    [
+      'api',
+      '--paginate',
+      `repos/${pr.nameWithOwner}/pulls/${pr.number}/reviews`,
+      '--jq',
+      '.[] | select(.state == "PENDING") | {id, node_id, html_url}',
+    ],
+    { cwd: repo.root, timeoutMs: 60_000 },
+  );
+  if (result.code !== 0) throw new Error(result.stderr.trim().split('\n')[0] || 'gh failed');
+  const line = result.stdout.split('\n').find((candidate) => candidate.trim());
+  if (!line) return null;
+  const raw = JSON.parse(line) as { id?: number; node_id?: string; html_url?: string };
+  return { id: Number(raw.id), nodeId: String(raw.node_id ?? ''), url: raw.html_url ?? '' };
+}
+
+/** Add the comments, and the summary if there is one, to an existing pending review. */
+async function addToPending(repo: Repo, reviewNodeId: string, submission: Submission): Promise<void> {
+  const result = await gh(['api', 'graphql', '--input', '-'], {
+    cwd: repo.root,
+    stdin: JSON.stringify(pendingMutation(reviewNodeId, submission)),
+    timeoutMs: 60_000,
+  });
+  if (result.code !== 0) {
+    throw new Error((result.stderr || result.stdout).trim().split('\n').slice(0, 3).join(' '));
+  }
+}
+
+/** One aliased mutation: a thread per comment, and the summary, if any, as the review body. */
+export function pendingMutation(
+  reviewNodeId: string,
+  submission: Submission,
+): { query: string; variables: Record<string, unknown> } {
+  const variables: Record<string, unknown> = { review: reviewNodeId };
+  const params = ['$review:ID!'];
+  const fields = submission.comments.map((comment, i) => {
+    Object.assign(variables, {
+      [`p${i}`]: comment.path,
+      [`l${i}`]: comment.line,
+      [`s${i}`]: comment.side,
+      [`b${i}`]: comment.body,
+    });
+    params.push(`$p${i}:String!`, `$l${i}:Int!`, `$s${i}:DiffSide!`, `$b${i}:String!`);
+    return (
+      `c${i}: addPullRequestReviewThread(input:{pullRequestReviewId:$review,path:$p${i},line:$l${i},` +
+      `side:$s${i},body:$b${i}}){ thread { id } }`
+    );
+  });
+  if (submission.body.trim()) {
+    variables['body'] = submission.body;
+    params.push('$body:String!');
+    fields.push('summary: updatePullRequestReview(input:{pullRequestReviewId:$review,body:$body}){ clientMutationId }');
+  }
+  return { query: `mutation(${params.join(',')}){ ${fields.join(' ')} }`, variables };
 }
 
 /** The request body. A draft sends no `event` at all, which is what keeps it pending. */

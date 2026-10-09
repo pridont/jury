@@ -55,9 +55,24 @@ export class Comments implements vscode.Disposable {
       showResolved(thread, comment);
       this.threads.set(comment.id, thread);
     }
+    this.renderRemote();
+  }
 
-    const own = new Set(session.comments.flatMap((comment) => (comment.posted ? [comment.posted.reviewId] : [])));
-    for (const placed of placeRemote(session.remoteComments, session.files, own)) {
+  /**
+   * Rebuild only other reviewers' threads. The reviewer's own are left as they are, so a note
+   * being edited when GitHub answers keeps its edit.
+   */
+  renderRemote(): void {
+    for (const thread of this.remote) thread.dispose();
+    this.remote.length = 0;
+    const session = this.session;
+    if (!session) return;
+
+    const own = new Set([
+      ...(session.stored.postedReviews ?? []),
+      ...session.comments.flatMap((comment) => (comment.posted ? [comment.posted.reviewId] : [])),
+    ]);
+    for (const placed of placeRemote(session.remoteComments, session.files, own, session.head)) {
       const thread = this.threadFor(
         placed.hunkId,
         placed,
