@@ -20,6 +20,8 @@ const ACTIVE = vscode.window.createTextEditorDecorationType({
 export class Navigator implements vscode.Disposable {
   private order: Entry[] = [];
   private position = -1;
+  /** False until the position has been opened, so the first step forward can land on it. */
+  private visited = false;
   /** Set while a move is opening an editor, so the selection it causes is not read back. */
   private moving = false;
   private readonly changed = new vscode.EventEmitter<Entry | null>();
@@ -30,6 +32,7 @@ export class Navigator implements vscode.Disposable {
   setOrder(order: Entry[]): void {
     this.order = order;
     this.position = order.length > 0 ? 0 : -1;
+    this.visited = false;
     this.changed.fire(this.current);
   }
 
@@ -44,15 +47,6 @@ export class Navigator implements vscode.Disposable {
   /** How much of the review a person is expected to read — scaffolding is not counted. */
   get progress(): { reviewed: number; total: number } {
     return progress(this.order, (id) => this.session.marks.has(id));
-  }
-
-  /** The same count, for the part of the review a cohort or layer row stands for. */
-  progressOf(hunkIds: readonly string[]): { reviewed: number; total: number } {
-    const ids = new Set(hunkIds);
-    return progress(
-      this.order.filter((entry) => ids.has(entry.hunk.id)),
-      (id) => this.session.marks.has(id),
-    );
   }
 
   /**
@@ -86,8 +80,10 @@ export class Navigator implements vscode.Disposable {
    */
   private async step(direction: 1 | -1, matches?: (entry: Entry) => boolean): Promise<boolean> {
     if (this.order.length === 0) return false;
-    const next = step(this.order, this.position, direction, matches);
-    if (next === this.position) return false;
+    // A position nobody has opened yet is itself the first candidate, or hunk 0 is never read.
+    const from = this.visited ? this.position : this.position - direction;
+    const next = step(this.order, from, direction, matches);
+    if (next === from) return false;
     await this.moveTo(next);
     return true;
   }
@@ -103,6 +99,7 @@ export class Navigator implements vscode.Disposable {
   private async moveTo(index: number): Promise<void> {
     const previous = this.current;
     this.position = index;
+    this.visited = true;
     const entry = this.current;
     if (!entry) return;
 
@@ -141,6 +138,7 @@ export class Navigator implements vscode.Disposable {
 
     if (index !== -1 && index !== this.position) {
       this.position = index;
+      this.visited = true;
       focusLayer(editor, this.order[index]!, this.order);
       this.changed.fire(this.current);
     }

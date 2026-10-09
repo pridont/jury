@@ -67,7 +67,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const host = new SessionHost();
   const activity = new Activity();
   const nav = new Navigator(new Session({ root: '', commonDir: '', linkedWorktree: false }, { kind: 'worktree' }));
-  const tree = new StackTree(host, activity, context.extensionUri, nav);
+  const tree = new StackTree(host, activity, context.extensionUri);
   const blobs = new BlobProvider();
   const view = vscode.window.createTreeView('jury.stack', {
     treeDataProvider: tree,
@@ -199,18 +199,25 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.prevHunk', () => nav.previous()),
     vscode.commands.registerCommand('jury.nextLayer', () => nav.stepLayer(1)),
     vscode.commands.registerCommand('jury.prevLayer', () => nav.stepLayer(-1)),
-    vscode.commands.registerCommand('jury.nextChanged', () => nav.next(changedSinceRefresh)),
-    vscode.commands.registerCommand('jury.prevChanged', () => nav.previous(changedSinceRefresh)),
+    vscode.commands.registerCommand('jury.nextChanged', async () => {
+      if (!host.active || (await nav.next(changedSinceRefresh))) return;
+      say(host.active.changed.size === 0 ? 'nothing changed since the last refresh' : 'nothing changed further on');
+    }),
+    vscode.commands.registerCommand('jury.prevChanged', async () => {
+      if (!host.active || (await nav.previous(changedSinceRefresh))) return;
+      say(host.active.changed.size === 0 ? 'nothing changed since the last refresh' : 'nothing changed before this');
+    }),
     vscode.commands.registerCommand('jury.nextUnreviewed', async () => {
       // Stepping never wraps, so unread hunks behind the cursor are why this can stop short.
       if (!host.active || (await nav.next(unreviewed))) return;
       const { reviewed, total } = nav.progress;
-      vscode.window.setStatusBarMessage(
-        reviewed === total ? 'Jury: nothing left to review' : 'Jury: nothing unreviewed further on',
-        4000,
-      );
+      say(reviewed === total ? 'nothing left to review' : 'nothing unreviewed further on');
     }),
-    vscode.commands.registerCommand('jury.prevUnreviewed', () => nav.previous(unreviewed)),
+    vscode.commands.registerCommand('jury.prevUnreviewed', async () => {
+      if (!host.active || (await nav.previous(unreviewed))) return;
+      const { reviewed, total } = nav.progress;
+      say(reviewed === total ? 'nothing left to review' : 'nothing unreviewed before this');
+    }),
     vscode.commands.registerCommand('jury.hideReviewed', () => hideReviewed(tree, true)),
     vscode.commands.registerCommand('jury.showReviewed', () => hideReviewed(tree, false)),
     // Clicking a row passes indices; the context menu passes the row itself.
@@ -247,8 +254,11 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!entry) return;
     const node = tree.nodeForPosition(entry.cohortIndex, entry.layerIndex, entry.file.path);
     // `expand` so a file row inside a collapsed step is actually visible when selected.
-    // With reviewed rows hidden the hunk may have no row; the reading carries on without one.
-    if (node && view.visible) view.reveal(node, { select: true, focus: false, expand: true }).then(undefined, () => {});
+    if (node && view.visible) {
+      view
+        .reveal(node, { select: true, focus: false, expand: true })
+        .then(undefined, (error) => log.appendLine(`  could not select the row being read: ${String(error)}`));
+    }
   });
 
   context.subscriptions.push(
@@ -265,6 +275,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   function changedSinceRefresh(entry: Entry): boolean {
     return host.active?.changed.has(entry.hunk.id) ?? false;
+  }
+
+  /** Why a step went nowhere, briefly, where the status bar already counts the review. */
+  function say(text: string): void {
+    vscode.window.setStatusBarMessage(`Jury: ${text}`, 4000);
   }
 
   function ctx(): Context {
@@ -399,6 +414,8 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   session.clustered = false;
   session.loading = true;
   session.error = null;
+  // Said anew by this refresh, or by nothing if it fails: never the one before's.
+  session.changed = new Set();
   ctx.blobs.clear();
   ctx.tree.refresh();
   if (session.spec.kind === 'pr') await refetchPullRequest(session, session.spec.number);
@@ -478,9 +495,10 @@ async function load(session: Session, ctx: Context): Promise<boolean> {
   }
 
   if (!live()) return false;
+  // A failed load has no order either, or the status bar goes on counting and walking the last one.
+  ctx.nav.setOrder(session.error ? [] : buildOrder(session.cohorts, session.files));
   if (session.error) return true;
 
-  ctx.nav.setOrder(buildOrder(session.cohorts, session.files));
   ctx.comments.render();
   updateBadge(ctx.view, ctx.nav, session);
 

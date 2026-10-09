@@ -70,7 +70,7 @@ export function describeRefresh(report: RefreshReport, changed: number): string 
     `${changed} hunk${changed === 1 ? '' : 's'} new or changed`,
     `${report.kept} mark${report.kept === 1 ? '' : 's'} kept`,
   ];
-  if (report.changed > 0) parts.push(`${report.changed} changed`);
+  if (report.changed > 0) parts.push(`${report.changed} reset by edits`);
   if (report.gone > 0) parts.push(`${report.gone} gone`);
   return `refreshed · ${parts.join(' · ')}`;
 }

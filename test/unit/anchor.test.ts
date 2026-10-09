@@ -144,7 +144,7 @@ describe('describeRefresh', () => {
   it('says what happened, and stays quiet about what did not', () => {
     expect(describeRefresh({ kept: 5, changed: 0, gone: 0 }, 0)).toBe('refreshed · 0 hunks new or changed · 5 marks kept');
     expect(describeRefresh({ kept: 5, changed: 2, gone: 1 }, 1)).toBe(
-      'refreshed · 1 hunk new or changed · 5 marks kept · 2 changed · 1 gone',
+      'refreshed · 1 hunk new or changed · 5 marks kept · 2 reset by edits · 1 gone',
     );
   });
 });

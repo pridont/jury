@@ -3,7 +3,6 @@ import * as vscode from 'vscode';
 import type { FileChange } from '../git/parse.js';
 import type { Session, SessionHost } from '../session.js';
 import type { Activity, ActivityKind } from './activity.js';
-import type { Navigator } from './nav.js';
 import type { Cohort, Comment, Layer, Risk } from '../model/types.js';
 
 export type Node =
@@ -35,8 +34,6 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     /** The running step, shown with its loading icon as the first row of the tree. */
     private readonly activity: Activity,
     private readonly extension: vscode.Uri,
-    /** The reading order, which is what decides what counts towards progress. */
-    private readonly nav: Navigator,
   ) {
     host.onDidChange(() => this.refresh());
     activity.onDidChange(() => this.refresh());
@@ -62,17 +59,37 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
    */
   hideReviewed = false;
 
+  /** Scaffolding hunk ids, rebuilt on every refresh: classification edits hunks in place. */
+  private scaffolding: Set<string> | null = null;
+
+  /**
+   * How much of a row a person is expected to read, and how much of that they have.
+   * Scaffolding is left out of both, as the status bar leaves it out of the whole review.
+   */
+  private progressOf(session: Session, hunkIds: readonly string[]): { reviewed: number; total: number } {
+    const scaffolding = (this.scaffolding ??= new Set(
+      session.files.flatMap((file) => file.hunks.filter((hunk) => hunk.scaffolding).map((hunk) => hunk.id)),
+    ));
+    const read = hunkIds.filter((id) => !scaffolding.has(id));
+    return { reviewed: read.filter((id) => session.marks.has(id)).length, total: read.length };
+  }
+
   /** "3/7", counted the way the view's own total is, so the rows add up to it. */
-  private progressNote(hunkIds: readonly string[]): string {
-    const { reviewed, total } = this.nav.progressOf(hunkIds);
+  private progressNote(session: Session | null, hunkIds: readonly string[]): string {
+    if (!session) return '';
+    const { reviewed, total } = this.progressOf(session, hunkIds);
     return total > 0 ? `${reviewed}/${total}` : '';
   }
 
+  /** Nothing left to read — so scaffolding, which is never counted, goes too. */
   private hidden(session: Session, hunkIds: readonly string[]): boolean {
-    return this.hideReviewed && reviewed(session, hunkIds);
+    if (!this.hideReviewed) return false;
+    const { reviewed, total } = this.progressOf(session, hunkIds);
+    return reviewed === total;
   }
 
   refresh(node?: Node): void {
+    this.scaffolding = null;
     this.changed.fire(node);
   }
 
@@ -123,7 +140,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // A cohort of one layer stands in for that layer, so it says what the layer row would.
         item.description = [
           only ? changedNote(session, only.hunkIds) : '',
-          this.progressNote(node.cohort.layers.flatMap((layer) => layer.hunkIds)),
+          this.progressNote(session, node.cohort.layers.flatMap((layer) => layer.hunkIds)),
           onlyPath ? statusNote(session, onlyPath) : '',
           where,
           `${hunks} hunk${hunks === 1 ? '' : 's'}`,
@@ -245,7 +262,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         item.description = [
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
           changedNote(session, node.layer.hunkIds),
-          this.progressNote(node.layer.hunkIds),
+          this.progressNote(session, node.layer.hunkIds),
           single ? statusNote(session, single) : '',
           where,
           `${node.layer.hunkIds.length} hunk${node.layer.hunkIds.length === 1 ? '' : 's'}`,
@@ -368,6 +385,11 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     const cohort = this.host.active?.cohorts[cohortIndex];
     const layer = cohort?.layers[layerIndex];
     if (!cohort || !layer) return undefined;
+    // With reviewed rows hidden there may be no row to select: the reading carries on without one.
+    const session = this.host.active!;
+    if (this.hidden(session, cohort.layers.flatMap((l) => l.hunkIds)) || this.hidden(session, layer.hunkIds)) {
+      return undefined;
+    }
 
     if (layer.paths.length > 1 && layer.paths.includes(path)) {
       return { type: 'layerFile', cohortIndex, layerIndex, cohort, layer, path };
