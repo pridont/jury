@@ -74,6 +74,14 @@ export interface Provider {
   stream(request: Request, signal: AbortSignal, onChunk: (chunk: Chunk) => void): Promise<Answer>;
 }
 
+/**
+ * How much input one request may carry. Capped below what the larger providers accept, so a
+ * question about a cohort costs no more than grouping the whole change did.
+ */
+export function inputBudget(provider: Provider): number {
+  return Math.min(provider.capabilities().maxInputChars, 60_000);
+}
+
 /** What a model pass needs: who to ask, how many at once, and where answers are kept. */
 export type PassDeps = {
   provider: Provider;

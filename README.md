@@ -120,8 +120,10 @@ again.
 ### Asking questions
 
 Type `@jury` in the Chat view, followed by your question. It answers about the hunk you are
-on, or the whole layer if you start with `/step`. It can read files in the repository to
-answer, but never changes them.
+on, the whole layer if you start with `/step`, or the whole cohort, every layer in it, if
+you start with `/cohort`. A large cohort is sent up to a size limit; the hunks past it are
+named but not shown, and it reads them from the repository when the question needs them.
+It can read files in the repository to answer, but never changes them.
 
 ### Generated files
 
