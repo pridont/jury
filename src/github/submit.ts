@@ -148,6 +148,13 @@ export async function submit(
   if (submission.event === 'PENDING') {
     const pending = await pendingReview(repo, pr);
     if (pending) {
+      // Its threads land on the commit it was started on, and these lines were read on another.
+      if (pending.commitId && pending.commitId !== pr.headOid) {
+        throw new Error(
+          `your pending review on GitHub is on an older commit (${pending.commitId.slice(0, 7)}). ` +
+            'Submit or discard it there first.',
+        );
+      }
       await addToPending(repo, pending.nodeId, submission);
       return { url: pending.url || pr.url, reviewId: pending.id };
     }
@@ -168,22 +175,30 @@ export async function submit(
 }
 
 /** The reviewer's pending review on the pull request. GitHub lists no one else's. */
-async function pendingReview(repo: Repo, pr: PullRequest): Promise<{ id: number; nodeId: string; url: string } | null> {
+async function pendingReview(
+  repo: Repo,
+  pr: PullRequest,
+): Promise<{ id: number; nodeId: string; url: string; commitId: string } | null> {
   const result = await gh(
     [
       'api',
       '--paginate',
       `repos/${pr.nameWithOwner}/pulls/${pr.number}/reviews`,
       '--jq',
-      '.[] | select(.state == "PENDING") | {id, node_id, html_url}',
+      '.[] | select(.state == "PENDING") | {id, node_id, html_url, commit_id}',
     ],
     { cwd: repo.root, timeoutMs: 60_000 },
   );
   if (result.code !== 0) throw new Error(result.stderr.trim().split('\n')[0] || 'gh failed');
   const line = result.stdout.split('\n').find((candidate) => candidate.trim());
   if (!line) return null;
-  const raw = JSON.parse(line) as { id?: number; node_id?: string; html_url?: string };
-  return { id: Number(raw.id), nodeId: String(raw.node_id ?? ''), url: raw.html_url ?? '' };
+  const raw = JSON.parse(line) as { id?: number; node_id?: string; html_url?: string; commit_id?: string };
+  return {
+    id: Number(raw.id),
+    nodeId: String(raw.node_id ?? ''),
+    url: raw.html_url ?? '',
+    commitId: raw.commit_id ?? '',
+  };
 }
 
 /** Add the comments, and the summary if there is one, to an existing pending review. */

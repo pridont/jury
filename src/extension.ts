@@ -1119,9 +1119,11 @@ async function attachPullRequest(session: Session, ctx: Context, known?: PullReq
 async function loadRemoteComments(session: Session, ctx: Context): Promise<void> {
   if (!session.pr) return;
   const live = session.live();
+  // A refresh can start a load while an earlier one is still out; the older answer loses.
+  const request = ++session.remoteLoads;
   try {
     const remote = await reviewComments(session.repo, session.pr);
-    if (!live()) return;
+    if (!live() || request !== session.remoteLoads) return;
     session.remoteComments = remote;
     ctx.comments.renderRemote();
     log.appendLine(`  ${remote.length} review comments on #${session.pr.number}`);

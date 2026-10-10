@@ -45,6 +45,8 @@ export class Session {
   pr: PullRequest | null = null;
   /** What other reviewers said on the pull request. Shown, never saved, exported or sent. */
   remoteComments: RemoteComment[] = [];
+  /** Counts loads of `remoteComments`, so only the latest one to start is kept. */
+  remoteLoads = 0;
   /**
    * Files that were fully marked when GitHub was last told, so only a change is sent. Null
    * until a pull request review knows where it starts from.
