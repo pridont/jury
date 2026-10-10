@@ -12,7 +12,9 @@ read. A language model does the grouping. You do the reviewing.
   reading order: new code first, then the code that uses it, then tests.
 - A short walkthrough of what the change does before you read any code.
 - Step through every hunk with one key, across files.
-- Mark hunks as reviewed. Marks are saved and survive a rebase.
+- Mark hunks as reviewed. Marks are saved and survive a rebase. Each cohort and layer shows
+  how much of it is reviewed, and the status bar shows the total; click it to go to the next
+  unreviewed hunk.
 - Leave notes on the diff and export them as markdown.
 - Review GitHub pull requests without checking them out, and post your notes back as review
   comments.
@@ -71,6 +73,9 @@ While a review is open you can also run:
 |---|---|
 | Jury: Reorganise the Stack | Ask the model to group the change again |
 | Jury: Stop Model Work | Cancel summaries or grouping that are still running |
+| Jury: Next / Previous Unreviewed Hunk | Step through only the hunks you have not marked |
+| Jury: Hide Reviewed / Show Reviewed | Hide fully reviewed cohorts and layers in the panel (also a button in its title bar) |
+| Jury: Next / Previous Changed Hunk | Step through only the hunks the last refresh found new or changed |
 | Jury: Mark Cohort Reviewed | Mark every hunk in a cohort |
 | Jury: Open All Files in This Cohort / Step | Open the files together in one diff editor |
 | Jury: Clear Model Answer Cache | Forget cached model answers, so the next run asks again |
@@ -97,7 +102,8 @@ Marks are stored in `.git/jury/`, so they are not committed and survive restarti
 
 After the author pushes again, run **Jury: Refresh Review**. Hunks that are unchanged keep
 their mark, even if they moved. Hunks whose content changed lose their mark, so you review
-them again.
+them again. Rows with new or changed hunks say **changed**, and **Next / Previous Changed
+Hunk** steps through just those, until you open a different review.
 
 ### Notes
 

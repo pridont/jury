@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOrder, layerEntry, step, stepLayer } from '../../src/model/order.js';
+import { buildOrder, layerEntry, progress, step, stepLayer } from '../../src/model/order.js';
 import { heuristicCohorts } from '../../src/model/heuristic.js';
 import type { FileChange } from '../../src/git/parse.js';
 import type { Hunk } from '../../src/model/types.js';
@@ -116,5 +116,49 @@ describe('layerEntry', () => {
 
   it('is -1 for a layer that is not there', () => {
     expect(layerEntry(order, 9, 9, () => false)).toBe(-1);
+  });
+});
+
+describe('step with a filter', () => {
+  const files = [file('src/a.ts', 3), file('src/b.ts', 2), file('yarn.lock', 2, true)];
+  const order = buildOrder(heuristicCohorts(files), files);
+  const wanted = new Set([order[1]!.hunk.id, order[4]!.hunk.id]);
+  const matches = (e: { hunk: Hunk }) => wanted.has(e.hunk.id);
+
+  it('stops only at matching hunks, across files', () => {
+    expect(step(order, 0, 1, matches)).toBe(1);
+    expect(step(order, 1, 1, matches)).toBe(4);
+    expect(step(order, 4, -1, matches)).toBe(1);
+  });
+
+  it('stays put when nothing further matches', () => {
+    expect(step(order, 4, 1, matches)).toBe(4);
+    expect(step(order, 1, -1, matches)).toBe(1);
+  });
+
+  it('finds the next unreviewed hunk by skipping marked ones', () => {
+    const marked = new Set(order.slice(1, 4).map((e) => e.hunk.id));
+    expect(step(order, 0, 1, (e) => !marked.has(e.hunk.id))).toBe(4);
+  });
+
+  it('still skips scaffolding from outside it', () => {
+    const scaffold = order.findIndex((e) => e.scaffolding);
+    expect(step(order, 4, 1, (e) => e.scaffolding)).toBe(4);
+    expect(step(order, scaffold, 1, (e) => e.scaffolding)).toBe(scaffold + 1);
+  });
+});
+
+describe('progress', () => {
+  it('counts marked hunks out of those to read, leaving scaffolding out of both', () => {
+    const files = [file('src/a.ts', 3), file('yarn.lock', 2, true)];
+    const order = buildOrder(heuristicCohorts(files), files);
+    const marked = new Set([order[0]!.hunk.id, order.find((e) => e.scaffolding)!.hunk.id]);
+    expect(progress(order, (id) => marked.has(id))).toEqual({ reviewed: 1, total: 3 });
+  });
+
+  it('is 0/0 for scaffolding alone', () => {
+    const files = [file('yarn.lock', 2, true)];
+    const order = buildOrder(heuristicCohorts(files), files);
+    expect(progress(order, () => true)).toEqual({ reviewed: 0, total: 0 });
   });
 });

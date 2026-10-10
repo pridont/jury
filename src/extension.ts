@@ -27,7 +27,7 @@ import { Activity } from './ui/activity.js';
 import { forgetSessions, registerChat } from './ui/chat.js';
 import { Documents, DOC_SCHEME, offerToSave } from './ui/documents.js';
 import { stateDir } from './git/repo.js';
-import { buildOrder } from './model/order.js';
+import { buildOrder, type Entry } from './model/order.js';
 import { heuristicCohorts } from './model/heuristic.js';
 import { scaffoldingCohort } from './model/merge.js';
 import { classifyScaffolding } from './model/classify.js';
@@ -54,12 +54,19 @@ const LAST_REVIEW = 'jury.lastReview';
 /** The same key under the extension's old name, read once so a reload after the rename still restores. */
 const LEGACY_LAST_REVIEW = 'changestack.lastReview';
 
+/** "Jury 12/40" while a review is open. Clicking it goes on to the next unread hunk. */
+let progressItem: vscode.StatusBarItem;
+
 export function activate(context: vscode.ExtensionContext): void {
   log = vscode.window.createOutputChannel('Jury');
   windowState = context.workspaceState;
+  progressItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+  progressItem.command = 'jury.nextUnreviewed';
+  progressItem.tooltip = 'Jury: next unreviewed hunk';
 
   const host = new SessionHost();
   const activity = new Activity();
+  const nav = new Navigator(new Session({ root: '', commonDir: '', linkedWorktree: false }, { kind: 'worktree' }));
   const tree = new StackTree(host, activity, context.extensionUri);
   const blobs = new BlobProvider();
   const view = vscode.window.createTreeView('jury.stack', {
@@ -67,7 +74,6 @@ export function activate(context: vscode.ExtensionContext): void {
     showCollapseAll: true,
   });
 
-  const nav = new Navigator(new Session({ root: '', commonDir: '', linkedWorktree: false }, { kind: 'worktree' }));
   const comments = new Comments();
   const claude = new ClaudeProvider();
   const vscodeLm = new VscodeLmProvider();
@@ -78,6 +84,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     log,
+    progressItem,
     host,
     view,
     nav,
@@ -192,6 +199,27 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.prevHunk', () => nav.previous()),
     vscode.commands.registerCommand('jury.nextLayer', () => nav.stepLayer(1)),
     vscode.commands.registerCommand('jury.prevLayer', () => nav.stepLayer(-1)),
+    vscode.commands.registerCommand('jury.nextChanged', async () => {
+      if (!host.active || (await nav.next(changedSinceRefresh))) return;
+      say(host.active.changed.size === 0 ? 'nothing changed since the last refresh' : 'nothing changed further on');
+    }),
+    vscode.commands.registerCommand('jury.prevChanged', async () => {
+      if (!host.active || (await nav.previous(changedSinceRefresh))) return;
+      say(host.active.changed.size === 0 ? 'nothing changed since the last refresh' : 'nothing changed before this');
+    }),
+    vscode.commands.registerCommand('jury.nextUnreviewed', async () => {
+      // Stepping never wraps, so unread hunks behind the cursor are why this can stop short.
+      if (!host.active || (await nav.next(unreviewed))) return;
+      const { reviewed, total } = nav.progress;
+      say(reviewed === total ? 'nothing left to review' : 'nothing unreviewed further on');
+    }),
+    vscode.commands.registerCommand('jury.prevUnreviewed', async () => {
+      if (!host.active || (await nav.previous(unreviewed))) return;
+      const { reviewed, total } = nav.progress;
+      say(reviewed === total ? 'nothing left to review' : 'nothing unreviewed before this');
+    }),
+    vscode.commands.registerCommand('jury.hideReviewed', () => hideReviewed(tree, true)),
+    vscode.commands.registerCommand('jury.showReviewed', () => hideReviewed(tree, false)),
     // Clicking a row passes indices; the context menu passes the row itself.
     vscode.commands.registerCommand('jury.openLayer', (target: number | Node, layerIndex?: number) => {
       if (typeof target === 'number') return nav.goToLayer(target, layerIndex ?? 0);
@@ -216,12 +244,21 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
+  // Closing has no load to recount after it, so the counts are taken down here.
+  host.onDidChange((session) => {
+    if (!session) updateBadge(view, nav, null);
+  });
+
   nav.onDidChange((entry) => {
     updateBadge(view, nav, host.active);
     if (!entry) return;
     const node = tree.nodeForPosition(entry.cohortIndex, entry.layerIndex, entry.file.path);
     // `expand` so a file row inside a collapsed step is actually visible when selected.
-    if (node && view.visible) void view.reveal(node, { select: true, focus: false, expand: true });
+    if (node && view.visible) {
+      view
+        .reveal(node, { select: true, focus: false, expand: true })
+        .then(undefined, (error) => log.appendLine(`  could not select the row being read: ${String(error)}`));
+    }
   });
 
   context.subscriptions.push(
@@ -231,6 +268,19 @@ export function activate(context: vscode.ExtensionContext): void {
   applyProviderSettings(claude, vscodeLm);
   void vscode.commands.executeCommand('setContext', 'jury.active', false);
   void restoreLast(host, ctx());
+
+  function unreviewed(entry: Entry): boolean {
+    return !host.active?.marks.has(entry.hunk.id);
+  }
+
+  function changedSinceRefresh(entry: Entry): boolean {
+    return host.active?.changed.has(entry.hunk.id) ?? false;
+  }
+
+  /** Why a step went nowhere, briefly, where the status bar already counts the review. */
+  function say(text: string): void {
+    vscode.window.setStatusBarMessage(`Jury: ${text}`, 4000);
+  }
 
   function ctx(): Context {
     return { tree, nav, view, blobs, comments, queue, activity, documents };
@@ -364,14 +414,17 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   session.clustered = false;
   session.loading = true;
   session.error = null;
+  // Said anew by this refresh, or by nothing if it fails: never the one before's.
+  session.changed = new Set();
   ctx.blobs.clear();
   ctx.tree.refresh();
   if (session.spec.kind === 'pr') await refetchPullRequest(session, session.spec.number);
   if (!(await load(session, ctx)) || session.error) return;
 
   const current = session.files.flatMap((file) => file.hunks);
-  const { marks, anchors, report } = reconcileMarks(previous, current, session.marks);
+  const { marks, changed, anchors, report } = reconcileMarks(previous, current, session.marks);
   session.marks = marks;
+  session.changed = changed;
 
   // Comments take the fuzzy matches marks refuse: losing a note is worse than showing it a
   // couple of lines off, and the flag says not to trust the position.
@@ -388,7 +441,7 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   if (notes.moved > 0 || notes.orphaned > 0) {
     log.appendLine(`  notes: ${notes.moved} moved, ${notes.orphaned} orphaned`);
   }
-  const message = describeRefresh(report);
+  const message = describeRefresh(report, changed.size);
   log.appendLine(`  ${message}`);
   vscode.window.setStatusBarMessage(`Jury: ${message}`, 6000);
 }
@@ -442,9 +495,10 @@ async function load(session: Session, ctx: Context): Promise<boolean> {
   }
 
   if (!live()) return false;
+  // A failed load has no order either, or the status bar goes on counting and walking the last one.
+  ctx.nav.setOrder(session.error ? [] : buildOrder(session.cohorts, session.files));
   if (session.error) return true;
 
-  ctx.nav.setOrder(buildOrder(session.cohorts, session.files));
   ctx.comments.render();
   updateBadge(ctx.view, ctx.nav, session);
 
@@ -737,6 +791,13 @@ async function markLayer(host: SessionHost, ctx: Context): Promise<void> {
   await ctx.nav.stepLayer(1);
 }
 
+/** A view preference rather than review state, so it outlives the review and is not saved. */
+function hideReviewed(tree: StackTree, hide: boolean): void {
+  tree.hideReviewed = hide;
+  void vscode.commands.executeCommand('setContext', 'jury.hideReviewed', hide);
+  tree.refresh();
+}
+
 /** Show a change to the ticks everywhere they appear, and save it. */
 async function marksChanged(session: Session, ctx: Context): Promise<void> {
   ctx.tree.refresh();
@@ -776,10 +837,14 @@ function updateBadge(view: vscode.TreeView<Node>, nav: Navigator, session: Sessi
   if (!session) {
     view.badge = undefined;
     view.description = '';
+    progressItem.hide();
     return;
   }
   const { reviewed, total } = nav.progress;
   view.description = total > 0 ? `${reviewed}/${total} reviewed` : '';
+  progressItem.text = `Jury ${reviewed}/${total}`;
+  if (total > 0) progressItem.show();
+  else progressItem.hide();
   view.badge = total - reviewed > 0 ? { value: total - reviewed, tooltip: `${total - reviewed} hunks to read` } : undefined;
 }
 
