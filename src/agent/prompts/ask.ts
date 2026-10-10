@@ -35,7 +35,7 @@ export type AskScope = 'hunk' | 'step' | 'cohort';
 /**
  * What the model is asked about. A hunk is sent as it always was; a step or a cohort can be
  * most of the change, so everything sent shares `budget` and the hunks that do not fit are
- * named but not shown. The current hunk is paid for first, so it is never the one shed. The
+ * named but not shown. The current hunk is always shown, even past the budget. The
  * model can read the rest from the repository, and is told which they are rather than left
  * to assume it saw everything.
  */
@@ -53,7 +53,8 @@ export function askContext(entry: Entry, scope: AskScope, order: readonly Entry[
   let left = budget - render(entry, inScope, shown).length;
   for (const candidate of [entry, ...inScope.filter((other) => other !== entry)]) {
     const extra = hunkBlock(candidate.hunk).join('\n').length - stub(candidate.hunk).length;
-    if (extra > left) continue;
+    // The hunk being read is shown whatever it costs: a stub of it answers nothing.
+    if (extra > left && candidate !== entry) continue;
     shown.add(candidate);
     left -= extra;
   }

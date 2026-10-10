@@ -82,4 +82,11 @@ describe('askContext', () => {
     expect(text).toContain('secondsecond');
     expect(text).not.toContain('firstfirst');
   });
+
+  it('shows the hunk being read even when nothing fits', () => {
+    const text = askContext(order[1]!, 'cohort', order, -1);
+    expect(text).toContain('betabeta');
+    expect(text).not.toContain('+alpha');
+    expect(text).not.toContain('+gamma');
+  });
 });
