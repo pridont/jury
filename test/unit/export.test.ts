@@ -66,6 +66,14 @@ describe('toMarkdown', () => {
     expect(render(files, [note])).toContain('_(position is approximate)_');
   });
 
+  it('marks a resolved note rather than leaving it out', () => {
+    const files = [file('src/a.ts')];
+    const note = { ...newComment(files[0]!.hunks[0]!.id, 0, 'new', 'fine after all'), resolved: true };
+    const out = render(files, [note]);
+    expect(out).toContain('_(resolved)_');
+    expect(out).toContain('fine after all');
+  });
+
   it('lists orphaned notes separately instead of dropping them', () => {
     const files = [file('src/a.ts')];
     const note = { ...newComment('gone', 0, 'new', 'what happened to the guard?'), orphaned: true };

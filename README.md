@@ -105,17 +105,30 @@ Hover a changed line and click **+** to leave a note. Notes stay attached to the
 it moves. If the code is removed, the note is listed at the bottom of the panel so you can
 move it or delete it.
 
+Click **Resolve** on a note's thread once it is settled, and **Reopen** to undo it. A
+resolved note is kept, and marked resolved in the export, but is not posted to GitHub.
+
 **Jury: Export Review as Markdown** writes all notes out, grouped by cohort.
 
 ### Pull requests
 
 Jury fetches the pull request into a separate ref and compares it to the base branch. Your
 branch and working tree are not changed. Files you marked as viewed on GitHub start out
-marked.
+marked. It works the other way too: once every hunk of a file is marked, Jury ticks
+**Viewed** for that file on GitHub, and unticks it if you unmark one again.
+
+Comments other reviewers left on the pull request are shown on the diff, labelled **on
+GitHub**. They are read-only, and are never exported or posted. Comments on code that has
+changed since (outdated on GitHub) are not shown. Run **Jury: Refresh Review** to fetch new
+ones.
 
 **Jury: Submit Review to GitHub…** posts your notes as inline comments. It shows you exactly
 what will be sent and asks before sending. Notes that were already posted are not posted
 again.
+
+Pick **Draft** to send the notes as a pending review instead. Only you can see it until you
+finish and submit it on GitHub. Its notes count as posted, so if you delete the draft on
+GitHub, edit a note to send it again.
 
 ### Asking questions
 

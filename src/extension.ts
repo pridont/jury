@@ -37,9 +37,10 @@ import { legacyReviewId, load as loadStored, list as listStored, remove as remov
 import { describeRefresh, reconcileMarks } from './state/reconcile.js';
 import { migrateLegacyState } from './state/migrate.js';
 import { describeSpec } from './model/types.js';
-import { fetchHead, listOpen, resolve, viewedFiles } from './github/pr.js';
+import { fetchHead, fullyMarked, listOpen, resolve, setViewed, viewedFiles, type PullRequest } from './github/pr.js';
 import { defaultBranch, describeCommit, listRefs, recentCommits, type Ref } from './git/refs.js';
 import { pickOrType } from './ui/pick.js';
+import { reviewComments } from './github/comments.js';
 import { prepare, preview, recordPosted, submit, type ReviewEvent } from './github/submit.js';
 
 let log: vscode.OutputChannel;
@@ -164,6 +165,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('jury.saveComment', (c: vscode.Comment) => comments.save(c)),
     vscode.commands.registerCommand('jury.cancelComment', (c: vscode.Comment) => comments.cancel(c)),
     vscode.commands.registerCommand('jury.deleteComment', (c: vscode.Comment) => comments.remove(c)),
+    vscode.commands.registerCommand('jury.resolveComment', (t: vscode.CommentThread) => comments.resolve(t, true)),
+    vscode.commands.registerCommand('jury.reopenComment', (t: vscode.CommentThread) => comments.resolve(t, false)),
     vscode.commands.registerCommand('jury.repinComment', (node?: Node) => repin(host, comments, node)),
     vscode.commands.registerCommand('jury.discardComment', (node?: Node) => {
       if (node?.type === 'orphan') comments.discard(node.comment);
@@ -254,7 +257,13 @@ type Context = {
   documents: Documents;
 };
 
-async function open(host: SessionHost, spec: ReviewSpec, ctx: Context, known?: Repo): Promise<void> {
+async function open(
+  host: SessionHost,
+  spec: ReviewSpec,
+  ctx: Context,
+  known?: Repo,
+  pr?: PullRequest,
+): Promise<void> {
   const repo = known ?? (await resolveRepo());
   if (!repo) return;
 
@@ -284,7 +293,12 @@ async function open(host: SessionHost, spec: ReviewSpec, ctx: Context, known?: R
   ctx.nav.setSession(session);
   ctx.comments.setSession(session);
   await windowState.update(LAST_REVIEW, spec);
-  await load(session, ctx);
+  if (!(await load(session, ctx)) || spec.kind !== 'pr') return;
+
+  // From the picker the pull request is in hand. Restored, resumed or reopened from the saved
+  // list, it is looked up behind the review rather than in front of it.
+  if (pr) await attachPullRequest(session, ctx, pr);
+  else void attachPullRequest(session, ctx);
 }
 
 /** Move state saved under the old name, once, and say so in the log if anything moved. */
@@ -382,6 +396,9 @@ async function refresh(host: SessionHost, ctx: Context): Promise<void> {
   ctx.comments.render();
   ctx.tree.refresh();
   updateBadge(ctx.view, ctx.nav, session);
+  void loadRemoteComments(session, ctx);
+  // GitHub unticks a file the author changed: start again from what it really has ticked.
+  void syncViewed(session, viewedOnGitHub(session, ctx, false));
   // Back to the hunk being read, if the push left it alone.
   if (reading) void ctx.nav.goToHunk(reading);
 
@@ -741,7 +758,82 @@ async function markLayer(host: SessionHost, ctx: Context): Promise<void> {
 async function marksChanged(session: Session, ctx: Context): Promise<void> {
   ctx.tree.refresh();
   updateBadge(ctx.view, ctx.nav, session);
+  void syncViewed(session);
   await persist(session);
+}
+
+/**
+ * Tick "Viewed" on GitHub for a file once every hunk of it is marked here, and untick it
+ * when one is unmarked again. Only what changed since GitHub was last told is sent.
+ *
+ * Syncs run one after another, so a tick and an untick of the same file land in the order
+ * they were made, and `session.viewed` only moves once GitHub has taken the change: a failed
+ * sync is sent again with the next one. `baseline`, when given, first replaces what GitHub
+ * is believed to have.
+ *
+ * Not awaited by marking: a mark is the reviewer's own record and holds either way. A failure
+ * is logged, and the box on GitHub is one click to fix.
+ */
+function syncViewed(session: Session, baseline?: () => Promise<Set<string> | null>): Promise<void> {
+  if (session.spec.kind !== 'pr') return Promise.resolve();
+
+  session.viewedSync = session.viewedSync.then(async () => {
+    if (baseline) session.viewed = await baseline();
+    const pr = session.pr;
+    const before = session.viewed;
+    // No starting point, so no way to tell a change from a state GitHub already has.
+    if (!pr || !before) return;
+
+    const now = fullyMarked(session.files, session.marks);
+    const changes = [
+      ...[...now].filter((path) => !before.has(path)).map((path) => ({ path, viewed: true })),
+      ...[...before].filter((path) => !now.has(path)).map((path) => ({ path, viewed: false })),
+    ];
+    try {
+      await setViewed(session.repo, pr, changes);
+      session.viewed = now;
+    } catch (error) {
+      log.appendLine(
+        `  could not sync ${changes.length} viewed boxes on GitHub: ` +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
+  });
+  return session.viewedSync;
+}
+
+/**
+ * What GitHub really has ticked, as the baseline to sync from. GitHub unticks a file the
+ * author changed, so a file fully marked here is not assumed viewed there.
+ *
+ * A box ticked on the web for a file not marked here is left alone rather than unticked:
+ * only files fully marked here when this started, or by the time GitHub answers, count.
+ * With `seed`, a review with nothing marked yet starts where the web left it.
+ */
+function viewedOnGitHub(session: Session, ctx: Context, seed: boolean): () => Promise<Set<string> | null> {
+  const live = session.live();
+  const start = fullyMarked(session.files, session.marks);
+  return async () => {
+    const pr = session.pr;
+    if (!pr) return null;
+    const viewed = await viewedFiles(session.repo, pr);
+    if (!live()) return null;
+
+    // Checked now, not before asking: a mark made while GitHub was answering is the reviewer's.
+    if (seed && session.marks.size === 0 && viewed.size > 0) {
+      for (const file of session.files) {
+        if (!viewed.has(file.path)) continue;
+        for (const hunk of file.hunks) session.marks.add(hunk.id);
+      }
+      log.appendLine(`  ${viewed.size} files were already marked viewed on GitHub`);
+      ctx.tree.refresh();
+      updateBadge(ctx.view, ctx.nav, session);
+      void persist(session);
+    }
+
+    const now = fullyMarked(session.files, session.marks);
+    return new Set([...viewed].filter((path) => start.has(path) || now.has(path)));
+  };
 }
 
 /**
@@ -986,24 +1078,8 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
         const { base, head } = await fetchHead(repo, pr);
         log.appendLine(`  #${pr.number} ${pr.title} — ${base.slice(0, 12)}..${head.slice(0, 12)}`);
 
-        await open(host, { kind: 'pr', number: pr.number, base, head, title: pr.title }, ctx);
-
-        const session = host.active;
-        if (session) {
-          session.pr = { ...pr, headOid: head };
-          // What GitHub already thinks was read. Marks stay ours — this only starts the
-          // review where the reviewer left it on the web, so once anything is marked here,
-          // a file unmarked here stays unmarked.
-          const viewed = session.marks.size === 0 ? await viewedFiles(repo, pr) : new Set<string>();
-          for (const file of session.files) {
-            if (!viewed.has(file.path)) continue;
-            for (const hunk of file.hunks) session.marks.add(hunk.id);
-          }
-          if (viewed.size > 0) {
-            log.appendLine(`  ${viewed.size} files were already marked viewed on GitHub`);
-            await marksChanged(session, ctx);
-          }
-        }
+        const spec: ReviewSpec = { kind: 'pr', number: pr.number, base, head, title: pr.title };
+        await open(host, spec, ctx, undefined, { ...pr, headOid: head });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`Jury: ${message}`);
@@ -1011,6 +1087,49 @@ async function reviewPr(host: SessionHost, ctx: Context): Promise<void> {
       }
     },
   );
+}
+
+/**
+ * Everything a pull request review has beyond its diff: the pull request itself, what other
+ * reviewers said on it, and where GitHub's viewed boxes start.
+ *
+ * Without `pr` it is asked for first, and quietly: a review reopened offline still opens, it
+ * just cannot submit or sync until a refresh reaches GitHub.
+ */
+async function attachPullRequest(session: Session, ctx: Context, known?: PullRequest): Promise<void> {
+  if (session.spec.kind !== 'pr') return;
+  const live = session.live();
+
+  if (known) session.pr = known;
+  else await refetchPullRequest(session, session.spec.number, false, true);
+  if (!live() || !session.pr) return;
+  void loadRemoteComments(session, ctx);
+
+  // What GitHub already thinks was read. Marks stay ours — this only starts the review where
+  // the reviewer left it on the web, so once anything is marked here, a file unmarked here
+  // stays unmarked.
+  await syncViewed(session, viewedOnGitHub(session, ctx, true));
+}
+
+/**
+ * Show what other reviewers have said on the pull request, alongside the reviewer's notes.
+ *
+ * Not fatal: without them this is still the same review, and the pull request page has them.
+ */
+async function loadRemoteComments(session: Session, ctx: Context): Promise<void> {
+  if (!session.pr) return;
+  const live = session.live();
+  // A refresh can start a load while an earlier one is still out; the older answer loses.
+  const request = ++session.remoteLoads;
+  try {
+    const remote = await reviewComments(session.repo, session.pr);
+    if (!live() || request !== session.remoteLoads) return;
+    session.remoteComments = remote;
+    ctx.comments.renderRemote();
+    log.appendLine(`  ${remote.length} review comments on #${session.pr.number}`);
+  } catch (error) {
+    log.appendLine(`  could not read review comments: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**
@@ -1052,6 +1171,11 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
         detail: 'Block the pull request until the notes are addressed',
         event: 'REQUEST_CHANGES' as ReviewEvent,
       },
+      {
+        label: 'Draft',
+        detail: 'Start a pending review that only you can see, to finish and submit on GitHub',
+        event: 'PENDING' as ReviewEvent,
+      },
     ],
     { title: `Submit review of #${session.pr.number}`, placeHolder: 'How should this review be submitted?' },
   );
@@ -1067,7 +1191,8 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
   const hunks = new Map(session.files.flatMap((file) => file.hunks).map((hunk) => [hunk.id, hunk]));
   const submission = prepare(session.comments, hunks, choice.event, body);
 
-  if (submission.comments.length === 0 && !submission.body.trim() && choice.event === 'COMMENT') {
+  const draft = choice.event === 'PENDING';
+  if (submission.comments.length === 0 && !submission.body.trim() && (choice.event === 'COMMENT' || draft)) {
     vscode.window.showInformationMessage('Jury: nothing to send — no new notes and no summary.');
     return;
   }
@@ -1075,8 +1200,16 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
   await documents.show(`Review of #${session.pr.number}.md`, preview(session.pr, submission));
 
   const confirmed = await vscode.window.showWarningMessage(
-    `Send this review to ${session.pr.nameWithOwner}#${session.pr.number}?`,
-    { modal: true, detail: `${submission.comments.length} inline comments will be posted to GitHub.` },
+    draft
+      ? `Send this as a draft review to ${session.pr.nameWithOwner}#${session.pr.number}?`
+      : `Send this review to ${session.pr.nameWithOwner}#${session.pr.number}?`,
+    {
+      modal: true,
+      detail: draft
+        ? `${submission.comments.length} inline comments will go into a pending review on GitHub. ` +
+          'Nobody else sees them until you submit that review on GitHub.'
+        : `${submission.comments.length} inline comments will be posted to GitHub.`,
+    },
     'Send',
   );
   if (confirmed !== 'Send') return;
@@ -1087,10 +1220,14 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
     // Recorded before anything else can go wrong: a note that reached GitHub and is not
     // marked as sent will be sent again, and the author gets two copies of it.
     recordPosted(session.comments, submission, reviewId);
+    session.stored.postedReviews = [...new Set([...(session.stored.postedReviews ?? []), reviewId])];
     await persist(session);
 
-    log.appendLine(`  review posted: ${url}`);
-    const open = await vscode.window.showInformationMessage('Jury: review posted.', 'Open on GitHub');
+    log.appendLine(`  ${draft ? 'draft review saved' : 'review posted'}: ${url}`);
+    const open = await vscode.window.showInformationMessage(
+      draft ? 'Jury: draft review saved on GitHub. Submit it there when you are done.' : 'Jury: review posted.',
+      'Open on GitHub',
+    );
     if (open === 'Open on GitHub') await vscode.env.openExternal(vscode.Uri.parse(url));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1105,7 +1242,7 @@ async function submitReviewOnce(host: SessionHost, documents: Documents): Promis
  *
  * Failing is not fatal: the review stays on the commits it already has, and says why.
  */
-async function refetchPullRequest(session: Session, number: number, fetch = true): Promise<void> {
+async function refetchPullRequest(session: Session, number: number, fetch = true, quiet = false): Promise<void> {
   try {
     const pr = await resolve(session.repo, number);
     if (!fetch) {
@@ -1122,7 +1259,7 @@ async function refetchPullRequest(session: Session, number: number, fetch = true
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.appendLine(`  could not reach pull request #${number}: ${message}`);
-    vscode.window.showWarningMessage(`Jury: could not reach pull request #${number} — ${message}`);
+    if (!quiet) vscode.window.showWarningMessage(`Jury: could not reach pull request #${number} — ${message}`);
   }
 }
 
