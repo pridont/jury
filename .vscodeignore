@@ -10,3 +10,8 @@ vitest.config.mts
 vitest.eval.config.mts
 .gitignore
 **/*.map
+out/**
+.vscode-test/**
+.vscode-test.mjs
+tsconfig.e2e.json
+.claude/**
