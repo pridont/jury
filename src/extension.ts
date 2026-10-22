@@ -57,7 +57,10 @@ const LEGACY_LAST_REVIEW = 'changestack.lastReview';
 /** "Jury 12/40" while a review is open. Clicking it goes on to the next unread hunk. */
 let progressItem: vscode.StatusBarItem;
 
-export function activate(context: vscode.ExtensionContext): void {
+/** What `activate` hands back: the live objects, so the end-to-end tests can inspect them. */
+export type Api = { host: SessionHost; tree: StackTree; nav: Navigator; comments: Comments; documents: Documents };
+
+export function activate(context: vscode.ExtensionContext): Api {
   log = vscode.window.createOutputChannel('Jury');
   windowState = context.workspaceState;
   progressItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
@@ -268,6 +271,7 @@ export function activate(context: vscode.ExtensionContext): void {
   applyProviderSettings(claude, vscodeLm);
   void vscode.commands.executeCommand('setContext', 'jury.active', false);
   void restoreLast(host, ctx());
+  return { host, tree, nav, comments, documents };
 
   function unreviewed(entry: Entry): boolean {
     return !host.active?.marks.has(entry.hunk.id);
