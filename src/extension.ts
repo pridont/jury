@@ -54,7 +54,10 @@ const LAST_REVIEW = 'jury.lastReview';
 /** The same key under the extension's old name, read once so a reload after the rename still restores. */
 const LEGACY_LAST_REVIEW = 'changestack.lastReview';
 
-export function activate(context: vscode.ExtensionContext): void {
+/** What `activate` hands back: the live objects, so the end-to-end tests can inspect them. */
+export type Api = { host: SessionHost; tree: StackTree; nav: Navigator; comments: Comments; documents: Documents };
+
+export function activate(context: vscode.ExtensionContext): Api {
   log = vscode.window.createOutputChannel('Jury');
   windowState = context.workspaceState;
 
@@ -231,6 +234,7 @@ export function activate(context: vscode.ExtensionContext): void {
   applyProviderSettings(claude, vscodeLm);
   void vscode.commands.executeCommand('setContext', 'jury.active', false);
   void restoreLast(host, ctx());
+  return { host, tree, nav, comments, documents };
 
   function ctx(): Context {
     return { tree, nav, view, blobs, comments, queue, activity, documents };
