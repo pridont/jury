@@ -4,3 +4,5 @@ out/
 *.vsix
 .DS_Store
 test/eval/.cache/
+.vscode-test/
+.claude/worktrees/

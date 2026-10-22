@@ -28,6 +28,11 @@ export class Session {
   cohorts: Cohort[] = [];
   /** Hunks the reviewer has ticked. Persisted; carried across a refresh only when exact. */
   marks = new Set<string>();
+  /**
+   * Hunks the last refresh brought in or found edited. In memory only: it describes one
+   * refresh against what was on screen before it, and a new review starts with none.
+   */
+  changed = new Set<string>();
   /** Paths the reviewer has said are not scaffolding, however they were classified. */
   notScaffolding = new Set<string>();
   /** Review notes. The output of the review, and the thing that gets exported or posted. */
