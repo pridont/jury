@@ -140,6 +140,38 @@
         "category": "Jury"
       },
       {
+        "command": "jury.nextChanged",
+        "title": "Next Changed Hunk",
+        "category": "Jury"
+      },
+      {
+        "command": "jury.prevChanged",
+        "title": "Previous Changed Hunk",
+        "category": "Jury"
+      },
+      {
+        "command": "jury.nextUnreviewed",
+        "title": "Next Unreviewed Hunk",
+        "category": "Jury"
+      },
+      {
+        "command": "jury.prevUnreviewed",
+        "title": "Previous Unreviewed Hunk",
+        "category": "Jury"
+      },
+      {
+        "command": "jury.hideReviewed",
+        "title": "Hide Reviewed",
+        "category": "Jury",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "jury.showReviewed",
+        "title": "Show Reviewed",
+        "category": "Jury",
+        "icon": "$(filter-filled)"
+      },
+      {
         "command": "jury.openLayer",
         "title": "Open Layer",
         "category": "Jury"
@@ -292,6 +324,16 @@
           "group": "navigation@0"
         },
         {
+          "command": "jury.hideReviewed",
+          "when": "view == jury.stack && jury.active && !jury.hideReviewed",
+          "group": "navigation@1"
+        },
+        {
+          "command": "jury.showReviewed",
+          "when": "view == jury.stack && jury.active && jury.hideReviewed",
+          "group": "navigation@1"
+        },
+        {
           "command": "jury.refresh",
           "when": "view == jury.stack && jury.active",
           "group": "navigation@1"
@@ -410,6 +452,30 @@
         {
           "command": "jury.prevLayer",
           "when": "jury.active"
+        },
+        {
+          "command": "jury.nextChanged",
+          "when": "jury.active"
+        },
+        {
+          "command": "jury.prevChanged",
+          "when": "jury.active"
+        },
+        {
+          "command": "jury.nextUnreviewed",
+          "when": "jury.active"
+        },
+        {
+          "command": "jury.prevUnreviewed",
+          "when": "jury.active"
+        },
+        {
+          "command": "jury.hideReviewed",
+          "when": "jury.active && !jury.hideReviewed"
+        },
+        {
+          "command": "jury.showReviewed",
+          "when": "jury.active && jury.hideReviewed"
         },
         {
           "command": "jury.toggleReviewed",

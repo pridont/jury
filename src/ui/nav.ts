@@ -3,7 +3,7 @@ import { contentSide } from '../git/parse.js';
 import type { Session } from '../session.js';
 import { contentUri, editorFor, openFileDiff, sidesFor } from './diff.js';
 import { covers } from '../model/comments.js';
-import { layerEntry, step, stepLayer, type Entry } from '../model/order.js';
+import { layerEntry, progress, step, stepLayer, type Entry } from '../model/order.js';
 
 /** Code that did not change at all. Dim means "not part of this diff", one meaning only. */
 const UNCHANGED = vscode.window.createTextEditorDecorationType({ opacity: '0.45' });
@@ -20,6 +20,8 @@ const ACTIVE = vscode.window.createTextEditorDecorationType({
 export class Navigator implements vscode.Disposable {
   private order: Entry[] = [];
   private position = -1;
+  /** False until the position has been opened, so the first step forward can land on it. */
+  private visited = false;
   /** Set while a move is opening an editor, so the selection it causes is not read back. */
   private moving = false;
   private readonly changed = new vscode.EventEmitter<Entry | null>();
@@ -30,6 +32,7 @@ export class Navigator implements vscode.Disposable {
   setOrder(order: Entry[]): void {
     this.order = order;
     this.position = order.length > 0 ? 0 : -1;
+    this.visited = false;
     this.changed.fire(this.current);
   }
 
@@ -43,19 +46,19 @@ export class Navigator implements vscode.Disposable {
 
   /** How much of the review a person is expected to read — scaffolding is not counted. */
   get progress(): { reviewed: number; total: number } {
-    const total = this.order.filter((entry) => !entry.scaffolding).length;
-    const reviewed = this.order.filter(
-      (entry) => !entry.scaffolding && this.session.marks.has(entry.hunk.id),
-    ).length;
-    return { reviewed, total };
+    return progress(this.order, (id) => this.session.marks.has(id));
   }
 
-  async next(): Promise<void> {
-    await this.step(1);
+  /**
+   * Step forward, stopping only at hunks `matches` accepts — every hunk when it is left out.
+   * False when there was nowhere to go.
+   */
+  async next(matches?: (entry: Entry) => boolean): Promise<boolean> {
+    return this.step(1, matches);
   }
 
-  async previous(): Promise<void> {
-    await this.step(-1);
+  async previous(matches?: (entry: Entry) => boolean): Promise<boolean> {
+    return this.step(-1, matches);
   }
 
   /** Jump to a layer's first unreviewed hunk, or its first hunk when all are reviewed. */
@@ -75,10 +78,14 @@ export class Navigator implements vscode.Disposable {
    * Scaffolding is skipped, because it is not what the reviewer is here to read — unless
    * they deliberately went there, in which case walking it works like anywhere else.
    */
-  private async step(direction: 1 | -1): Promise<void> {
-    if (this.order.length === 0) return;
-    const next = step(this.order, this.position, direction);
-    if (next !== this.position) await this.moveTo(next);
+  private async step(direction: 1 | -1, matches?: (entry: Entry) => boolean): Promise<boolean> {
+    if (this.order.length === 0) return false;
+    // A position nobody has opened yet is itself the first candidate, or hunk 0 is never read.
+    const from = this.visited ? this.position : this.position - direction;
+    const next = step(this.order, from, direction, matches);
+    if (next === from) return false;
+    await this.moveTo(next);
+    return true;
   }
 
   /** Move to the next or previous layer, landing on its first unread hunk. */
@@ -92,6 +99,7 @@ export class Navigator implements vscode.Disposable {
   private async moveTo(index: number): Promise<void> {
     const previous = this.current;
     this.position = index;
+    this.visited = true;
     const entry = this.current;
     if (!entry) return;
 
@@ -130,6 +138,7 @@ export class Navigator implements vscode.Disposable {
 
     if (index !== -1 && index !== this.position) {
       this.position = index;
+      this.visited = true;
       focusLayer(editor, this.order[index]!, this.order);
       this.changed.fire(this.current);
     }

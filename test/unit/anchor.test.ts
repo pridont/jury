@@ -127,6 +127,12 @@ describe('reconcileMarks', () => {
     expect(report).toEqual({ kept: 1, changed: 0, gone: 0 });
   });
 
+  it('calls a hunk changed when it is new or edited, marked or not, and not when it only moved', () => {
+    const added = hunk('d.ts', ['+fresh']);
+    const { changed } = reconcileMarks([stable, edited, vanished], [moved, editedAgain, added], new Set());
+    expect([...changed].sort()).toEqual([editedAgain.id, added.id].sort());
+  });
+
   it('ignores a stale mark from an older state file', () => {
     const { report, marks } = reconcileMarks([stable], [moved], new Set([stable.id, 'nonsense']));
     expect(marks.size).toBe(1);
@@ -136,8 +142,10 @@ describe('reconcileMarks', () => {
 
 describe('describeRefresh', () => {
   it('says what happened, and stays quiet about what did not', () => {
-    expect(describeRefresh({ kept: 5, changed: 0, gone: 0 })).toBe('refreshed · 5 marks kept');
-    expect(describeRefresh({ kept: 5, changed: 2, gone: 1 })).toBe('refreshed · 5 marks kept · 2 changed · 1 gone');
+    expect(describeRefresh({ kept: 5, changed: 0, gone: 0 }, 0)).toBe('refreshed · 0 hunks new or changed · 5 marks kept');
+    expect(describeRefresh({ kept: 5, changed: 2, gone: 1 }, 1)).toBe(
+      'refreshed · 1 hunk new or changed · 5 marks kept · 2 reset by edits · 1 gone',
+    );
   });
 });
 
