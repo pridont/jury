@@ -66,7 +66,8 @@ suite('review', () => {
   });
 
   test('a resolved note is collapsed, flagged in the export, and reopens', async () => {
-    const api = await review();
+    // Clustering re-renders every thread when it lands; wait so the thread below stays the live one.
+    const api = await review('jury.review', { clustered: true });
     // The thread the comment gutter would hand over; Jury keeps it as the note's thread.
     const thread = {
       uri: vscode.Uri.file(`${repo.root}/src/token.ts`),
