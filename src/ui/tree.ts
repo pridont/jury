@@ -53,7 +53,43 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     return { light: file('light'), dark: file('dark') };
   }
 
+  /**
+   * Leave fully reviewed cohorts and layers out of the tree. The reading order is untouched:
+   * stepping still lands on them, the tree simply has no row to select.
+   */
+  hideReviewed = false;
+
+  /** Scaffolding hunk ids, rebuilt on every refresh: classification edits hunks in place. */
+  private scaffolding: Set<string> | null = null;
+
+  /**
+   * How much of a row a person is expected to read, and how much of that they have.
+   * Scaffolding is left out of both, as the status bar leaves it out of the whole review.
+   */
+  private progressOf(session: Session, hunkIds: readonly string[]): { reviewed: number; total: number } {
+    const scaffolding = (this.scaffolding ??= new Set(
+      session.files.flatMap((file) => file.hunks.filter((hunk) => hunk.scaffolding).map((hunk) => hunk.id)),
+    ));
+    const read = hunkIds.filter((id) => !scaffolding.has(id));
+    return { reviewed: read.filter((id) => session.marks.has(id)).length, total: read.length };
+  }
+
+  /** "3/7", counted the way the view's own total is, so the rows add up to it. */
+  private progressNote(session: Session | null, hunkIds: readonly string[]): string {
+    if (!session) return '';
+    const { reviewed, total } = this.progressOf(session, hunkIds);
+    return total > 0 ? `${reviewed}/${total}` : '';
+  }
+
+  /** Nothing left to read — so scaffolding, which is never counted, goes too. */
+  private hidden(session: Session, hunkIds: readonly string[]): boolean {
+    if (!this.hideReviewed) return false;
+    const { reviewed, total } = this.progressOf(session, hunkIds);
+    return reviewed === total;
+  }
+
   refresh(node?: Node): void {
+    this.scaffolding = null;
     this.changed.fire(node);
   }
 
@@ -101,7 +137,10 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const onlyPath = only?.paths.length === 1 ? only.paths[0] : undefined;
         const files = new Set(node.cohort.layers.flatMap((layer) => layer.paths)).size;
         const where = onlyPath ?? `${files} file${files === 1 ? '' : 's'}`;
+        // A cohort of one layer stands in for that layer, so it says what the layer row would.
         item.description = [
+          only ? changedNote(session, only.hunkIds) : '',
+          this.progressNote(session, node.cohort.layers.flatMap((layer) => layer.hunkIds)),
           onlyPath ? statusNote(session, onlyPath) : '',
           where,
           `${hunks} hunk${hunks === 1 ? '' : 's'}`,
@@ -175,6 +214,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const notes = notesOn(session, hunks);
         item.description = [
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
+          changedNote(session, hunks),
           statusNote(session, node.path),
           directory(node.path),
           `${hunks.length} hunk${hunks.length === 1 ? '' : 's'}`,
@@ -221,6 +261,8 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // something written here" matters more than the hunk count it would push off.
         item.description = [
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
+          changedNote(session, node.layer.hunkIds),
+          this.progressNote(session, node.layer.hunkIds),
           single ? statusNote(session, single) : '',
           where,
           `${node.layer.hunkIds.length} hunk${node.layer.hunkIds.length === 1 ? '' : 's'}`,
@@ -254,7 +296,10 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
       }
       if (session.cohorts.length === 0) return [{ type: 'message', text: 'No changes to review.' }];
 
-      const nodes: Node[] = session.cohorts.map((cohort, index) => ({ type: 'cohort', cohort, index }));
+      const nodes: Node[] = session.cohorts
+        .map((cohort, index) => ({ type: 'cohort', cohort, index }) as const)
+        .filter((node) => !this.hidden(session, node.cohort.layers.flatMap((layer) => layer.hunkIds)));
+      if (nodes.length === 0) nodes.push({ type: 'message', text: 'Everything is reviewed.', icon: 'check-all' });
       const running = this.activity.current;
       if (running) nodes.unshift({ type: 'status', text: running.text, kind: running.kind });
       // Orphaned notes get their own section rather than vanishing with the code they were
@@ -296,13 +341,15 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           path,
         }));
       }
-      return node.cohort.layers.map((layer, layerIndex) => ({
-        type: 'layer',
-        cohortIndex: node.index,
-        layerIndex,
-        cohort: node.cohort,
-        layer,
-      }));
+      return node.cohort.layers
+        .map((layer, layerIndex) => ({
+          type: 'layer' as const,
+          cohortIndex: node.index,
+          layerIndex,
+          cohort: node.cohort,
+          layer,
+        }))
+        .filter((child) => !this.hidden(session, child.layer.hunkIds));
     }
 
     return [];
@@ -338,6 +385,11 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     const cohort = this.host.active?.cohorts[cohortIndex];
     const layer = cohort?.layers[layerIndex];
     if (!cohort || !layer) return undefined;
+    // With reviewed rows hidden there may be no row to select: the reading carries on without one.
+    const session = this.host.active!;
+    if (this.hidden(session, cohort.layers.flatMap((l) => l.hunkIds)) || this.hidden(session, layer.hunkIds)) {
+      return undefined;
+    }
 
     if (layer.paths.length > 1 && layer.paths.includes(path)) {
       return { type: 'layerFile', cohortIndex, layerIndex, cohort, layer, path };
@@ -354,15 +406,27 @@ function fileId(cohort: Cohort, layer: Layer, path: string): string {
   return `${layerId(cohort, layer)}/f:${path}`;
 }
 
+/** True when every one of `hunkIds` is marked. */
+function reviewed(session: Session | null, hunkIds: readonly string[]): boolean {
+  return session !== null && hunkIds.length > 0 && hunkIds.every((id) => session.marks.has(id));
+}
+
 /** Ticked when every one of `hunkIds` is marked. */
 function tick(session: Session | null, hunkIds: readonly string[]): vscode.TreeItemCheckboxState {
-  return session && hunkIds.length > 0 && hunkIds.every((id) => session.marks.has(id))
-    ? vscode.TreeItemCheckboxState.Checked
-    : vscode.TreeItemCheckboxState.Unchecked;
+  return reviewed(session, hunkIds) ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
 }
 
 function notesOn(session: Session | null, hunkIds: readonly string[]): number {
   return session?.comments.filter((comment) => !comment.orphaned && hunkIds.includes(comment.hunkId)).length ?? 0;
+}
+
+/**
+ * The word that says the last refresh brought something new into this row. Only a word in
+ * the description: an icon would push the label out of line with its siblings, see the
+ * cohort row.
+ */
+function changedNote(session: Session | null, hunkIds: readonly string[]): string {
+  return session && hunkIds.some((id) => session.changed.has(id)) ? 'changed' : '';
 }
 
 /**

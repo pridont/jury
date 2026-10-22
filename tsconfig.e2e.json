@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "out/e2e",
+    "rootDir": ".",
+    "types": ["node", "mocha"]
+  },
+  "include": ["test/e2e"],
+  "exclude": []
+}
