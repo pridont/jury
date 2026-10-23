@@ -40,7 +40,7 @@ import { describeSpec } from './model/types.js';
 import { fetchHead, fullyMarked, listOpen, resolve, setViewed, viewedFiles, type PullRequest } from './github/pr.js';
 import { defaultBranch, describeCommit, listRefs, recentCommits, type Ref } from './git/refs.js';
 import { pickOrType } from './ui/pick.js';
-import { reviewComments } from './github/comments.js';
+import { reply as replyTo, reviewComments } from './github/comments.js';
 import { prepare, preview, recordPosted, submit, type ReviewEvent } from './github/submit.js';
 
 let log: vscode.OutputChannel;
@@ -171,6 +171,13 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.commands.registerCommand('jury.createComment', (reply: vscode.CommentReply) =>
       comments.add(reply),
     ),
+    vscode.commands.registerCommand('jury.replyOnGitHub', (reply: vscode.CommentReply) =>
+      replyOnGitHub(host, comments, reply),
+    ),
+    vscode.commands.registerCommand('jury.suggestChange', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor) comments.suggest(editor);
+    }),
     vscode.commands.registerCommand('jury.editComment', (c: vscode.Comment) => comments.edit(c)),
     vscode.commands.registerCommand('jury.saveComment', (c: vscode.Comment) => comments.save(c)),
     vscode.commands.registerCommand('jury.cancelComment', (c: vscode.Comment) => comments.cancel(c)),
@@ -1198,6 +1205,42 @@ async function loadRemoteComments(session: Session, ctx: Context): Promise<void>
     log.appendLine(`  ${remote.length} review comments on #${session.pr.number}`);
   } catch (error) {
     log.appendLine(`  could not read review comments: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Answer another reviewer's thread on the pull request.
+ *
+ * It goes on its own, not with the next review: that is how a reply works on GitHub too. It
+ * still asks first, and a reply that did not go out can be copied, since the box it was
+ * typed in is already empty.
+ */
+async function replyOnGitHub(host: SessionHost, comments: Comments, reply: vscode.CommentReply): Promise<void> {
+  const session = host.active;
+  const rootId = comments.remoteRoot(reply.thread);
+  const text = reply.text.trim();
+  if (!session?.pr || rootId === undefined || !text) return;
+  const pr = session.pr;
+
+  const confirmed = await vscode.window.showWarningMessage(
+    `Reply on ${pr.nameWithOwner}#${pr.number}?`,
+    { modal: true, detail: `Everyone on the pull request will see it:\n\n${text}` },
+    'Reply',
+  );
+  if (confirmed !== 'Reply') return;
+
+  const live = session.live();
+  try {
+    const posted = await replyTo(session.repo, pr, rootId, text);
+    log.appendLine(`  replied on #${pr.number} to comment ${rootId}`);
+    if (!live()) return;
+    session.remoteComments = [...session.remoteComments, posted];
+    comments.renderRemote(rootId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.appendLine(`  replying failed: ${message}`);
+    const copy = await vscode.window.showErrorMessage(`Jury: the reply was not posted — ${message}`, 'Copy Reply');
+    if (copy === 'Copy Reply') await vscode.env.clipboard.writeText(text);
   }
 }
 

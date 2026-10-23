@@ -16,8 +16,8 @@ read. A language model does the grouping. You do the reviewing.
   how much of it is reviewed, and the status bar shows the total; click it to go to the next
   unreviewed hunk.
 - Leave notes on the diff and export them as markdown.
-- Review GitHub pull requests without checking them out, and post your notes back as review
-  comments.
+- Review GitHub pull requests without checking them out, post your notes back as review
+  comments, suggest changes the author can apply in one click, and reply to other reviewers.
 - Ask questions about the code you are looking at.
 - Lockfiles and generated files are moved out of the way.
 - Works without a model too, grouped by file.
@@ -114,6 +114,12 @@ move it or delete it.
 Click **Resolve** on a note's thread once it is settled, and **Reopen** to undo it. A
 resolved note is kept, and marked resolved in the export, but is not posted to GitHub.
 
+To propose new code for a line, put the cursor on it in the new version of the file and run
+**Jury: Suggest a Change to This Line** (also in the editor's right-click menu). It starts a
+note holding the line as a GitHub suggested change; edit the line and save. On GitHub the
+author can apply it with one click. If the code moves before you submit, the suggestion is
+sent as a plain code block instead, so it cannot be applied to the wrong line.
+
 **Jury: Export Review as Markdown** writes all notes out, grouped by cohort.
 
 ### Pull requests
@@ -124,9 +130,12 @@ marked. It works the other way too: once every hunk of a file is marked, Jury ti
 **Viewed** for that file on GitHub, and unticks it if you unmark one again.
 
 Comments other reviewers left on the pull request are shown on the diff, labelled **on
-GitHub**. They are read-only, and are never exported or posted. Comments on code that has
-changed since (outdated on GitHub) are not shown. Run **Jury: Refresh Review** to fetch new
-ones.
+GitHub**. They are never exported. Comments on code that has changed since (outdated on
+GitHub) are not shown. Run **Jury: Refresh Review** to fetch new ones.
+
+To answer one, type in its thread and click **Reply on GitHub**. Jury asks before sending,
+then posts the reply straight away, on its own rather than as part of your review, the same
+as replying on GitHub. If it fails, you can copy the text you wrote.
 
 **Jury: Submit Review to GitHub…** posts your notes as inline comments. It shows you exactly
 what will be sent and asks before sending. Notes that were already posted are not posted

@@ -31,6 +31,33 @@ export function covers(hunk: Hunk, side: 'old' | 'new', line: number): boolean {
   return count > 0 ? line >= start && line < start + count : line === start;
 }
 
+/** The text of the hunk's new-side line at `offset`, as the diff has it. */
+export function newLineAt(hunk: Hunk, offset: number): string | undefined {
+  return hunk.lines.filter((line) => line[0] !== '-' && line[0] !== '\\')[offset]?.slice(1);
+}
+
+/**
+ * A note body proposing `line` as the replacement for the line it sits on, in GitHub's
+ * suggested-change syntax. The fence is longer than any run of backticks in the line, so a
+ * line of markdown cannot close it early.
+ */
+export function suggestion(line: string): string {
+  const longest = Math.max(0, ...(line.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}suggestion\n${line}\n${fence}`;
+}
+
+/**
+ * The same body with its suggested changes turned into plain code blocks.
+ *
+ * GitHub applies a suggestion to whatever line the comment is on, in one click. A note whose
+ * position is a guess would offer to overwrite the wrong line; as plain code it still shows
+ * what the reviewer meant, without the button.
+ */
+export function withoutSuggestions(body: string): string {
+  return body.replace(/^(\s*`{3,})suggestion[ \t]*$/gm, '$1');
+}
+
 export function newComment(hunkId: string, offset: number, side: 'old' | 'new', body: string): Comment {
   return {
     id: randomUUID(),

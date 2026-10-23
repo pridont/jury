@@ -82,11 +82,46 @@ export const fake = {
       .map((line) => JSON.parse(line) as { args: string[]; system: string; input: string });
   },
 
+  /** Answer any `gh` call whose arguments, joined by spaces, match `match`. Unscripted calls fail. */
+  gh(match: string, reply: string): void {
+    const file = path.join(this.dir, 'gh-replies.json');
+    const replies = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as unknown[]) : [];
+    fs.writeFileSync(file, JSON.stringify([...replies, { match, reply }]));
+  },
+
+  /** What was asked of `gh`; `input` is what it read on stdin. */
+  ghCalls(): { args: string[]; input: string }[] {
+    const file = path.join(this.dir, 'gh-calls.jsonl');
+    if (!fs.existsSync(file)) return [];
+    return fs
+      .readFileSync(file, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { args: string[]; input: string });
+  },
+
   reset(): void {
-    fs.rmSync(path.join(this.dir, 'replies.json'), { force: true });
-    fs.rmSync(path.join(this.dir, 'calls.jsonl'), { force: true });
+    for (const file of ['replies.json', 'calls.jsonl', 'gh-replies.json', 'gh-calls.jsonl']) {
+      fs.rmSync(path.join(this.dir, file), { force: true });
+    }
   },
 };
+
+/**
+ * Answer the next modal warning with `answer` (undefined is Cancel), since a headless window
+ * cannot click one. Returns what was asked, message then detail, filled in once it is shown.
+ */
+export function answerModal(answer: string | undefined): string[] {
+  const asked: string[] = [];
+  const window = vscode.window as { showWarningMessage: (...args: unknown[]) => Thenable<unknown> };
+  const original = window.showWarningMessage;
+  window.showWarningMessage = async (message, options, ...items) => {
+    window.showWarningMessage = original;
+    asked.push(String(message), String((options as vscode.MessageOptions | undefined)?.detail ?? ''));
+    return items.includes(answer) ? answer : undefined;
+  };
+  return asked;
+}
 
 /** Poll until `check` returns something truthy, and return it. */
 export async function waitFor<T>(check: () => T | Promise<T>, what: string, timeoutMs = 10_000): Promise<NonNullable<T>> {

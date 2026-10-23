@@ -93,7 +93,7 @@ describe('parseReviewComments', () => {
 describe('placeRemote', () => {
   it('puts a comment on the hunk and offset its line falls in', () => {
     expect(placeRemote([remote({})], files, new Set(), 'head')).toEqual([
-      { hunkId: 'h1', offset: 1, side: 'new', comments: [remote({})] },
+      { rootId: 1, hunkId: 'h1', offset: 1, side: 'new', comments: [remote({})] },
     ]);
   });
 
@@ -127,5 +127,7 @@ describe('placeRemote', () => {
     const threads = placeRemote([own, reply], files, new Set([5]), 'head');
     expect(threads).toHaveLength(1);
     expect(threads[0]!.comments).toEqual([reply]);
+    // A reply to it still goes to the thread's first comment, which GitHub requires.
+    expect(threads[0]!.rootId).toBe(1);
   });
 });

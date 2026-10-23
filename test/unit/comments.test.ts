@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { commentLine, commentOffset, hunkAt, newComment, reconcileComments } from '../../src/model/comments.js';
+import {
+  commentLine,
+  commentOffset,
+  hunkAt,
+  newComment,
+  newLineAt,
+  reconcileComments,
+  suggestion,
+  withoutSuggestions,
+} from '../../src/model/comments.js';
 import { reanchor } from '../../src/state/anchor.js';
 import { hunkBody, hunkId } from '../../src/git/identity.js';
 import type { Comment, Hunk } from '../../src/model/types.js';
@@ -54,6 +63,26 @@ describe('hunkAt', () => {
 
   it('is null between hunks, so a note cannot be left on unchanged context', () => {
     expect(hunkAt(hunks, 'new', 30)).toBeNull();
+  });
+});
+
+describe('suggested changes', () => {
+  it('reads a new-side line out of the hunk, skipping removed lines and markers', () => {
+    const h = hunk('a.ts', [' keep', '-gone', '+came', '\\ No newline at end of file'], 10);
+    expect([0, 1, 2].map((offset) => newLineAt(h, offset))).toEqual(['keep', 'came', undefined]);
+  });
+
+  it('fences the line as a GitHub suggestion', () => {
+    expect(suggestion('  return at < now;')).toBe('```suggestion\n  return at < now;\n```');
+  });
+
+  it('uses a fence longer than any backticks in the line', () => {
+    expect(suggestion('const md = "```js";')).toBe('````suggestion\nconst md = "```js";\n````');
+  });
+
+  it('turns suggestions into plain code and leaves other fences alone', () => {
+    const body = 'Try:\n````suggestion\nx\n````\n```ts\ny\n```';
+    expect(withoutSuggestions(body)).toBe('Try:\n````\nx\n````\n```ts\ny\n```');
   });
 });
 
