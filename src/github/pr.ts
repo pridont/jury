@@ -1,7 +1,10 @@
 import { run, runOk, type RunOptions, type RunResult } from '../util/exec.js';
 import { mergeBase, type Repo } from '../git/repo.js';
+import type { FileChange } from '../git/parse.js';
 
 export type PullRequest = {
+  /** GraphQL node id, which is what marking a file as viewed is addressed to. */
+  id: string;
   number: number;
   title: string;
   url: string;
@@ -23,7 +26,7 @@ export function refFor(number: number): string {
  * where being asked for a number is annoying.
  */
 export async function resolve(repo: Repo, number?: number): Promise<PullRequest> {
-  const fields = ['number', 'title', 'url', 'baseRefName', 'headRefOid'].join(',');
+  const fields = ['id', 'number', 'title', 'url', 'baseRefName', 'headRefOid'].join(',');
 
   const args = ['pr', 'view', ...(number ? [String(number)] : []), '--json', fields];
   const result = await gh(args, { cwd: repo.root, timeoutMs: 30_000 });
@@ -40,6 +43,7 @@ export async function resolve(repo: Repo, number?: number): Promise<PullRequest>
   const owner = await nameWithOwner(repo);
 
   return {
+    id: String(parsed['id'] ?? ''),
     number: Number(parsed['number']),
     title: String(parsed['title'] ?? ''),
     url: String(parsed['url'] ?? ''),
@@ -221,4 +225,36 @@ export async function viewedFiles(repo: Repo, pr: PullRequest): Promise<Set<stri
   }
 
   return viewed;
+}
+
+/** Files whose every hunk is marked, which is what GitHub's "viewed" means here. */
+export function fullyMarked(files: readonly FileChange[], marks: ReadonlySet<string>): Set<string> {
+  return new Set(
+    files.filter((file) => file.hunks.length > 0 && file.hunks.every((hunk) => marks.has(hunk.id))).map((f) => f.path),
+  );
+}
+
+/**
+ * Tick, or untick, the "Viewed" box on files of the pull request, for this reviewer. One
+ * request however many files: GitHub runs the aliased mutations in order.
+ */
+export async function setViewed(
+  repo: Repo,
+  pr: PullRequest,
+  changes: readonly { path: string; viewed: boolean }[],
+): Promise<void> {
+  if (changes.length === 0) return;
+  const fields = changes.map(
+    (change, i) =>
+      `f${i}: ${change.viewed ? 'markFileAsViewed' : 'unmarkFileAsViewed'}` +
+      `(input:{pullRequestId:$id,path:$p${i}}){ clientMutationId }`,
+  );
+  const query = `mutation($id:ID!,${changes.map((_, i) => `$p${i}:String!`).join(',')}){ ${fields.join(' ')} }`;
+  // `-f`, not `-F`: a path that looks like a number must still go as a string.
+  const paths = changes.flatMap((change, i) => ['-f', `p${i}=${change.path}`]);
+  const result = await gh(['api', 'graphql', '-f', `query=${query}`, '-f', `id=${pr.id}`, ...paths], {
+    cwd: repo.root,
+    timeoutMs: 30_000,
+  });
+  if (result.code !== 0) throw new Error((result.stderr || result.stdout).trim().split('\n')[0] || 'gh failed');
 }

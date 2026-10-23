@@ -5,7 +5,11 @@ import type { Comment, Hunk } from '../model/types.js';
 import { commentLine } from '../model/comments.js';
 import type { PullRequest } from './pr.js';
 
-export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+/**
+ * `PENDING` is not an event GitHub knows: it is sending none, which leaves the review as a
+ * draft only the reviewer can see, to finish and submit on the web.
+ */
+export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES' | 'PENDING';
 
 export type InlineComment = {
   path: string;
@@ -50,6 +54,10 @@ export function prepare(
   const skipped: { body: string; reason: string }[] = [];
 
   for (const comment of comments) {
+    if (comment.resolved) {
+      skipped.push({ body: comment.body, reason: 'marked resolved' });
+      continue;
+    }
     if (comment.posted && comment.posted.bodyHash === bodyHash(comment.body)) {
       // Already on the pull request, unchanged. Posting it again would put a second copy in
       // front of the author, who has no way to tell it is the same note.
@@ -120,6 +128,7 @@ export function preview(pr: PullRequest, submission: Submission): string {
 }
 
 function verb(event: ReviewEvent): string {
+  if (event === 'PENDING') return 'Draft review (pending, not submitted) on';
   return event === 'APPROVE' ? 'Approve' : event === 'REQUEST_CHANGES' ? 'Request changes on' : 'Comment on';
 }
 
@@ -135,21 +144,25 @@ export async function submit(
   pr: PullRequest,
   submission: Submission,
 ): Promise<{ url: string; reviewId: number }> {
-  const payload = {
-    commit_id: pr.headOid,
-    body: submission.body,
-    event: submission.event,
-    comments: submission.comments.map((comment) => ({
-      path: comment.path,
-      line: comment.line,
-      side: comment.side,
-      body: comment.body,
-    })),
-  };
+  // GitHub allows one pending review per reviewer: a second draft goes into the first.
+  if (submission.event === 'PENDING') {
+    const pending = await pendingReview(repo, pr);
+    if (pending) {
+      // Its threads land on the commit it was started on, and these lines were read on another.
+      if (pending.commitId && pending.commitId !== pr.headOid) {
+        throw new Error(
+          `your pending review on GitHub is on an older commit (${pending.commitId.slice(0, 7)}). ` +
+            'Submit or discard it there first.',
+        );
+      }
+      await addToPending(repo, pending.nodeId, submission);
+      return { url: pending.url || pr.url, reviewId: pending.id };
+    }
+  }
 
   const result = await gh(
     ['api', '--method', 'POST', `repos/${pr.nameWithOwner}/pulls/${pr.number}/reviews`, '--input', '-'],
-    { cwd: repo.root, stdin: JSON.stringify(payload), timeoutMs: 60_000 },
+    { cwd: repo.root, stdin: JSON.stringify(payload(pr, submission)), timeoutMs: 60_000 },
   );
 
   if (result.code !== 0) {
@@ -161,7 +174,94 @@ export async function submit(
   return { url: parsed.html_url ?? pr.url, reviewId: Number(parsed.id ?? 0) };
 }
 
-/** Record what was posted, so the next submission does not send it again. */
+/** The reviewer's pending review on the pull request. GitHub lists no one else's. */
+async function pendingReview(
+  repo: Repo,
+  pr: PullRequest,
+): Promise<{ id: number; nodeId: string; url: string; commitId: string } | null> {
+  const result = await gh(
+    [
+      'api',
+      '--paginate',
+      `repos/${pr.nameWithOwner}/pulls/${pr.number}/reviews`,
+      '--jq',
+      '.[] | select(.state == "PENDING") | {id, node_id, html_url, commit_id}',
+    ],
+    { cwd: repo.root, timeoutMs: 60_000 },
+  );
+  if (result.code !== 0) throw new Error(result.stderr.trim().split('\n')[0] || 'gh failed');
+  const line = result.stdout.split('\n').find((candidate) => candidate.trim());
+  if (!line) return null;
+  const raw = JSON.parse(line) as { id?: number; node_id?: string; html_url?: string; commit_id?: string };
+  return {
+    id: Number(raw.id),
+    nodeId: String(raw.node_id ?? ''),
+    url: raw.html_url ?? '',
+    commitId: raw.commit_id ?? '',
+  };
+}
+
+/** Add the comments, and the summary if there is one, to an existing pending review. */
+async function addToPending(repo: Repo, reviewNodeId: string, submission: Submission): Promise<void> {
+  const result = await gh(['api', 'graphql', '--input', '-'], {
+    cwd: repo.root,
+    stdin: JSON.stringify(pendingMutation(reviewNodeId, submission)),
+    timeoutMs: 60_000,
+  });
+  if (result.code !== 0) {
+    throw new Error((result.stderr || result.stdout).trim().split('\n').slice(0, 3).join(' '));
+  }
+}
+
+/** One aliased mutation: a thread per comment, and the summary, if any, as the review body. */
+export function pendingMutation(
+  reviewNodeId: string,
+  submission: Submission,
+): { query: string; variables: Record<string, unknown> } {
+  const variables: Record<string, unknown> = { review: reviewNodeId };
+  const params = ['$review:ID!'];
+  const fields = submission.comments.map((comment, i) => {
+    Object.assign(variables, {
+      [`p${i}`]: comment.path,
+      [`l${i}`]: comment.line,
+      [`s${i}`]: comment.side,
+      [`b${i}`]: comment.body,
+    });
+    params.push(`$p${i}:String!`, `$l${i}:Int!`, `$s${i}:DiffSide!`, `$b${i}:String!`);
+    return (
+      `c${i}: addPullRequestReviewThread(input:{pullRequestReviewId:$review,path:$p${i},line:$l${i},` +
+      `side:$s${i},body:$b${i}}){ thread { id } }`
+    );
+  });
+  if (submission.body.trim()) {
+    variables['body'] = submission.body;
+    params.push('$body:String!');
+    fields.push('summary: updatePullRequestReview(input:{pullRequestReviewId:$review,body:$body}){ clientMutationId }');
+  }
+  return { query: `mutation(${params.join(',')}){ ${fields.join(' ')} }`, variables };
+}
+
+/** The request body. A draft sends no `event` at all, which is what keeps it pending. */
+export function payload(pr: PullRequest, submission: Submission): Record<string, unknown> {
+  return {
+    commit_id: pr.headOid,
+    body: submission.body,
+    ...(submission.event === 'PENDING' ? {} : { event: submission.event }),
+    comments: submission.comments.map((comment) => ({
+      path: comment.path,
+      line: comment.line,
+      side: comment.side,
+      body: comment.body,
+    })),
+  };
+}
+
+/**
+ * Record what was posted, so the next submission does not send it again.
+ *
+ * A draft counts: its comments are on GitHub, waiting in the reviewer's pending review, and
+ * sending them again would put a second copy in the same draft.
+ */
 export function recordPosted(comments: Comment[], submission: Submission, reviewId: number): void {
   const sent = new Map(submission.comments.map((comment) => [comment.commentId, comment.body]));
   const at = Date.now();

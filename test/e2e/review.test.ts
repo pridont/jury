@@ -64,6 +64,43 @@ suite('review', () => {
     const markdown = await waitFor(() => documentText('Review.md'), 'the exported review');
     assert.match(markdown, /Is <= intended here\?/);
   });
+
+  test('a resolved note is collapsed, flagged in the export, and reopens', async () => {
+    // Clustering re-renders every thread when it lands; wait so the thread below stays the live one.
+    const api = await review('jury.review', { clustered: true });
+    // The thread the comment gutter would hand over; Jury keeps it as the note's thread.
+    const thread = {
+      uri: vscode.Uri.file(`${repo.root}/src/token.ts`),
+      range: new vscode.Range(1, 0, 1, 0),
+      comments: [] as readonly vscode.Comment[],
+      collapsibleState: vscode.CommentThreadCollapsibleState.Expanded,
+      state: undefined as vscode.CommentThreadState | undefined,
+      contextValue: undefined as string | undefined,
+      dispose: () => {},
+    };
+    await vscode.commands.executeCommand('jury.createComment', { thread, text: 'Is <= intended here?' });
+    assert.equal(thread.contextValue, 'open');
+
+    await vscode.commands.executeCommand('jury.resolveComment', thread);
+    assert.equal(api.host.active?.comments[0]?.resolved, true);
+    assert.equal(thread.state, vscode.CommentThreadState.Resolved);
+    assert.equal(thread.contextValue, 'resolved');
+    assert.equal(thread.collapsibleState, vscode.CommentThreadCollapsibleState.Collapsed);
+
+    void vscode.commands.executeCommand('jury.export');
+    await waitFor(() => /src\/token\.ts:2\*\* _\(resolved\)_/.test(documentText('Review.md')), 'the resolved flag in the export');
+
+    await vscode.commands.executeCommand('jury.reopenComment', thread);
+    assert.equal(api.host.active?.comments[0]?.resolved, false);
+    assert.equal(thread.state, vscode.CommentThreadState.Unresolved);
+    assert.equal(thread.contextValue, 'open');
+
+    void vscode.commands.executeCommand('jury.export');
+    await waitFor(() => {
+      const markdown = documentText('Review.md');
+      return /src\/token\.ts:2\*\*\n/.test(markdown) && !markdown.includes('_(resolved)_');
+    }, 'the export without the resolved flag');
+  });
 });
 
 suite('review a commit', () => {

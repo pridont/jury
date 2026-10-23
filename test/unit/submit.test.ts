@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bodyHash, prepare, preview, recordPosted } from '../../src/github/submit.js';
+import { bodyHash, payload, pendingMutation, prepare, preview, recordPosted } from '../../src/github/submit.js';
 import { newComment } from '../../src/model/comments.js';
 import type { Hunk } from '../../src/model/types.js';
 import type { PullRequest } from '../../src/github/pr.js';
@@ -22,6 +22,7 @@ const hunks = new Map<string, Hunk>([
 ]);
 
 const pr: PullRequest = {
+  id: 'PR_kwDO',
   number: 141,
   title: 'feat: course viewer',
   url: 'https://github.com/o/r/pull/141',
@@ -67,6 +68,14 @@ describe('prepare', () => {
 
     expect(comments).toHaveLength(0);
     expect(skipped[0]!.reason).toContain('binary');
+  });
+
+  it('does not send a resolved note, and lists it as skipped', () => {
+    const note = { ...newComment('h1', 0, 'new', 'settled in chat'), resolved: true };
+    const { comments, skipped } = prepare([note], hunks, 'COMMENT', '');
+
+    expect(comments).toHaveLength(0);
+    expect(skipped).toEqual([{ body: 'settled in chat', reason: 'marked resolved' }]);
   });
 
   it('skips a note whose hunk is not in this diff at all', () => {
@@ -144,6 +153,7 @@ describe('preview', () => {
       ['APPROVE', 'Approve'],
       ['COMMENT', 'Comment on'],
       ['REQUEST_CHANGES', 'Request changes on'],
+      ['PENDING', 'Draft review (pending, not submitted) on'],
     ] as const) {
       expect(preview(pr, prepare([], hunks, event, ''))).toContain(verb);
     }
@@ -170,5 +180,36 @@ describe('prepare, out of range', () => {
     const { comments, skipped } = prepare([note], new Map([['h3', added]]), 'COMMENT', '');
     expect(comments).toEqual([]);
     expect(skipped[0]?.reason).toContain('no old lines');
+  });
+});
+
+describe('a draft review', () => {
+  it('sends no event, which is what leaves it pending on GitHub', () => {
+    const note = newComment('h1', 2, 'new', 'off by one?');
+    const draft = payload(pr, prepare([note], hunks, 'PENDING', ''));
+    expect(draft).not.toHaveProperty('event');
+    expect(draft['comments']).toHaveLength(1);
+    expect(payload(pr, prepare([note], hunks, 'APPROVE', ''))).toMatchObject({ event: 'APPROVE' });
+  });
+
+  it('counts as posted, so the same note does not go into the draft twice', () => {
+    const note = newComment('h1', 0, 'new', 'off by one?');
+    recordPosted([note], prepare([note], hunks, 'PENDING', ''), 12);
+    expect(prepare([note], hunks, 'PENDING', '').comments).toHaveLength(0);
+  });
+});
+
+describe('a draft added to the pending review', () => {
+  it('adds a thread per comment, and the summary, in one mutation', () => {
+    const note = newComment('h1', 2, 'new', 'off by one?');
+    const { query, variables } = pendingMutation('PRR_1', prepare([note], hunks, 'PENDING', 'looks close'));
+    expect(query).toContain('c0: addPullRequestReviewThread(');
+    expect(query).toContain('updatePullRequestReview(');
+    expect(variables).toMatchObject({ review: 'PRR_1', p0: 'src/auth.ts', l0: 42, s0: 'RIGHT', body: 'looks close' });
+  });
+
+  it('leaves the review body alone without a summary', () => {
+    const { query } = pendingMutation('PRR_1', prepare([], hunks, 'PENDING', ''));
+    expect(query).not.toContain('updatePullRequestReview');
   });
 });

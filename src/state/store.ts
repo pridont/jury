@@ -15,6 +15,8 @@ export type StoredReview = {
   marks: string[];
   notScaffolding: string[];
   comments: Comment[];
+  /** Every review Jury posted on the pull request, so its comments are not shown as others'. */
+  postedReviews?: number[];
   createdAt: number;
   updatedAt: number;
 };
