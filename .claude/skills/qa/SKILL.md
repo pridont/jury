@@ -68,21 +68,28 @@ For the rest, write tests that read as part of the permanent suite, not as a QA 
   file's `setup` and fixtures when they already match. Undo any setting you change in a
   `teardown` or `suiteTeardown`, or later suites inherit it.
 - **Do** maps to `vscode.commands.executeCommand('jury.…')`. Use `review()` for commands that
-  open a review, and `void` plus `pick(i)` for commands that open a quick pick.
+  open a review, `void` plus `pick(i)` for the review pickers, and `row(/label/).node` for
+  commands run from a sidebar row's context menu. Answer messages, input boxes, `showQuickPick`
+  lists and save dialogs ahead of time with `dialogs.answer`, `type`, `choose` and `saveTo`;
+  anything unanswered is dismissed. Change settings with `configure({...})` and call the undo
+  it returns.
 - **Expect** maps to assertions on what a reviewer would see: `sidebar()` text,
   `api.host.active` (files, cohorts, marks, comments, error), `api.nav.current`,
-  `documentText()`, `vscode.window.activeTextEditor`, and `fake.calls()` for what was sent
-  to the model.
+  `documentText()`, `vscode.window.activeTextEditor`, `dialogs.messages()` for notifications,
+  `fake.calls()` for what was sent to the model and `gh.calls()` for what was sent to GitHub.
 - When a step depends on the model's answer, script it with `fake.reply(match, json)`.
   Without that, the fake gives a canned two-cohort grouping (`Fake cohort 1`, `Fake cohort 2`).
+  A step on a pull request scripts `gh.reply(match, stdout)`; `test/e2e/pull-request.test.ts`
+  shows how to stand up a pull request against a local `origin`.
 - Assert the specific outcome the step promises. `assert.ok(session)` proves nothing.
 - When the harness lacks a helper a step needs, write the step as best the existing API
   allows, or mark it MANUAL. Do not grow the harness during QA; say in the report what helper
   would have made the step testable.
 
 Mark a step **MANUAL** instead, with a one-line reason, when the harness cannot observe it:
-how it looks (icons, colours, layout, themes), typing into a picker, the chat panel,
-anything that talks to GitHub, real model quality, or native dialogs. Do not fake a pass.
+how it looks (icons, colours, decorations, status bar text, layout, themes), typing into a
+`pickOrType` picker, ticking a sidebar checkbox, the chat panel, reloading the window, the
+real GitHub, or real model quality. Do not fake a pass.
 
 ## 5. Run
 

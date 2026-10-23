@@ -10,6 +10,8 @@
  *
  * `match` is a regular expression tried against the system prompt and the input; the first
  * hit wins. Anything unscripted gets a canned answer that satisfies the prompt's contract.
+ * An entry may also set `delayMs`, to answer slowly, and `exit` with `stderr`, to fail the
+ * way the real CLI does.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -32,7 +34,13 @@ const streaming = flag('--output-format') === 'stream-json';
 
 if (dir) fs.appendFileSync(path.join(dir, 'calls.jsonl'), JSON.stringify({ args, system, input }) + '\n');
 
-const reply = scripted() ?? canned();
+const entry = scripted();
+if (entry?.delayMs) await new Promise((resolve) => setTimeout(resolve, entry.delayMs));
+if (entry?.exit) {
+  process.stderr.write(entry.stderr ?? 'fake failure');
+  process.exit(entry.exit);
+}
+const reply = entry?.reply ?? canned();
 
 if (streaming) {
   const session = flag('--resume') ?? 'fake-session';
@@ -55,7 +63,7 @@ function scripted() {
     return undefined;
   }
   const text = `${system}\n${input}`;
-  return replies.find((entry) => new RegExp(entry.match).test(text))?.reply;
+  return replies.find((candidate) => new RegExp(candidate.match).test(text));
 }
 
 function canned() {
