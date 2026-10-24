@@ -42,9 +42,13 @@ export class Documents implements vscode.TextDocumentContentProvider, vscode.Dis
  * The export is the one document a reviewer may actually want on disk, and asking where is
  * better than handing them a dirty buffer and hoping.
  */
-export async function offerToSave(content: string, suggested: string): Promise<void> {
+export async function offerToSave(
+  content: string,
+  suggested: string,
+  message = 'Jury: review exported.',
+): Promise<void> {
   const choice = await vscode.window.showInformationMessage(
-    'Jury: review exported.',
+    message,
     'Save to a file…',
     'Copy',
   );

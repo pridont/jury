@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toMarkdown } from '../../src/export.js';
+import { toDescription, toMarkdown } from '../../src/export.js';
 import { heuristicCohorts } from '../../src/model/heuristic.js';
 import { newComment } from '../../src/model/comments.js';
 import type { FileChange } from '../../src/git/parse.js';
@@ -109,5 +109,16 @@ describe('notes on generated files', () => {
     const files = [file('src/a.ts'), file('package-lock.json', 10, true)];
     const out = render(files, [newComment(files[1]!.hunks[0]!.id, 0, 'new', 'why did this bump?')]);
     expect(out).toContain('why did this bump?');
+  });
+});
+
+describe('toDescription', () => {
+  it('follows the walkthrough with each step’s files, in reading order, without scaffolding', () => {
+    const files = [file('src/a.ts'), file('src/b.ts'), file('package-lock.json', 10, true)];
+    const out = toDescription('# walkthrough\n', heuristicCohorts(files));
+    expect(out.startsWith('# walkthrough\n\n## Files, step by step')).toBe(true);
+    expect(out.indexOf('`src/a.ts`')).toBeGreaterThan(0);
+    expect(out.indexOf('`src/a.ts`')).toBeLessThan(out.indexOf('`src/b.ts`'));
+    expect(out).not.toContain('package-lock.json');
   });
 });

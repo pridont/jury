@@ -267,6 +267,12 @@
         "icon": "$(markdown)"
       },
       {
+        "command": "jury.describeBranch",
+        "title": "Describe This Branch",
+        "category": "Jury",
+        "icon": "$(git-pull-request)"
+      },
+      {
         "command": "jury.clearCache",
         "title": "Clear Model Answer Cache",
         "category": "Jury"
@@ -543,6 +549,10 @@
         },
         {
           "command": "jury.export",
+          "when": "jury.active"
+        },
+        {
+          "command": "jury.describeBranch",
           "when": "jury.active"
         },
         {
