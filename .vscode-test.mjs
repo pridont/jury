@@ -6,14 +6,12 @@ import * as path from 'node:path';
 
 // The window opens on a throwaway repository, which the tests rebuild between cases, and
 // every model call goes to the fake CLI in `test/e2e`, never to a real account. `gh` is the
-// fake one too, found first on PATH.
+// fake in `test/e2e` too, linked into `fake/bin`, which the harness puts first on PATH.
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jury-e2e-'));
 const workspace = path.join(root, 'repo');
 const fake = path.join(root, 'fake');
-const bin = path.join(root, 'bin');
-fs.mkdirSync(fake);
-fs.mkdirSync(bin);
-fs.symlinkSync(path.resolve('test/e2e/fake-gh.mjs'), path.join(bin, 'gh'));
+fs.mkdirSync(path.join(fake, 'bin'), { recursive: true });
+fs.symlinkSync(path.resolve('test/e2e/fake-gh.mjs'), path.join(fake, 'bin', 'gh'));
 fs.mkdirSync(path.join(workspace, '.vscode'), { recursive: true });
 execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: workspace });
 
@@ -36,8 +34,7 @@ fs.writeFileSync(
 export default defineConfig({
   files: 'out/e2e/test/e2e/**/*.test.js',
   workspaceFolder: workspace,
-  env: { JURY_FAKE_DIR: fake, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` },
-  // `--force-disable-user-env` keeps the PATH above: otherwise VS Code takes the login shell's.
-  launchArgs: ['--disable-extensions', '--disable-workspace-trust', '--ozone-platform=headless', '--force-disable-user-env'],
+  env: { JURY_FAKE_DIR: fake },
+  launchArgs: ['--disable-extensions', '--disable-workspace-trust', '--ozone-platform=headless'],
   mocha: { ui: 'tdd', timeout: 30_000 },
 });
