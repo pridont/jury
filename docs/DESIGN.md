@@ -81,6 +81,15 @@ removed, and a few of the changed lines. The per-file summaries from pass 1 are 
 too. On large changes the sample lines are shortened and then dropped, but every hunk is
 always listed, because the model cannot place a hunk it was never shown.
 
+Before the hunks comes what the author says about the change: the pull request's title and
+description (without the HTML comments a template leaves), and the commit messages, oldest
+first, cut at 6,000 characters. Uncommitted work has neither. It is fenced in `<author>` tags
+that the text cannot close itself, and the prompt treats it as a claim to check, never as
+instructions. The model uses it to name cohorts and as a hint for where they split, and adds
+a note wherever the claim and the diff disagree: something described that no hunk does, or a
+change in behaviour nobody mentioned. A grouping pass has no tools, so text in a
+description can at worst produce a bad grouping, which is then checked like any other.
+
 ## Detecting generated files
 
 Checked in this order, most certain first:

@@ -23,6 +23,7 @@ import { Cache } from './agent/cache.js';
 import { Queue } from './agent/queue.js';
 import { isWorthSummarising, summariseFiles } from './agent/summaries.js';
 import { clusterChange } from './agent/cluster.js';
+import { authorIntent } from './git/intent.js';
 import { render as renderWalkthrough, showWalkthrough } from './ui/walkthrough.js';
 import { Activity } from './ui/activity.js';
 import { forgetSessions, registerChat } from './ui/chat.js';
@@ -593,7 +594,9 @@ async function cluster(
 
   ctx.activity.start('Grouping the change', 0, 'deliberating');
   const reading = ctx.nav.current?.hunk.id;
-  const result = await clusterChange(deps, session.files, session.summaries, fresh);
+  const intent = await authorIntent(session.repo, session.spec, session.base, session.head);
+  if (!live()) return 'cancelled';
+  const result = await clusterChange(deps, session.files, session.summaries, fresh, intent);
   // Grouped from files that are no longer on screen, or for a review that is gone.
   if (!live()) return 'cancelled';
 

@@ -10,7 +10,9 @@ read. A language model does the grouping. You do the reviewing.
 
 - Groups a diff into **cohorts** (related work) and **layers** (steps within that work), in
   reading order: new code first, then the code that uses it, then tests.
-- A short walkthrough of what the change does before you read any code.
+- A short walkthrough of what the change does before you read any code. It also says where
+  the pull request description or commit messages promise something the diff does not do,
+  or leave out something it does.
 - Step through every hunk with one key, across files.
 - Mark hunks as reviewed. Marks are saved and survive a rebase. Each cohort and layer shows
   how much of it is reviewed, and the status bar shows the total; click it to go to the next

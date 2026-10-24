@@ -54,6 +54,17 @@ export async function resolve(repo: Repo, number?: number): Promise<PullRequest>
 }
 
 /**
+ * The description of a pull request, without the HTML comments a template leaves in it:
+ * those are instructions to the author, not anything the author said.
+ */
+export async function prDescription(repo: Repo, number: number): Promise<string> {
+  const result = await gh(['pr', 'view', String(number), '--json', 'body'], { cwd: repo.root, timeoutMs: 30_000 });
+  if (result.code !== 0) return '';
+  const body = (JSON.parse(result.stdout) as Record<string, unknown>)['body'];
+  return typeof body === 'string' ? body.replace(/<!--[\s\S]*?-->/g, '').trim() : '';
+}
+
+/**
  * Run `gh`, saying plainly when it is not installed. Anything else — a timeout above all — is
  * passed on as it is: "not on PATH" for a request that may well have reached GitHub invites
  * sending it again.
