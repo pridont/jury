@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import type { Session } from '../session.js';
 import type { Comment } from '../model/types.js';
-import { commentLine, commentOffset, hunkAt, newComment } from '../model/comments.js';
+import { commentLine, commentOffset, hunkAt, newComment, newLineAt, suggestion } from '../model/comments.js';
 import { fileForUri, sidesFor } from './diff.js';
 import { placeRemote } from '../github/comments.js';
 
@@ -19,7 +19,7 @@ export class Comments implements vscode.Disposable {
   private readonly controller: vscode.CommentController;
   private readonly threads = new Map<string, vscode.CommentThread>();
   /** Other reviewers' threads from the pull request. Read-only, so kept apart from notes. */
-  private readonly remote: vscode.CommentThread[] = [];
+  private readonly remote = new Map<vscode.CommentThread, number>();
   private session: Session | null = null;
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changed.event;
@@ -60,11 +60,12 @@ export class Comments implements vscode.Disposable {
 
   /**
    * Rebuild only other reviewers' threads. The reviewer's own are left as they are, so a note
-   * being edited when GitHub answers keeps its edit.
+   * being edited when GitHub answers keeps its edit. The thread started by `expand` opens, so
+   * one just replied to stays in view.
    */
-  renderRemote(): void {
-    for (const thread of this.remote) thread.dispose();
-    this.remote.length = 0;
+  renderRemote(expand?: number): void {
+    for (const thread of this.remote.keys()) thread.dispose();
+    this.remote.clear();
     const session = this.session;
     if (!session) return;
 
@@ -85,10 +86,51 @@ export class Comments implements vscode.Disposable {
         })),
       );
       if (!thread) continue;
-      thread.canReply = false;
       thread.label = 'on GitHub';
-      this.remote.push(thread);
+      // Picks Reply on GitHub over Add Note in the reply box.
+      thread.contextValue = 'remote';
+      if (placed.rootId === expand) thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+      this.remote.set(thread, placed.rootId);
     }
+  }
+
+  /** The GitHub comment a reply in `thread` answers, when it is another reviewer's thread. */
+  remoteRoot(thread: vscode.CommentThread): number | undefined {
+    return this.remote.get(thread);
+  }
+
+  /**
+   * Start a note that proposes new text for the line under the cursor, as a GitHub suggested
+   * change. It opens for editing with the line as the diff has it, which is what GitHub will
+   * replace, so the reviewer only rewrites it.
+   *
+   * Only the new side: a suggestion replaces lines of the pull request's code, not the base's.
+   */
+  suggest(editor: vscode.TextEditor): void {
+    const session = this.session;
+    if (!session) return;
+
+    const located = this.locate(editor.document.uri, editor.selection.active.line + 1);
+    if (!located || located.side !== 'new') {
+      vscode.window.showWarningMessage('Jury: put the cursor on a changed line in the new version of a file.');
+      return;
+    }
+    const hunk = session.files.flatMap((file) => file.hunks).find((candidate) => candidate.id === located.hunkId);
+    const text = hunk?.kind === 'text' ? newLineAt(hunk, located.offset) : undefined;
+    if (text === undefined) {
+      vscode.window.showWarningMessage('Jury: there is no new line here to suggest a change to.');
+      return;
+    }
+
+    const comment = newComment(located.hunkId, located.offset, 'new', suggestion(text));
+    session.comments.push(comment);
+
+    const thread = this.threadFor(comment.hunkId, comment, [{ ...this.toRendered(comment), mode: vscode.CommentMode.Editing }]);
+    if (!thread) return;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    showResolved(thread, comment);
+    this.threads.set(comment.id, thread);
+    this.changed.fire();
   }
 
   add(reply: vscode.CommentReply): void {
@@ -202,8 +244,8 @@ export class Comments implements vscode.Disposable {
   private clear(): void {
     for (const thread of this.threads.values()) thread.dispose();
     this.threads.clear();
-    for (const thread of this.remote) thread.dispose();
-    this.remote.length = 0;
+    for (const thread of this.remote.keys()) thread.dispose();
+    this.remote.clear();
   }
 
   private rangesFor(document: vscode.TextDocument): vscode.Range[] {

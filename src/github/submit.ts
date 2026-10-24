@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { gh } from './pr.js';
 import type { Repo } from '../git/repo.js';
 import type { Comment, Hunk } from '../model/types.js';
-import { commentLine } from '../model/comments.js';
+import { commentLine, withoutSuggestions } from '../model/comments.js';
 import type { PullRequest } from './pr.js';
 
 /**
@@ -86,14 +86,18 @@ export function prepare(
       continue;
     }
     const offset = Math.min(comment.offset, count - 1);
+    const approximate = comment.moved || offset !== comment.offset;
 
     inline.push({
       path: hunk.path,
       line: commentLine(hunk, { side: comment.side, offset }),
       side: comment.side === 'old' ? 'LEFT' : 'RIGHT',
-      body:
-        comment.moved || offset !== comment.offset
-          ? `${comment.body}\n\n_(position is approximate — the code moved since this was written)_`
+      // A suggestion is applied to the line it is on, so it is only sent as one when that line
+      // is certain, and only on the new side, the code the author can still change.
+      body: approximate
+        ? `${withoutSuggestions(comment.body)}\n\n_(position is approximate — the code moved since this was written)_`
+        : comment.side === 'old'
+          ? withoutSuggestions(comment.body)
           : comment.body,
       commentId: comment.id,
     });

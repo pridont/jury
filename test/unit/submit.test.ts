@@ -54,6 +54,19 @@ describe('prepare', () => {
     expect(comment!.body).toContain('position is approximate');
   });
 
+  it('sends a suggested change as one only where its line is certain', () => {
+    const body = 'Use <:\n```suggestion\n  return at < now;\n```';
+    const exact = newComment('h1', 1, 'new', body);
+    const moved = { ...newComment('h1', 1, 'new', body), moved: true };
+    const old = newComment('h1', 1, 'old', body);
+    const [sent, guessed, left] = prepare([exact, moved, old], hunks, 'COMMENT', '').comments;
+
+    expect(sent!.body).toBe(body);
+    expect(guessed!.body).toContain('```\n  return at < now;\n```');
+    expect(guessed!.body).not.toContain('suggestion');
+    expect(left!.body).not.toContain('suggestion');
+  });
+
   it('does not send an orphaned note, and says why', () => {
     const note = { ...newComment('h1', 0, 'new', 'what happened here?'), orphaned: true };
     const { comments, skipped } = prepare([note], hunks, 'COMMENT', '');

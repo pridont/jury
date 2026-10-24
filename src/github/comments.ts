@@ -24,6 +24,8 @@ export type RemoteComment = {
 
 /** Comments that read as one conversation, placed on a hunk the way a note is. */
 export type RemoteThread = {
+  /** The comment that started the thread on GitHub, which is what a reply is addressed to. */
+  rootId: number;
   hunkId: string;
   offset: number;
   side: 'old' | 'new';
@@ -49,34 +51,54 @@ export function parseReviewComments(out: string): RemoteComment[] {
   return out
     .split('\n')
     .filter((line) => line.trim())
-    .map((line) => {
-      const raw = JSON.parse(line) as {
-        id?: number;
-        in_reply_to_id?: number;
-        pull_request_review_id?: number | null;
-        path?: string;
-        line?: number | null;
-        commit_id?: string;
-        original_line?: number | null;
-        original_commit_id?: string;
-        side?: string;
-        user?: { login?: string } | null;
-        body?: string;
-      };
-      return {
-        id: Number(raw.id),
-        replyTo: raw.in_reply_to_id ?? null,
-        reviewId: raw.pull_request_review_id ?? null,
-        path: raw.path ?? '',
-        line: raw.line ?? null,
-        commit: raw.commit_id ?? '',
-        originalLine: raw.original_line ?? null,
-        originalCommit: raw.original_commit_id ?? '',
-        side: raw.side === 'LEFT' ? ('LEFT' as const) : ('RIGHT' as const),
-        author: raw.user?.login ?? 'unknown',
-        body: raw.body ?? '',
-      };
-    });
+    .map((line) => toRemote(JSON.parse(line) as RawComment));
+}
+
+/**
+ * Answer a thread on the pull request, now, as the signed-in reviewer.
+ *
+ * GitHub only takes replies to a thread's first comment, so `rootId` is that one. The body
+ * goes on stdin as JSON for the same reason a review does: it is arbitrary text.
+ */
+export async function reply(repo: Repo, pr: PullRequest, rootId: number, body: string): Promise<RemoteComment> {
+  const result = await gh(
+    ['api', '--method', 'POST', `repos/${pr.nameWithOwner}/pulls/${pr.number}/comments/${rootId}/replies`, '--input', '-'],
+    { cwd: repo.root, stdin: JSON.stringify({ body }), timeoutMs: 60_000 },
+  );
+  if (result.code !== 0) {
+    throw new Error((result.stderr || result.stdout).trim().split('\n').slice(0, 3).join(' ') || 'gh failed');
+  }
+  return toRemote(JSON.parse(result.stdout) as RawComment);
+}
+
+type RawComment = {
+  id?: number;
+  in_reply_to_id?: number;
+  pull_request_review_id?: number | null;
+  path?: string;
+  line?: number | null;
+  commit_id?: string;
+  original_line?: number | null;
+  original_commit_id?: string;
+  side?: string;
+  user?: { login?: string } | null;
+  body?: string;
+};
+
+function toRemote(raw: RawComment): RemoteComment {
+  return {
+    id: Number(raw.id),
+    replyTo: raw.in_reply_to_id ?? null,
+    reviewId: raw.pull_request_review_id ?? null,
+    path: raw.path ?? '',
+    line: raw.line ?? null,
+    commit: raw.commit_id ?? '',
+    originalLine: raw.original_line ?? null,
+    originalCommit: raw.original_commit_id ?? '',
+    side: raw.side === 'LEFT' ? 'LEFT' : 'RIGHT',
+    author: raw.user?.login ?? 'unknown',
+    body: raw.body ?? '',
+  };
 }
 
 /**
@@ -115,7 +137,7 @@ export function placeRemote(
     const hunk = file ? hunkAt(file.hunks, side, line) : null;
     if (!hunk || hunk.kind !== 'text') continue;
 
-    placed.push({ hunkId: hunk.id, offset: commentOffset(hunk, side, line), side, comments: thread });
+    placed.push({ rootId: first.replyTo ?? first.id, hunkId: hunk.id, offset: commentOffset(hunk, side, line), side, comments: thread });
   }
   return placed;
 }

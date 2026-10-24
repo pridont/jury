@@ -215,6 +215,16 @@
         "category": "Jury"
       },
       {
+        "command": "jury.replyOnGitHub",
+        "title": "Reply on GitHub",
+        "category": "Jury"
+      },
+      {
+        "command": "jury.suggestChange",
+        "title": "Suggest a Change to This Line",
+        "category": "Jury"
+      },
+      {
         "command": "jury.editComment",
         "title": "Edit",
         "category": "Jury",
@@ -510,6 +520,14 @@
           "when": "false"
         },
         {
+          "command": "jury.replyOnGitHub",
+          "when": "false"
+        },
+        {
+          "command": "jury.suggestChange",
+          "when": "jury.active"
+        },
+        {
           "command": "jury.editComment",
           "when": "false"
         },
@@ -582,7 +600,19 @@
         {
           "command": "jury.createComment",
           "group": "inline@1",
-          "when": "commentController == jury"
+          "when": "commentController == jury && commentThread != remote"
+        },
+        {
+          "command": "jury.replyOnGitHub",
+          "group": "inline@1",
+          "when": "commentController == jury && commentThread == remote"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "jury.suggestChange",
+          "group": "jury@1",
+          "when": "jury.active && isInDiffRightEditor"
         }
       ],
       "comments/commentThread/title": [

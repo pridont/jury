@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import type { Session } from '../../src/session.js';
 import { configure, dialogs, documentText, fake, gh, jury, pick, repo, review, waitFor } from './harness.js';
 
 const BASE = {
@@ -80,7 +81,7 @@ async function pullRequest(options: { viewed?: string[]; comments?: Remote[] } =
   );
   gh.reply('FileAsViewed', '{}');
   gh.reply(
-    `pulls/${PR}/comments`,
+    `pulls/${PR}/comments --jq`,
     (options.comments ?? [])
       .map((c) => JSON.stringify({ ...c, commit_id: head, original_line: c.line, original_commit_id: head, side: 'RIGHT' }) + '\n')
       .join(''),
@@ -99,20 +100,25 @@ async function openPullRequest() {
   );
 }
 
-/** Leave a note on the new side of `file`, which in a pull request review is git's copy. */
-async function note(file: string, line: number, text: string) {
+/** Open `file`'s hunk and return one side's editor; in a pull request review both are git's copies. */
+async function side(file: string, which: 'old' | 'new' = 'new'): Promise<vscode.TextEditor> {
   const api = await jury();
   const entry = api.nav.entries.find((e) => e.file.path === file)!;
   await api.nav.goToHunk(entry.hunk.id);
-  const uri = await waitFor(
+  const rev = which === 'new' ? api.host.active?.head : api.host.active?.base;
+  return waitFor(
     () =>
-      vscode.window.visibleTextEditors
-        .map((e) => e.document.uri)
-        .find((u) => u.scheme === 'jury' && u.path === `/${file}` && new URLSearchParams(u.query).get('rev') === api.host.active?.head),
-    `the new side of ${file}`,
+      vscode.window.visibleTextEditors.find(
+        (e) => e.document.uri.scheme === 'jury' && e.document.uri.path === `/${file}` && new URLSearchParams(e.document.uri.query).get('rev') === rev,
+      ),
+    `the ${which} side of ${file}`,
   );
+}
+
+/** Leave a note on the new side of `file`. */
+async function note(file: string, line: number, text: string) {
   const thread = {
-    uri,
+    uri: (await side(file)).document.uri,
     range: new vscode.Range(line - 1, 0, line - 1, 0),
     comments: [] as readonly vscode.Comment[],
     collapsibleState: vscode.CommentThreadCollapsibleState.Collapsed,
@@ -123,6 +129,27 @@ async function note(file: string, line: number, text: string) {
 }
 
 const posted = () => gh.calls().filter((call) => call.line.startsWith(`api --method POST repos/acme/widgets/pulls/${PR}/reviews`));
+const replied = () => gh.calls().filter((call) => call.line.includes(`pulls/${PR}/comments/1/replies`));
+
+const THREAD: Remote[] = [
+  { id: 1, path: 'src/token.ts', line: 2, user: { login: 'octo' }, body: 'Should this be inclusive?' },
+  { id: 2, in_reply_to_id: 1, path: 'src/token.ts', line: 2, user: { login: 'hubot' }, body: 'Agreed.' },
+];
+
+/** Other reviewers' threads on screen, each with the GitHub comment a reply to it answers. */
+async function remoteThreads(): Promise<Map<vscode.CommentThread, number>> {
+  const { comments } = await jury();
+  return (comments as unknown as { remote: Map<vscode.CommentThread, number> }).remote;
+}
+
+/** Open the pull request with `THREAD` on it, and return that thread once it is on screen. */
+async function openWithThread(): Promise<{ session: Session; thread: vscode.CommentThread; head: string }> {
+  const head = await pullRequest({ comments: THREAD });
+  const session = await openPullRequest();
+  const [thread, root] = await waitFor(async () => [...(await remoteThreads())][0], "the other reviewers' thread");
+  assert.equal(root, 1);
+  return { session, thread, head };
+}
 
 suite('pull request review', () => {
   let undo: (() => Promise<void>) | undefined;
@@ -293,6 +320,103 @@ suite('pull request review', () => {
 
     await waitFor(() => documentText(`Review of #${PR}.md`).startsWith('Approve acme/widgets#7'), 'the preview');
     assert.equal(posted().length, 0);
+  });
+
+  test("a reply to another reviewer's thread is confirmed, sent to its first comment, and shown in it", async () => {
+    const { session, thread, head } = await openWithThread();
+    assert.equal(thread.contextValue, 'remote', 'the reply box offers Reply on GitHub, not Add Note');
+    gh.reply(
+      `--method POST repos/acme/widgets/pulls/${PR}/comments/1/replies`,
+      JSON.stringify({
+        id: 3,
+        in_reply_to_id: 1,
+        path: 'src/token.ts',
+        line: 2,
+        commit_id: head,
+        original_line: 2,
+        original_commit_id: head,
+        side: 'RIGHT',
+        user: { login: 'me' },
+        body: 'Yes: a token expires at its time.',
+      }),
+    );
+
+    dialogs.answer(/^Reply on acme\/widgets#7\?$/, 'Reply');
+    await vscode.commands.executeCommand('jury.replyOnGitHub', { thread, text: 'Yes: a token expires at its time.' });
+
+    assert.match(dialogs.said.find((s) => s.message === 'Reply on acme/widgets#7?')?.detail ?? '', /Yes: a token expires at its time\./);
+    assert.equal(replied().length, 1);
+    assert.deepEqual(JSON.parse(replied()[0]!.stdin), { body: 'Yes: a token expires at its time.' });
+
+    const [shown] = [...(await remoteThreads())].find(([, root]) => root === 1)!;
+    assert.deepEqual(
+      shown.comments.map((c) => [c.author.name, typeof c.body === 'string' ? c.body : c.body.value]),
+      [
+        ['octo', 'Should this be inclusive?'],
+        ['hubot', 'Agreed.'],
+        ['me', 'Yes: a token expires at its time.'],
+      ],
+    );
+    assert.equal(shown.collapsibleState, vscode.CommentThreadCollapsibleState.Expanded, 'the thread replied to stays open');
+    assert.equal(session.comments.length, 0, 'a reply is not a note to export or post again');
+  });
+
+  test('declining to send a reply sends nothing', async () => {
+    const { thread } = await openWithThread();
+
+    await vscode.commands.executeCommand('jury.replyOnGitHub', { thread, text: 'Never mind.' });
+
+    assert.ok(dialogs.said.some((s) => s.message === 'Reply on acme/widgets#7?'));
+    assert.equal(replied().length, 0);
+  });
+
+  test('a reply GitHub refuses is reported, not shown, and can be copied', async () => {
+    const { session, thread } = await openWithThread();
+    gh.reply(`comments/1/replies`, 'HTTP 422: Validation Failed', 1);
+
+    dialogs.answer(/^Reply on/, 'Reply');
+    dialogs.answer(/^Jury: the reply was not posted/, 'Copy Reply');
+    await vscode.commands.executeCommand('jury.replyOnGitHub', { thread, text: 'Yes: a token expires at its time.' });
+
+    assert.deepEqual(dialogs.messages('error'), ['Jury: the reply was not posted — HTTP 422: Validation Failed']);
+    assert.equal(session.remoteComments.length, 2);
+    assert.equal(await vscode.env.clipboard.readText(), 'Yes: a token expires at its time.');
+  });
+
+  test('a suggested change starts from the diff’s line and is submitted as a GitHub suggestion', async () => {
+    const head = await pullRequest();
+    gh.reply(`--method POST repos/acme/widgets/pulls/${PR}/reviews`, JSON.stringify({ id: 557, html_url: 'https://example.invalid' }));
+    const session = await openPullRequest();
+    const editor = await side('src/token.ts');
+    await vscode.window.showTextDocument(editor.document, { selection: new vscode.Range(1, 4, 1, 4) });
+
+    await vscode.commands.executeCommand('jury.suggestChange');
+
+    const [suggested] = session.comments;
+    assert.equal(suggested?.body, '```suggestion\n  return at <= now;\n```');
+    suggested!.body = suggested!.body.replace('<=', '<');
+
+    dialogs.choose(/^Comment$/);
+    dialogs.type('');
+    dialogs.answer(/^Send this review/, 'Send');
+    await vscode.commands.executeCommand('jury.submitReview');
+
+    assert.deepEqual(JSON.parse(posted()[0]!.stdin).comments, [
+      { path: 'src/token.ts', line: 2, side: 'RIGHT', body: '```suggestion\n  return at < now;\n```' },
+    ]);
+    assert.equal(JSON.parse(posted()[0]!.stdin).commit_id, head);
+  });
+
+  test('a suggested change on the old side is refused, and starts no note', async () => {
+    await pullRequest();
+    const session = await openPullRequest();
+    const editor = await side('src/token.ts', 'old');
+    await vscode.window.showTextDocument(editor.document, { selection: new vscode.Range(1, 0, 1, 0) });
+
+    await vscode.commands.executeCommand('jury.suggestChange');
+
+    assert.deepEqual(dialogs.messages('warning'), ['Jury: put the cursor on a changed line in the new version of a file.']);
+    assert.equal(session.comments.length, 0);
   });
 
   test('submitting with no pull request open says so', async () => {
