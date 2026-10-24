@@ -13,7 +13,7 @@ import { openMultiDiff } from './ui/diff.js';
 import { Navigator } from './ui/nav.js';
 import { Comments } from './ui/comments.js';
 import { reconcileComments } from './model/comments.js';
-import { toMarkdown } from './export.js';
+import { toDescription, toMarkdown } from './export.js';
 import * as providers from './agent/provider.js';
 import type { PassDeps, Provider } from './agent/provider.js';
 import { ClaudeProvider } from './agent/providers/claude.js';
@@ -22,7 +22,7 @@ import { Cache } from './agent/cache.js';
 import { Queue } from './agent/queue.js';
 import { isWorthSummarising, summariseFiles } from './agent/summaries.js';
 import { clusterChange } from './agent/cluster.js';
-import { showWalkthrough } from './ui/walkthrough.js';
+import { render as renderWalkthrough, showWalkthrough } from './ui/walkthrough.js';
 import { Activity } from './ui/activity.js';
 import { forgetSessions, registerChat } from './ui/chat.js';
 import { Documents, DOC_SCHEME, offerToSave } from './ui/documents.js';
@@ -37,7 +37,7 @@ import { legacyReviewId, load as loadStored, list as listStored, remove as remov
 import { describeRefresh, reconcileMarks } from './state/reconcile.js';
 import { migrateLegacyState } from './state/migrate.js';
 import { describeSpec } from './model/types.js';
-import { fetchHead, fullyMarked, listOpen, resolve, setViewed, viewedFiles, type PullRequest } from './github/pr.js';
+import { describe, fetchHead, fullyMarked, listOpen, resolve, setViewed, viewedFiles, type PullRequest } from './github/pr.js';
 import { defaultBranch, describeCommit, listRefs, recentCommits, type Ref } from './git/refs.js';
 import { pickOrType } from './ui/pick.js';
 import { reply as replyTo, reviewComments } from './github/comments.js';
@@ -189,6 +189,7 @@ export function activate(context: vscode.ExtensionContext): Api {
       if (node?.type === 'orphan') comments.discard(node.comment);
     }),
     vscode.commands.registerCommand('jury.export', () => exportReview(host, documents)),
+    vscode.commands.registerCommand('jury.describeBranch', () => describeBranch(host, documents)),
     // `isPartialQuery` is the difference between opening the chat with the participant
     // already typed and sending an empty question the moment the key is pressed.
     vscode.commands.registerCommand('jury.ask', () =>
@@ -1112,6 +1113,57 @@ async function exportReview(host: SessionHost, documents: Documents): Promise<vo
 
   await documents.show('Review.md', markdown, { preview: false });
   await offerToSave(markdown, 'review.md');
+}
+
+/**
+ * Author mode: the walkthrough and reading order as the pull request's description, or as a
+ * comment on it, so reviewers on github.com read the change in the order it makes sense.
+ * GitHub draws mermaid, so the diagram goes in whatever this VS Code can draw.
+ */
+async function describeBranch(host: SessionHost, documents: Documents): Promise<void> {
+  const session = host.active;
+  if (!session) return;
+
+  const markdown = toDescription(renderWalkthrough(session, true), session.cohorts);
+  await documents.show('Description.md', markdown, { preview: false });
+
+  const pr = session.pr ?? (await resolve(session.repo).catch(() => null));
+  if (!pr) {
+    await offerToSave(markdown, 'description.md', 'Jury: no pull request for this branch, so nothing to describe on GitHub.');
+    return;
+  }
+
+  const choice = await vscode.window.showInformationMessage(
+    `Jury: describe #${pr.number} with this?`,
+    'Set as Description',
+    'Post as Comment',
+    'Copy',
+  );
+  if (choice === 'Copy') return vscode.env.clipboard.writeText(markdown);
+  if (!choice) return;
+
+  const as = choice === 'Set as Description' ? 'description' : 'comment';
+  if (as === 'description') {
+    const confirmed = await vscode.window.showWarningMessage(
+      `Replace the description of ${pr.nameWithOwner}#${pr.number}?`,
+      { modal: true, detail: 'What it says now is overwritten. GitHub keeps the old text in its edit history.' },
+      'Replace',
+    );
+    if (confirmed !== 'Replace') return;
+  }
+
+  try {
+    await describe(session.repo, pr, markdown, as);
+    const open = await vscode.window.showInformationMessage(
+      as === 'description' ? 'Jury: description set.' : 'Jury: comment posted.',
+      'Open on GitHub',
+    );
+    if (open === 'Open on GitHub') await vscode.env.openExternal(vscode.Uri.parse(pr.url));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.appendLine(`  describing #${pr.number} failed: ${message}`);
+    vscode.window.showErrorMessage(`Jury: #${pr.number} was not updated — ${message}`);
+  }
 }
 
 /**

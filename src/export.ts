@@ -103,6 +103,24 @@ export function toMarkdown(input: ExportInput): string {
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
+/**
+ * The walkthrough, as a pull request description an author can post.
+ *
+ * Reviewers on github.com get the same reading order, plus the files each step touches:
+ * the stack tree is not there to find them by, and GitHub lists files sorted by path.
+ */
+export function toDescription(walkthrough: string, cohorts: readonly Cohort[]): string {
+  const lines = [walkthrough.trimEnd(), '', '## Files, step by step', ''];
+  cohorts
+    .filter((cohort) => cohort.kind !== 'scaffolding')
+    .forEach((cohort, index) => {
+      lines.push(`${index + 1}. **${cohort.title}**`);
+      for (const path of new Set(cohort.layers.flatMap((layer) => layer.paths))) lines.push(`   - \`${path}\``);
+    });
+  lines.push('');
+  return lines.join('\n');
+}
+
 function short(rev: string): string {
   return /^[0-9a-f]{40}$/.test(rev) ? rev.slice(0, 12) : rev;
 }

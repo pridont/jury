@@ -258,3 +258,14 @@ export async function setViewed(
   });
   if (result.code !== 0) throw new Error((result.stderr || result.stdout).trim().split('\n')[0] || 'gh failed');
 }
+
+/** Replace the pull request's description, or add a comment to it. The text goes over stdin. */
+export async function describe(repo: Repo, pr: PullRequest, body: string, as: 'description' | 'comment'): Promise<void> {
+  const verb = as === 'description' ? 'edit' : 'comment';
+  const result = await gh(['pr', verb, String(pr.number), '--body-file', '-'], {
+    cwd: repo.root,
+    stdin: body,
+    timeoutMs: 30_000,
+  });
+  if (result.code !== 0) throw new Error((result.stderr || result.stdout).trim().split('\n')[0] || 'gh failed');
+}
