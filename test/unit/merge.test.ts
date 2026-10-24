@@ -98,6 +98,20 @@ describe('merge', () => {
     });
   });
 
+  it('accepts one cohort read in steps, which is one piece of work in order', () => {
+    const steps = {
+      ...cohort('Everything', []),
+      layers: [
+        { id: 'l1', title: 'Add the clock', summary: '', hunks: ['h1', 'h2'] },
+        { id: 'l2', title: 'Use it', summary: '', hunks: ['h3', 'h4'] },
+      ],
+    };
+    expect(merge({ cohorts: [steps], notes: ['Described but not in the diff: rate limiting.'] }, four)).toMatchObject({
+      ok: true,
+      merged: { notes: ['Described but not in the diff: rate limiting.'] },
+    });
+  });
+
   it('declines one cohort per file, which is the grouping the reviewer already had', () => {
     const six = labels(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']);
     const output = { cohorts: [...six.keys()].map((label) => cohort(label, [label])) };

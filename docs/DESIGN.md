@@ -67,8 +67,10 @@ Jury cleans it up:
 - hunks the model left out go into an **Unclassified** cohort at the end
 - documentation and generated cohorts are moved to the end
 
-The answer is rejected, and the file-based grouping kept, if everything is in one cohort, if
-there is one cohort per file, or if most hunks were left out. Rejected answers are not cached.
+The answer is rejected, and the file-based grouping kept, if everything is in one cohort of
+one layer, if there is one cohort per file, or if most hunks were left out. Rejected answers
+are not cached. One cohort split into layers is accepted: that is a change which really is
+one piece of work, with an order to read it in.
 
 In the text sent to the model, hunks are labelled `h1`, `h2` and so on. Short labels are
 cheap to repeat back, and a made-up one is easy to spot. If a label shows up in a title or
