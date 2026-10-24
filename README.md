@@ -19,6 +19,7 @@ read. A language model does the grouping. You do the reviewing.
 - Review GitHub pull requests without checking them out, post your notes back as review
   comments, suggest changes the author can apply in one click, and reply to other reviewers.
 - Ask questions about the code you are looking at.
+- See how much code outside the change uses each function the change touches.
 - Lockfiles and generated files are moved out of the way.
 - Works without a model too, grouped by file.
 
@@ -104,6 +105,16 @@ After the author pushes again, run **Jury: Refresh Review**. Hunks that are unch
 their mark, even if they moved. Hunks whose content changed lose their mark, so you review
 them again. Rows with new or changed hunks say **changed**, and **Next / Previous Changed
 Hunk** steps through just those, until you open a different review.
+
+### Uses outside the change
+
+Above each function, method or class the change touches, a line says how many places use it
+that are not part of the change, for example **3 uses outside this change · 2 files**. Click
+it to see them. These are the callers the diff does not show you.
+
+The count comes from the language server for that file, so it needs one (TypeScript works out
+of the box). It reads the files in your working tree: for a pull request or branch you have
+not checked out, it counts the callers in the code you have checked out.
 
 ### Notes
 

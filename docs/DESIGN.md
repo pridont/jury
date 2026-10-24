@@ -100,6 +100,20 @@ Each file shows why it was moved and can be brought back with **Not Scaffolding*
 remembers that choice for the repository. The rules lean towards leaving a file in the
 review, because hiding real code is worse than showing a generated file.
 
+## Uses outside the change
+
+A code lens on the new side of each file counts the uses of every symbol the change touches,
+leaving out the uses that are inside the change. A symbol is touched when an added line is
+inside it, or a removal sits between two of its lines. Only top-level symbols and members of
+classes, interfaces, enums and namespaces count: a local variable has no callers worth
+counting.
+
+Language servers only work on files on disk, so, as with go to definition, the lines of a
+blob are paired with the file in the working tree and the question is asked there. A use in
+a file of the change is paired back to the new side: inside a hunk, or on a line the new side
+does not have, it is part of the change. Counting happens only when a lens is shown, so a
+large diff costs nothing until you look at it.
+
 ## Providers
 
 Model access sits behind one interface with two implementations: `claude` and `vscode-lm`.
