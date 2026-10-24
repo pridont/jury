@@ -138,7 +138,9 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const files = new Set(node.cohort.layers.flatMap((layer) => layer.paths)).size;
         const where = onlyPath ?? `${files} file${files === 1 ? '' : 's'}`;
         // A cohort of one layer stands in for that layer, so it says what the layer row would.
+        const notes = only ? notesOn(session, only.hunkIds) : 0;
         item.description = [
+          notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
           only ? changedNote(session, only.hunkIds) : '',
           this.progressNote(session, node.cohort.layers.flatMap((layer) => layer.hunkIds)),
           onlyPath ? statusNote(session, onlyPath) : '',
@@ -430,13 +432,20 @@ function changedNote(session: Session | null, hunkIds: readonly string[]): strin
 }
 
 /**
- * The word that says this row is a file the change removes.
+ * The words that say this row is a file the change removes, or generator output being read
+ * in place (`jury.scaffolding.mode: inline`).
  *
  * Nothing else in the row would: a deletion carries the same file icon and the same hunk
  * count as an edit, and its title in the tree is the name of a file that is no longer there.
  */
 function statusNote(session: { files: FileChange[] } | null, path: string): string {
-  return session?.files.find((file) => file.path === path)?.status === 'deleted' ? 'deleted' : '';
+  const file = session?.files.find((candidate) => candidate.path === path);
+  return [
+    file?.status === 'deleted' ? 'deleted' : '',
+    file?.hunks.some((hunk) => hunk.generated) ? 'generated' : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function directory(file: string): string {

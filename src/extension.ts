@@ -576,13 +576,22 @@ function cacheFor(repo: Repo): Cache {
  * view that rearranges itself under the reader is worse than one that never improves. The
  * hunk being read stays selected across the change.
  */
-/** Returns why the stack was not replaced, or null when it was (or already had been). */
-async function cluster(session: Session, ctx: Context, deps: PassDeps, live: () => boolean): Promise<string | null> {
+/**
+ * Returns why the stack was not replaced, or null when it was (or already had been). With
+ * `fresh`, the model is asked again rather than answered from the cache.
+ */
+async function cluster(
+  session: Session,
+  ctx: Context,
+  deps: PassDeps,
+  live: () => boolean,
+  fresh = false,
+): Promise<string | null> {
   if (session.clustered) return null;
 
   ctx.activity.start('Grouping the change', 0, 'deliberating');
   const reading = ctx.nav.current?.hunk.id;
-  const result = await clusterChange(deps, session.files, session.summaries);
+  const result = await clusterChange(deps, session.files, session.summaries, fresh);
   // Grouped from files that are no longer on screen, or for a review that is gone.
   if (!live()) return 'cancelled';
 
@@ -631,7 +640,7 @@ async function recluster(host: SessionHost, ctx: Context): Promise<void> {
   const live = session.live();
   session.clustered = false;
   try {
-    const failed = await cluster(session, ctx, passDeps(session, ctx, provider), live);
+    const failed = await cluster(session, ctx, passDeps(session, ctx, provider), live, true);
     if (failed && failed !== 'cancelled') {
       const choice = await vscode.window.showWarningMessage(
         `Jury: could not reorganise the stack — ${failed}`,

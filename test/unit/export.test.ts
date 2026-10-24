@@ -95,7 +95,7 @@ describe('toMarkdown', () => {
     const out = render(files, [], new Set([files[0]!.hunks[0]!.id]));
 
     expect(out).toContain('1 hunks · 1 reviewed');
-    expect(out).toContain('1 generated files were not reviewed');
+    expect(out).toContain('1 generated file was not reviewed');
     expect(out).not.toContain('## 2. yarn.lock');
   });
 

@@ -96,7 +96,8 @@ export function toMarkdown(input: ExportInput): string {
 
   const scaffolding = input.cohorts.find((cohort) => cohort.kind === 'scaffolding');
   if (scaffolding) {
-    lines.push(`_${scaffolding.layers.length} generated files were not reviewed: ${scaffolding.summary}_`);
+    const files = scaffolding.layers.length;
+    lines.push(`_${files} generated ${files === 1 ? 'file was' : 'files were'} not reviewed: ${scaffolding.summary}_`);
     lines.push('');
   }
 

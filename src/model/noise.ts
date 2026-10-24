@@ -309,13 +309,17 @@ export function classifyAll(files: FileChange[], inputs: Map<string, ClassifyInp
   return verdicts;
 }
 
-/** Apply verdicts to the hunks, which is where the rest of the review reads them. */
-export function applyVerdicts(files: FileChange[], verdicts: Map<string, Verdict>): void {
+/**
+ * Apply verdicts to the hunks, which is where the rest of the review reads them. With
+ * `inline`, a verdict marks the hunk generated and leaves it in the reading order.
+ */
+export function applyVerdicts(files: FileChange[], verdicts: Map<string, Verdict>, inline = false): void {
   for (const file of files) {
     const verdict = verdicts.get(file.path);
     for (const hunk of file.hunks) {
-      if (verdict?.scaffolding) hunk.scaffolding = { reason: verdict.reason };
-      else delete hunk.scaffolding;
+      delete hunk.scaffolding;
+      delete hunk.generated;
+      if (verdict?.scaffolding) hunk[inline ? 'generated' : 'scaffolding'] = { reason: verdict.reason };
     }
   }
 }
