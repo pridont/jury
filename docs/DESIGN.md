@@ -27,6 +27,23 @@ git diff → parse → detect generated files → group by file → shown in the
 The file-based grouping appears first and is usable straight away. The model passes run in
 the background. File summaries are skipped for changes over 60 files.
 
+## Trails
+
+A trail is a review of code nobody changed. Its spec holds the question and the model's
+answer, the steps and their line ranges, so a saved trail reopens without asking again and
+two different answers are two different reviews.
+
+Each range is read from the working tree and becomes a hunk with only unchanged lines in
+it, in a file with the status `unchanged`. Everything that works on hunks works on it:
+stepping, marks, notes, progress, export. The file opens on its own rather than as a
+diff, and lines outside the trail's ranges are dimmed, as unchanged code is in a review.
+The id hashes the lines the range covers, so editing them clears the mark.
+
+The model's line numbers are a claim and the file is the fact: a range past the end of a
+file is cut to it, and a range in a file that is not there, or outside the repository, is
+dropped. A trail with nothing left is an error, not an empty review. Trails are not
+classified and not grouped; the model's order is the reading order.
+
 ## Hunk identity
 
 A hunk's id is a hash of its file path and its added and removed lines. Context lines and the

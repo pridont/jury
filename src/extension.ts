@@ -16,7 +16,8 @@ import { Comments } from './ui/comments.js';
 import { reconcileComments } from './model/comments.js';
 import { toDescription, toMarkdown } from './export.js';
 import * as providers from './agent/provider.js';
-import type { PassDeps, Provider } from './agent/provider.js';
+import { ProviderError, type PassDeps, type Provider } from './agent/provider.js';
+import { askTrail } from './agent/trail.js';
 import { ClaudeProvider } from './agent/providers/claude.js';
 import { VscodeLmProvider } from './agent/providers/vscodeLm.js';
 import { Cache } from './agent/cache.js';
@@ -145,6 +146,7 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.commands.registerCommand('jury.reviewBase', () => reviewBase(host, ctx())),
     vscode.commands.registerCommand('jury.reviewCommit', () => reviewCommit(host, ctx())),
     vscode.commands.registerCommand('jury.reviewPr', () => reviewPr(host, ctx())),
+    vscode.commands.registerCommand('jury.trail', (question?: string) => walkThrough(host, ctx(), question)),
     vscode.commands.registerCommand('jury.submitReview', () => submitReview(host, documents)),
     vscode.commands.registerCommand('jury.refresh', () => refresh(host, ctx())),
     vscode.commands.registerCommand('jury.close', () => {
@@ -508,8 +510,17 @@ async function load(session: Session, ctx: Context): Promise<boolean> {
     session.files = acquired.files;
     session.error = null;
 
-    await classify(session);
-    session.cohorts = heuristicCohorts(session.files);
+    if (acquired.cohorts) {
+      // A trail arrives in its order, with its account of itself; there is nothing to
+      // classify, and nothing for the model to group.
+      if (acquired.cohorts.length === 0) throw new Error('none of the code this trail points at is in the working tree');
+      session.cohorts = acquired.cohorts;
+      session.overview = session.spec.kind === 'trail' ? session.spec.summary : '';
+      session.clustered = true;
+    } else {
+      await classify(session);
+      session.cohorts = heuristicCohorts(session.files);
+    }
 
     const scaffolding = session.files.filter((f) => f.hunks.some((h) => h.scaffolding)).length;
     log.appendLine(
@@ -539,7 +550,7 @@ async function load(session: Session, ctx: Context): Promise<boolean> {
   if (!live()) return false;
   ctx.tree.refresh();
 
-  void organise(session, ctx, live);
+  if (!session.clustered) void organise(session, ctx, live);
   return true;
 }
 
@@ -998,7 +1009,7 @@ function workspaceCwd(): string | undefined {
  * language server is already attached to it.
  */
 function uriForFile(session: Session, file: FileChange): vscode.Uri | null {
-  if (session.spec.kind !== 'worktree') return null;
+  if (session.spec.kind !== 'worktree' && file.status !== 'unchanged') return null;
   if (file.status === 'deleted' || file.binary) return null;
   return vscode.Uri.file(path.join(session.repo.root, file.path));
 }
@@ -1067,6 +1078,61 @@ async function reviewCommit(host: SessionHost, ctx: Context): Promise<void> {
     ? ({ kind: 'commit', sha: commit.sha, subject: commit.subject } as const)
     : ({ kind: 'commit', sha: commit.sha } as const);
   await open(host, spec, ctx);
+}
+
+/**
+ * Answer a question about the repository as a trail: code to read, in order, opened as a
+ * review of its own so it is stepped through, marked and noted like any other.
+ */
+async function walkThrough(host: SessionHost, ctx: Context, question?: string): Promise<void> {
+  const repo = await resolveRepo();
+  if (!repo) return;
+
+  const asked =
+    question ??
+    (await vscode.window.showInputBox({
+      title: 'Jury: Walk Me Through…',
+      prompt: 'A question about this repository. The answer is the code to read, in order.',
+      placeHolder: 'How does a review get saved?',
+    }));
+  if (!asked?.trim()) return;
+
+  const provider = await providerFor('ask', true);
+  if (!provider) return;
+  if (!provider.capabilities().repoTools) {
+    vscode.window.showWarningMessage(`Jury: ${provider.id} cannot read the repository, so it cannot lay out a trail.`);
+    return;
+  }
+
+  log.appendLine(`[${new Date().toISOString()}] trail: ${asked}`);
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Jury: finding the code to read', cancellable: true },
+    async (progress, token) => {
+      const controller = new AbortController();
+      token.onCancellationRequested(() => controller.abort());
+      try {
+        return await askTrail(provider, repo.root, asked, controller.signal, (label) => progress.report({ message: label }));
+      } catch (error) {
+        if (error instanceof ProviderError && error.kind === 'cancelled') return null;
+        return { ok: false as const, reason: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  );
+  if (!result) return;
+  if (!result.ok) {
+    log.appendLine(`  trail failed: ${result.reason}`);
+    vscode.window.showErrorMessage(`Jury: no trail for that question — ${result.reason}.`);
+    return;
+  }
+
+  log.appendLine(`  trail: ${result.trail.steps.length} steps, $${result.usage.costUsd.toFixed(4)}`);
+  await open(host, { kind: 'trail', question: asked.trim(), ...result.trail }, ctx, repo);
+
+  // The answer to the question is the trail's summary: show it, as grouping shows its own.
+  const session = host.active;
+  if (session?.spec.kind === 'trail' && !session.error && vscode.workspace.getConfiguration('jury').get('walkthrough.autoOpen', true)) {
+    await showWalkthrough(session, ctx.documents);
+  }
 }
 
 async function pickCommit(repo: Repo): Promise<string | undefined> {

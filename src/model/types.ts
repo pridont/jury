@@ -6,7 +6,19 @@ export type ReviewSpec =
   /** `base` and `head` are resolved commits: a pull request review compares exact objects. */
   | { kind: 'pr'; number: number; base: string; head: string; title?: string }
   /** One commit, read against its first parent. `sha` is full; `subject` is for the label. */
-  | { kind: 'commit'; sha: string; subject?: string };
+  | { kind: 'commit'; sha: string; subject?: string }
+  /**
+   * Code nobody changed, read in an order that answers `question`. The steps are the
+   * model's answer, kept in the spec so a saved trail reopens without asking again.
+   */
+  | { kind: 'trail'; question: string; summary: string; steps: TrailStep[] };
+
+/** One stop on a trail: what to read, and why. Lines are 1-based and inclusive. */
+export type TrailStep = {
+  title: string;
+  summary: string;
+  spans: { path: string; start: number; end: number }[];
+};
 
 export function describeSpec(spec: ReviewSpec): string {
   switch (spec.kind) {
@@ -22,6 +34,8 @@ export function describeSpec(spec: ReviewSpec): string {
       const short = spec.sha.slice(0, 8);
       return spec.subject ? `${short} — ${spec.subject}` : `commit ${short}`;
     }
+    case 'trail':
+      return spec.question;
   }
 }
 

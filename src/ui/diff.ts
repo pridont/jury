@@ -18,6 +18,12 @@ export function sidesFor(session: Session, file: FileChange): Sides {
   const root = session.repo.root;
   const oldPath = file.oldPath ?? file.path;
 
+  // A file on a trail has one version, the one on disk: both sides are it.
+  if (file.status === 'unchanged') {
+    const disk = vscode.Uri.file(path.join(root, file.path));
+    return { before: disk, after: disk };
+  }
+
   const before = file.status === 'added' ? emptyUri(root, file.path) : blobUri(root, oldPath, session.base);
 
   if (file.status === 'deleted') {
@@ -62,6 +68,7 @@ export function diffTitle(file: FileChange): string {
  *
  * An added file opens on its own. Two panes, one of them blank, with every line painted as
  * an addition say nothing that one pane does not: reading a new file is just reading a file.
+ * A file on a trail has nothing to compare at all, and opens the same way.
  *
  * A deletion is not the same case. Its old content on its own is indistinguishable from the
  * file still being there — same name in the tab, same code in the pane — so it opens as a
@@ -70,7 +77,7 @@ export function diffTitle(file: FileChange): string {
 export async function openFileDiff(session: Session, file: FileChange): Promise<vscode.TextEditor | undefined> {
   const { before, after } = sidesFor(session, file);
 
-  if (file.status === 'added') {
+  if (file.status === 'added' || file.status === 'unchanged') {
     const document = await vscode.workspace.openTextDocument(after);
     return vscode.window.showTextDocument(document, { preview: true, preserveFocus: false });
   }

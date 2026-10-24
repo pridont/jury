@@ -1,7 +1,8 @@
 import type { Hunk, HunkKind } from '../model/types.js';
 import { disambiguate, hunkBody, hunkId } from './identity.js';
 
-export type FileStatus = 'added' | 'deleted' | 'modified' | 'renamed' | 'copied';
+/** `unchanged` is a file read on a trail: spans of it, and no diff. */
+export type FileStatus = 'added' | 'deleted' | 'modified' | 'renamed' | 'copied' | 'unchanged';
 
 export type FileChange = {
   /** The path after the change; for a deletion, the path that was removed. */
