@@ -28,7 +28,7 @@ export async function enrichSymbols(files: FileChange[], uriFor: (file: FileChan
   );
 }
 
-async function documentSymbols(uri: vscode.Uri): Promise<vscode.DocumentSymbol[] | null> {
+export async function documentSymbols(uri: vscode.Uri): Promise<vscode.DocumentSymbol[] | null> {
   try {
     const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[] | undefined>(
       'vscode.executeDocumentSymbolProvider',

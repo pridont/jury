@@ -21,9 +21,6 @@ type Target = vscode.Location | vscode.LocationLink;
  * already finds declarations within the blob.
  */
 export class BlobDefinitions implements vscode.DefinitionProvider {
-  /** Line pairings per blob, redone when the file on disk changes. */
-  private readonly pairings = new WeakMap<vscode.TextDocument, Pairing>();
-
   constructor(private readonly host: SessionHost) {}
 
   async provideDefinition(
@@ -36,7 +33,7 @@ export class BlobDefinitions implements vscode.DefinitionProvider {
 
     // A line the file on disk does not have (removed, or not written yet) has no position
     // to ask about there.
-    const line = this.pair(document, disk)?.[position.line] ?? -1;
+    const line = pairLines(document, disk)?.[position.line] ?? -1;
     if (line < 0) return undefined;
 
     const found = await vscode.commands.executeCommand<Target[] | undefined>(
@@ -67,18 +64,21 @@ export class BlobDefinitions implements vscode.DefinitionProvider {
       return undefined;
     }
   }
-
-  /** A blob never changes, so its pairing holds until the file on disk does. */
-  private pair(blob: vscode.TextDocument, disk: vscode.TextDocument): Int32Array | null {
-    const cached = this.pairings.get(blob);
-    if (cached?.disk === disk && cached.version === disk.version) return cached.lines;
-    const lines = matchLines(linesOf(blob), linesOf(disk));
-    this.pairings.set(blob, { disk, version: disk.version, lines });
-    return lines;
-  }
 }
 
-type Pairing = { disk: vscode.TextDocument; version: number; lines: Int32Array | null };
+/** Line pairings per document, redone when either side of the pair changes. */
+const pairings = new WeakMap<vscode.TextDocument, Pairing>();
+
+type Pairing = { other: vscode.TextDocument; versions: [number, number]; lines: Int32Array | null };
+
+/** For each line of `a`, the same line in `b` or -1; null when the two are too far apart to pair. */
+export function pairLines(a: vscode.TextDocument, b: vscode.TextDocument): Int32Array | null {
+  const cached = pairings.get(a);
+  if (cached?.other === b && cached.versions[0] === a.version && cached.versions[1] === b.version) return cached.lines;
+  const lines = matchLines(linesOf(a), linesOf(b));
+  pairings.set(a, { other: b, versions: [a.version, b.version], lines });
+  return lines;
+}
 
 function linesOf(document: vscode.TextDocument): string[] {
   return Array.from({ length: document.lineCount }, (_, i) => document.lineAt(i).text);
