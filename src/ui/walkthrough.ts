@@ -33,7 +33,9 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
   const lines: string[] = [
     `# ${describeSpec(session.spec)}`,
     '',
-    `${cohorts.length} change${cohorts.length === 1 ? '' : 's'} · ${hunks} hunk${hunks === 1 ? '' : 's'} · ` +
+    (session.spec.kind === 'trail'
+      ? `${cohorts.length} step${cohorts.length === 1 ? '' : 's'} · ${hunks} span${hunks === 1 ? '' : 's'} · `
+      : `${cohorts.length} change${cohorts.length === 1 ? '' : 's'} · ${hunks} hunk${hunks === 1 ? '' : 's'} · `) +
       `${session.files.length} file${session.files.length === 1 ? '' : 's'}`,
     '',
   ];

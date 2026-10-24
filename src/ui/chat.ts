@@ -23,6 +23,22 @@ export type ChatDeps = {
  */
 export function registerChat(deps: ChatDeps): vscode.Disposable {
   const participant = vscode.chat.createChatParticipant('jury.ask', async (request, context, stream, token) => {
+    // A trail is about the repository, not the review, so it needs none open. It opens in
+    // the Jury view, where it is read; the chat only says where it went.
+    if (request.command === 'trail') {
+      if (!request.prompt.trim()) {
+        stream.markdown('Ask a question about the repository, for example `/trail how does a review get saved?`');
+        return;
+      }
+      stream.progress('Finding the code to read');
+      await vscode.commands.executeCommand('jury.trail', request.prompt);
+      const opened = deps.host.active?.spec;
+      if (opened?.kind === 'trail' && opened.question === request.prompt.trim()) {
+        stream.markdown(`${opened.summary}\n\nThe trail is open in the Jury view: ${opened.steps.length} steps.`);
+      }
+      return;
+    }
+
     const session = deps.host.active;
     if (!session) {
       stream.markdown('No review is open. Run **Jury: Review Working Tree** first.');

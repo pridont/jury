@@ -145,7 +145,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           this.progressNote(session, node.cohort.layers.flatMap((layer) => layer.hunkIds)),
           onlyPath ? statusNote(session, onlyPath) : '',
           where,
-          `${hunks} hunk${hunks === 1 ? '' : 's'}`,
+          count(session, hunks),
         ]
           .filter(Boolean)
           .join(' · ');
@@ -219,7 +219,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           changedNote(session, hunks),
           statusNote(session, node.path),
           directory(node.path),
-          `${hunks.length} hunk${hunks.length === 1 ? '' : 's'}`,
+          count(session, hunks.length),
         ]
           .filter(Boolean)
           .join(' · ');
@@ -267,7 +267,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
           this.progressNote(session, node.layer.hunkIds),
           single ? statusNote(session, single) : '',
           where,
-          `${node.layer.hunkIds.length} hunk${node.layer.hunkIds.length === 1 ? '' : 's'}`,
+          count(session, node.layer.hunkIds.length),
         ]
           .filter(Boolean)
           .join(' · ');
@@ -446,6 +446,12 @@ function statusNote(session: { files: FileChange[] } | null, path: string): stri
   ]
     .filter(Boolean)
     .join(' · ');
+}
+
+/** "3 hunks", or "3 spans" on a trail, where nothing changed and a hunk is a range to read. */
+function count(session: Session | null, n: number): string {
+  const unit = session?.spec.kind === 'trail' ? 'span' : 'hunk';
+  return `${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
 function directory(file: string): string {

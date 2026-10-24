@@ -48,14 +48,14 @@ suite('ask about the change', () => {
     });
   });
 
-  test('@jury offers /step and /cohort', () => {
+  test('@jury offers /step, /cohort and /trail', () => {
     const extension = vscode.extensions.getExtension('pridont.jury')!;
     const participant = extension.packageJSON.contributes.chatParticipants.find(
       (p: { id: string }) => p.id === 'jury.ask',
     );
     assert.deepEqual(
       participant.commands.map((c: { name: string }) => c.name),
-      ['step', 'cohort'],
+      ['step', 'cohort', 'trail'],
     );
   });
 

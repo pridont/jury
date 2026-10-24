@@ -55,7 +55,7 @@
     "viewsWelcome": [
       {
         "view": "jury.stack",
-        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a commit](command:jury.reviewCommit)\n[Review a pull request](command:jury.reviewPr)\n[Resume last review](command:jury.resume)\n[Open a saved review](command:jury.list)\n\nSomething not working? [Run the doctor](command:jury.doctor)\n",
+        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a commit](command:jury.reviewCommit)\n[Review a pull request](command:jury.reviewPr)\n[Walk me through this code](command:jury.trail)\n[Resume last review](command:jury.resume)\n[Open a saved review](command:jury.list)\n\nSomething not working? [Run the doctor](command:jury.doctor)\n",
         "when": "!jury.active"
       }
     ],
@@ -84,6 +84,11 @@
       {
         "command": "jury.reviewPr",
         "title": "Review a Pull Request…",
+        "category": "Jury"
+      },
+      {
+        "command": "jury.trail",
+        "title": "Walk Me Through…",
         "category": "Jury"
       },
       {
@@ -799,6 +804,10 @@
           {
             "name": "cohort",
             "description": "Ask about the whole cohort, every step in it"
+          },
+          {
+            "name": "trail",
+            "description": "Answer with the code to read, in order, opened as a review"
           }
         ]
       }

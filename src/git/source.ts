@@ -3,7 +3,8 @@ import * as path from 'node:path';
 import { run, runOk } from '../util/exec.js';
 import { mergeBase, type Repo } from './repo.js';
 import { parseDiff, type FileChange } from './parse.js';
-import type { ReviewSpec } from '../model/types.js';
+import type { Cohort, ReviewSpec } from '../model/types.js';
+import { buildTrail } from '../model/trail.js';
 
 /** git's hash of the empty tree — the base when a repository has no commits yet. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -16,6 +17,8 @@ export type Acquired = {
   base: string;
   head: string;
   files: FileChange[];
+  /** Set when the order is already known, as it is for a trail. */
+  cohorts?: Cohort[];
 };
 
 const DIFF_ARGS = [
@@ -32,6 +35,16 @@ const DIFF_ARGS = [
 ];
 
 export async function acquire(repo: Repo, spec: ReviewSpec): Promise<Acquired> {
+  if (spec.kind === 'trail') {
+    const files = new Map<string, string[] | null>();
+    for (const step of spec.steps) {
+      for (const span of step.spans) {
+        if (!files.has(span.path)) files.set(span.path, await readLines(repo, span.path));
+      }
+    }
+    return { base: 'worktree', head: 'worktree', ...buildTrail(spec.steps, (file) => files.get(file) ?? null) };
+  }
+
   const { base, head, args } = await sides(repo, spec);
   const text = await runOk('git', [...DIFF_ARGS, ...args], { cwd: repo.root, timeoutMs: 60_000 });
   const files = parseDiff(text);
@@ -40,7 +53,7 @@ export async function acquire(repo: Repo, spec: ReviewSpec): Promise<Acquired> {
 }
 
 /** What to compare: the revisions to record, and the arguments that make git diff them. */
-async function sides(repo: Repo, spec: ReviewSpec): Promise<{ base: string; head: string; args: string[] }> {
+async function sides(repo: Repo, spec: Exclude<ReviewSpec, { kind: 'trail' }>): Promise<{ base: string; head: string; args: string[] }> {
   switch (spec.kind) {
     case 'worktree': {
       const base = (await revParse(repo, 'HEAD')) ?? EMPTY_TREE;
@@ -80,6 +93,23 @@ async function resolve(repo: Repo, rev: string): Promise<string> {
     timeoutMs: 10_000,
   });
   return out.trim();
+}
+
+/**
+ * A file in the working tree, as lines. Null when it is not there, is not a file, or is not
+ * inside the repository: a path comes from a model, and `../` is not the repository.
+ */
+async function readLines(repo: Repo, relative: string): Promise<string[] | null> {
+  const absolute = path.resolve(repo.root, relative);
+  if (path.isAbsolute(relative) || !absolute.startsWith(repo.root + path.sep)) return null;
+  try {
+    const content = await fs.readFile(absolute, 'utf8');
+    const lines = content.split(/\r?\n/);
+    if (content.endsWith('\n')) lines.pop();
+    return lines;
+  } catch {
+    return null;
+  }
 }
 
 /** The commit `rev` names, or null when it names none. */

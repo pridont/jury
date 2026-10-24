@@ -21,6 +21,8 @@ read. A language model does the grouping. You do the reviewing.
 - Review GitHub pull requests without checking them out, post your notes back as review
   comments, suggest changes the author can apply in one click, and reply to other reviewers.
 - Ask questions about the code you are looking at.
+- Ask how something in the repository works, and get the code to read, in order, to step
+  through like a review.
 - See how much code outside the change uses each function the change touches.
 - Lockfiles and generated files are moved out of the way.
 - Works without a model too, grouped by file.
@@ -66,6 +68,7 @@ Open the command palette and run one of:
 | Jury: Review a Pull Request… | A pull request you pick from a list |
 | Jury: Review a Commit… | One commit, compared to its parent |
 | Jury: Resume Last Review | The review you had open most recently |
+| Jury: Walk Me Through… | Code that answers a question you type, in the order to read it |
 | Jury: Open a Saved Review… | A review you started earlier, picked from a list |
 
 The review opens in the Jury panel in the activity bar.
@@ -165,6 +168,19 @@ on, the whole layer if you start with `/step`, or the whole cohort, every layer 
 you start with `/cohort`. A large cohort is sent up to a size limit; the hunks past it are
 named but not shown, and it reads them from the repository when the question needs them.
 It can read files in the repository to answer, but never changes them.
+
+### Walking through code
+
+**Jury: Walk Me Through…** asks a question about the repository, for example "How does a
+review get saved?". You can also type `@jury /trail` and the question in the Chat view. The
+model reads the repository and answers with a **trail**: the places in the code to read, in
+the order to read them, with a line on each saying why it is there.
+
+The trail opens in the Jury panel like a review. Each stop is a row, each range of code is a
+span you step through with `alt+j` and mark with `alt+m`, and you can leave notes on it. The
+walkthrough shows the short answer. The files open as they are in your working tree, not as a
+diff. A trail is saved like any review: **Jury: Open a Saved Review…** brings it back without
+asking the model again. It needs a provider that can read the repository (`claude`).
 
 ### Generated files
 
