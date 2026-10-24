@@ -67,8 +67,10 @@ Jury cleans it up:
 - hunks the model left out go into an **Unclassified** cohort at the end
 - documentation and generated cohorts are moved to the end
 
-The answer is rejected, and the file-based grouping kept, if everything is in one cohort, if
-there is one cohort per file, or if most hunks were left out. Rejected answers are not cached.
+The answer is rejected, and the file-based grouping kept, if everything is in one cohort of
+one layer, if there is one cohort per file, or if most hunks were left out. Rejected answers
+are not cached. One cohort split into layers is accepted: that is a change which really is
+one piece of work, with an order to read it in.
 
 In the text sent to the model, hunks are labelled `h1`, `h2` and so on. Short labels are
 cheap to repeat back, and a made-up one is easy to spot. If a label shows up in a title or
@@ -80,6 +82,15 @@ For each hunk: its label, file, the function it is in, how many lines were added
 removed, and a few of the changed lines. The per-file summaries from pass 1 are included
 too. On large changes the sample lines are shortened and then dropped, but every hunk is
 always listed, because the model cannot place a hunk it was never shown.
+
+Before the hunks comes what the author says about the change: the pull request's title and
+description (without the HTML comments a template leaves), and the commit messages, oldest
+first, cut at 6,000 characters. Uncommitted work has neither. It is fenced in `<author>` tags
+that the text cannot close itself, and the prompt treats it as a claim to check, never as
+instructions. The model uses it to name cohorts and as a hint for where they split, and adds
+a note wherever the claim and the diff disagree: something described that no hunk does, or a
+change in behaviour nobody mentioned. A grouping pass has no tools, so text in a
+description can at worst produce a bad grouping, which is then checked like any other.
 
 ## Detecting generated files
 

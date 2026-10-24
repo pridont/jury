@@ -26,7 +26,9 @@ type Remote = { id: number; in_reply_to_id?: number; path: string; line: number;
  * branch was cut. `gh` is scripted to describe it, with `viewed` files already ticked on the
  * web and `comments` from other reviewers. Returns the head commit.
  */
-async function pullRequest(options: { viewed?: string[]; comments?: Remote[] } = {}): Promise<string> {
+async function pullRequest(
+  options: { viewed?: string[]; comments?: Remote[]; body?: string; extra?: Record<string, string> } = {},
+): Promise<string> {
   fake.reset();
   await repo.reset(BASE);
   fs.rmSync(origin(), { recursive: true, force: true });
@@ -34,7 +36,7 @@ async function pullRequest(options: { viewed?: string[]; comments?: Remote[] } =
   repo.git('remote', 'add', 'origin', origin());
 
   repo.git('checkout', '-q', '-b', 'fix-expiry');
-  repo.write(CHANGE);
+  repo.write({ ...CHANGE, ...options.extra });
   repo.commit('fix expiry');
   const head = repo.git('rev-parse', 'HEAD').trim();
   repo.git('push', '-q', 'origin', `HEAD:refs/pull/${PR}/head`);
@@ -55,6 +57,7 @@ async function pullRequest(options: { viewed?: string[]; comments?: Remote[] } =
       url: `https://github.com/acme/widgets/pull/${PR}`,
       baseRefName: 'main',
       headRefOid: head,
+      body: options.body,
     }),
   );
   gh.reply(
@@ -174,6 +177,34 @@ suite('pull request review', () => {
       ['src/clock.ts', 'src/token.ts'],
       'what main did since is not part of it',
     );
+  });
+
+  test('the grouping model reads the description and the commits, not the template comments', async () => {
+    const restore = await configure({ 'ai.enabled': true });
+    try {
+      // A third hunk: fewer is not worth grouping, and the model is never asked.
+      await pullRequest({
+        body: '<!-- Describe your change -->\nTokens now expire on the second they are due.',
+        extra: { 'src/session.ts': 'export const ttl = 60;\n' },
+      });
+
+      await openPullRequest();
+
+      const call = await waitFor(
+        () => fake.calls().find((c) => c.system.includes('organise code reviews')),
+        'grouping to be asked for',
+      );
+      assert.ok(
+        call.input.startsWith(
+          'What the author says about this change:\n<author>\nPull request: Fix token expiry\n\n' +
+            'Tokens now expire on the second they are due.\n\nCommits, oldest first:\n- fix expiry\n</author>\n',
+        ),
+        call.input,
+      );
+      assert.doesNotMatch(call.input, /Describe your change/);
+    } finally {
+      await restore();
+    }
   });
 
   test('nothing is checked out: the branch and the working tree are left alone', async () => {

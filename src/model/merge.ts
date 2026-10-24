@@ -171,12 +171,16 @@ export function merge(
 /**
  * Whether this is organisation at all.
  *
- * One cohort for everything parses perfectly and organises nothing; so does one cohort per
- * file, which is what the reviewer already had. Both are declined, and the heuristic stack
- * stays — a wrong answer that looks like an answer is worse than no answer.
+ * One cohort of one layer for everything parses perfectly and organises nothing; so does one
+ * cohort per file, which is what the reviewer already had. Both are declined, and the
+ * heuristic stack stays — a wrong answer that looks like an answer is worse than no answer.
+ *
+ * One cohort split into layers is an answer: a change that really is one piece of work, in
+ * the order to read it. The model gives that answer most often when the author's description
+ * and the diff disagree, and declining it would throw away the note that says so.
  */
 function organised(cohorts: readonly Cohort[], labels: ReadonlyMap<string, Hunk>, total: number): string | null {
-  if (cohorts.length === 1 && total > 3) return 'everything was put in one cohort';
+  if (cohorts.length === 1 && cohorts[0]!.layers.length < 2 && total > 3) return 'everything was put in one cohort';
 
   const files = new Set([...labels.values()].map((hunk) => hunk.path)).size;
   if (files > 5 && cohorts.length >= files) {

@@ -26,9 +26,10 @@ export async function clusterChange(
   files: readonly FileChange[],
   summaries: ReadonlyMap<string, string>,
   fresh = false,
+  intent = '',
 ): Promise<ClusterResult> {
   const budget = inputBudget(deps.provider);
-  const digest = buildDigest(files, summaries, budget);
+  const digest = buildDigest(files, summaries, budget, intent);
 
   if (digest.labels.size === 0) return { ok: false, reason: 'nothing to organise' };
   if (digest.labels.size < 3) return { ok: false, reason: 'too few hunks to be worth organising' };
