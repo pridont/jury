@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { dialogs, fake, jury, repo, sidebar, waitFor } from './harness.js';
+import { dialogs, documentText, fake, jury, repo, sidebar, waitFor } from './harness.js';
 
 const lines = (name: string) => Array.from({ length: 6 }, (_, i) => `export const ${name}${i + 1} = ${i + 1};`).join('\n') + '\n';
 
@@ -49,6 +49,23 @@ suite('tour', () => {
         '[ ] 2. UI: The tree — 0/1 · src/ui/tree.ts · 1 span',
       ].join('\n'),
     );
+
+    // An area has no summary of its own: the walkthrough lists its stops with theirs.
+    await vscode.commands.executeCommand('jury.walkthrough');
+    // Wait for this tour's text: an earlier test's walkthrough may still be open under the same name.
+    const text = await waitFor(() => (documentText('Walkthrough.md').includes('# Tour of src/') ? documentText('Walkthrough.md') : ''), 'the walkthrough');
+    assert.ok(
+      text.includes(
+        [
+          '1. **Core**',
+          '   - **The types** — What everything holds.',
+          '   - **The ids** — How they are named.',
+          '2. **UI: The tree** — Where they are shown.',
+        ].join('\n'),
+      ),
+      text,
+    );
+    assert.doesNotMatch(text, /no summary/);
   });
 
   test('a quick tour of the whole repository asks the faster model', async () => {
