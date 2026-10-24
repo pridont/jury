@@ -191,8 +191,15 @@ repository or one folder. The model explores it and lays out a tour: the areas o
 with a few stops in each. Every area is a row in the Jury panel and its stops are below it.
 The walkthrough shows a summary and a diagram of how the areas fit together.
 
-A tour of a whole repository reads a lot of code. On this repository it takes about 45
-seconds and costs about $0.25–0.35 with Sonnet; a folder costs less.
+Jury then asks how thorough the tour should be:
+
+| Choice | Model | On this repository |
+|---|---|---|
+| **Detailed** (default) | the `deep` model, Opus | 27–29 stops, about 2 minutes, about $1.20 |
+| **Quick** | the `smart` model, Sonnet | 20–24 stops, about 45 seconds, about $0.30 |
+
+A detailed tour covers more of the code and says more at each stop about how things work.
+A tour is saved, so you pay for it once. Touring one folder costs less.
 
 ### Generated files
 

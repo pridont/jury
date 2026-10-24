@@ -24,16 +24,18 @@ suite('tour', () => {
     const api = await jury();
 
     dialogs.choose(/^src$/);
+    dialogs.choose(/^Detailed$/);
     await vscode.commands.executeCommand('jury.tour');
     const session = await waitFor(
       () => (api.host.active?.spec.kind === 'trail' && !api.host.active.loading ? api.host.active : null),
       'the tour',
     );
 
-    // Asked once, about the folder picked, with the repository's read-only tools.
+    // Asked once, about the folder picked, on the deep model, with read-only tools.
     assert.equal(asked().length, 1);
     assert.match(asked()[0]!.input, /^Tour: the folder src\/$/m);
     assert.match(asked()[0]!.args.join(' '), /--tools \S*Read/);
+    assert.match(asked()[0]!.args.join(' '), /--model opus/);
 
     assert.equal(session.title, 'Tour of src/');
     assert.equal(session.diagram, TOUR.diagram);
@@ -47,5 +49,29 @@ suite('tour', () => {
         '[ ] 2. UI: The tree — 0/1 · src/ui/tree.ts · 1 span',
       ].join('\n'),
     );
+  });
+
+  test('a quick tour of the whole repository asks the faster model', async () => {
+    fake.reset();
+    await repo.reset({ 'src/types.ts': lines('t'), 'src/ui/tree.ts': lines('u') });
+    fake.reply('guided tour', JSON.stringify(TOUR));
+    const api = await jury();
+
+    dialogs.choose(/^The whole repository$/);
+    dialogs.choose(/^Quick$/);
+    await vscode.commands.executeCommand('jury.tour');
+    await waitFor(() => api.host.active?.spec.kind === 'trail' && !api.host.active.loading, 'the tour');
+
+    assert.match(asked()[0]!.input, /^Tour: the whole repository$/m);
+    assert.match(asked()[0]!.args.join(' '), /--model sonnet/);
+  });
+
+  test('closing the second question asks nothing', async () => {
+    fake.reset();
+    await repo.reset({ 'src/types.ts': lines('t') });
+    // The folder is picked; the question of how thorough is dismissed.
+    dialogs.choose(/^src$/);
+    await vscode.commands.executeCommand('jury.tour');
+    assert.equal(asked().length, 0);
   });
 });

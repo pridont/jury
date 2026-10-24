@@ -3,7 +3,7 @@ import { diagramOf } from '../model/merge.js';
 import { parse } from './json.js';
 import { tourPrompt } from './prompts/tour.js';
 import { trailPrompt } from './prompts/trail.js';
-import type { Provider, Usage } from './provider.js';
+import type { Provider, Tier, Usage } from './provider.js';
 
 export type Trail = { summary: string; steps: TrailStep[]; diagram?: string };
 
@@ -18,6 +18,12 @@ const KINDS = {
 const MAX_SPANS = 6;
 /** A span is read in one look. The prompt asks for this, and models do not always listen. */
 const MAX_SPAN_LINES = 80;
+/**
+ * Measured: a tour of a small repository takes 45 seconds on the smart tier and 105 on the
+ * deep one. The call runs behind a progress notification with a cancel button, so the limit
+ * is only there to stop a call that has hung.
+ */
+const TIMEOUT_MS = 10 * 60_000;
 
 /**
  * Ask for a trail through the repository that answers `question`, or with `tour`, for a
@@ -25,6 +31,7 @@ const MAX_SPAN_LINES = 80;
  *
  * It needs the repository's tools: a trail is line numbers, and line numbers nobody read are
  * made up. `onTool` hears each tool call as it is made, so the wait has a visible reason.
+ * `tier: 'deep'` is the detailed tour: about twice the stops and the time, five times the cost.
  */
 export async function askTrail(
   provider: Provider,
@@ -32,16 +39,17 @@ export async function askTrail(
   question: string,
   signal: AbortSignal,
   onTool: (label: string) => void,
-  kind: keyof typeof KINDS = 'trail',
+  { kind = 'trail', tier = 'smart' }: { kind?: keyof typeof KINDS; tier?: Tier } = {},
 ): Promise<{ ok: true; trail: Trail; usage: Usage } | { ok: false; reason: string }> {
   const answer = await provider.stream(
     {
-      tier: 'smart',
+      tier,
       system: KINDS[kind].prompt.system,
       input: `${KINDS[kind].label}: ${question}`,
       // Read-only by design, as for every question.
       tools: ['readFile', 'search', 'listFiles'],
       cwd: root,
+      timeoutMs: TIMEOUT_MS,
     },
     signal,
     (chunk) => {

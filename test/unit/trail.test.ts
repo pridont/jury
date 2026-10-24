@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { buildTrail } from '../../src/model/trail.js';
 import { askTrail } from '../../src/agent/trail.js';
 import { acquire } from '../../src/git/source.js';
-import type { Provider } from '../../src/agent/provider.js';
+import type { Provider, Request } from '../../src/agent/provider.js';
 import type { Repo } from '../../src/git/repo.js';
 
 const FILE = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`);
@@ -145,7 +145,7 @@ describe('askTrail', () => {
         'the whole repository',
         new AbortController().signal,
         () => {},
-        'tour',
+        { kind: 'tour' },
       );
     expect(await tour('flowchart TD\n  a --> b')).toMatchObject({
       ok: true,
@@ -153,6 +153,27 @@ describe('askTrail', () => {
     });
     const without = await tour('a picture of the code');
     expect(without.ok && 'diagram' in without.trail).toBe(false);
+  });
+
+  it('asks on the tier it is given, with time for a long exploration', async () => {
+    const requests: Request[] = [];
+    const provider = {
+      stream: async (request: Request) => {
+        requests.push(request);
+        return {
+          text: JSON.stringify({ summary: 'S.', steps: [{ title: 'T', summary: '', spans: [{ path: 'a.ts', start: 1, end: 1 }] }] }),
+          usage: { inputTokens: 0, outputTokens: 0, costUsd: 0, durationMs: 0 },
+          model: 'm',
+        };
+      },
+    } as unknown as Provider;
+    await askTrail(provider, '/repo', 'q', new AbortController().signal, () => {});
+    await askTrail(provider, '/repo', 'the whole repository', new AbortController().signal, () => {}, { kind: 'tour', tier: 'deep' });
+    expect(requests.map((r) => [r.tier, r.timeoutMs])).toEqual([
+      ['smart', 600_000],
+      ['deep', 600_000],
+    ]);
+    expect(requests[1]!.input).toBe('Tour: the whole repository');
   });
 
   it('cuts a span to what is read in one look, whatever the model asked for', async () => {

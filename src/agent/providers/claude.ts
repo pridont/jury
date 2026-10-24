@@ -94,7 +94,7 @@ export class ClaudeProvider implements Provider {
       result = await run(this.settings.command, args, {
         stdin: request.input,
         env: request.tier === 'deep' ? {} : { MAX_THINKING_TOKENS: '0' },
-        timeoutMs: TIMEOUT_MS,
+        timeoutMs: request.timeoutMs ?? TIMEOUT_MS,
         signal,
       });
     } catch (error) {
@@ -180,7 +180,7 @@ export class ClaudeProvider implements Provider {
     const result = await run(this.settings.command, args, {
       stdin: request.input,
       ...(request.cwd ? { cwd: request.cwd } : {}),
-      timeoutMs: TIMEOUT_MS,
+      timeoutMs: request.timeoutMs ?? TIMEOUT_MS,
       signal,
       onLine: (line) => {
         let parsed: StreamLine;

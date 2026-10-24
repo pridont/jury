@@ -16,7 +16,7 @@ import { Comments } from './ui/comments.js';
 import { reconcileComments } from './model/comments.js';
 import { toDescription, toMarkdown } from './export.js';
 import * as providers from './agent/provider.js';
-import { ProviderError, type PassDeps, type Provider } from './agent/provider.js';
+import { ProviderError, type PassDeps, type Provider, type Tier } from './agent/provider.js';
 import { askTrail } from './agent/trail.js';
 import { ClaudeProvider } from './agent/providers/claude.js';
 import { VscodeLmProvider } from './agent/providers/vscodeLm.js';
@@ -1127,8 +1127,21 @@ async function tour(host: SessionHost, ctx: Context): Promise<void> {
         )?.label;
   if (!picked) return;
 
+  // Detailed first: a tour is asked for once and saved, so the better one is worth the wait.
+  // Measured on a repository of about 9,000 lines: 27 stops in 105 s for $1.27, against 20
+  // stops in 45 s for $0.25.
+  const depth = await vscode.window.showQuickPick(
+    [
+      { label: 'Detailed', description: 'deep model · more stops, each explained · a few minutes', tier: 'deep' as const },
+      { label: 'Quick', description: 'faster model · about a fifth of the cost · under a minute', tier: 'smart' as const },
+    ],
+    { title: 'Jury: Tour This Repository', placeHolder: 'How thorough a tour' },
+  );
+  if (!depth) return;
+
   const scope = picked === whole ? 'the whole repository' : `the folder ${picked}/`;
-  await layOut(host, ctx, repo, 'tour', `Tour of ${picked === whole ? path.basename(repo.root) : `${picked}/`}`, scope);
+  const name = picked === whole ? path.basename(repo.root) : `${picked}/`;
+  await layOut(host, ctx, repo, 'tour', `Tour of ${name}`, scope, depth.tier);
 }
 
 /** Ask for a trail or a tour, and open it. `title` names the review; `asked` is what the model is given. */
@@ -1139,6 +1152,7 @@ async function layOut(
   kind: 'trail' | 'tour',
   title: string,
   asked: string,
+  tier: Tier = 'smart',
 ): Promise<void> {
   const provider = await providerFor('ask', true);
   if (!provider) return;
@@ -1158,7 +1172,10 @@ async function layOut(
       const controller = new AbortController();
       token.onCancellationRequested(() => controller.abort());
       try {
-        return await askTrail(provider, repo.root, asked, controller.signal, (label) => progress.report({ message: label }), kind);
+        return await askTrail(provider, repo.root, asked, controller.signal, (label) => progress.report({ message: label }), {
+          kind,
+          tier,
+        });
       } catch (error) {
         if (error instanceof ProviderError && error.kind === 'cancelled') return null;
         return { ok: false as const, reason: error instanceof Error ? error.message : String(error) };

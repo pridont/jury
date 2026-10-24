@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ClaudeProvider } from '../../src/agent/providers/claude.js';
 import { askTrail } from '../../src/agent/trail.js';
+import type { Tier } from '../../src/agent/provider.js';
 import { buildTrail } from '../../src/model/trail.js';
 
 /**
@@ -61,19 +62,25 @@ describe('trail', () => {
   }
 });
 
-const TOURS = [
-  { scope: 'the whole repository', through: ['src/git/', 'src/model/', 'src/agent/', 'src/ui/'] },
-  { scope: 'the folder src/agent/', through: ['src/agent/'] },
+const TOURS: { scope: string; tier: Tier; through: string[] }[] = [
+  { scope: 'the whole repository', tier: 'smart', through: ['src/git/', 'src/model/', 'src/agent/', 'src/ui/'] },
+  { scope: 'the folder src/agent/', tier: 'smart', through: ['src/agent/'] },
+  // The detailed tour has to go further than the quick one, or it is not worth five times the cost.
+  {
+    scope: 'the whole repository',
+    tier: 'deep',
+    through: ['src/git/', 'src/model/', 'src/agent/', 'src/ui/', 'src/state/', 'src/github/'],
+  },
 ];
 
 describe('tour', () => {
-  for (const { scope, through } of TOURS) {
-    it(scope, async () => {
+  for (const { scope, tier, through } of TOURS) {
+    it(`${scope} (${tier})`, { timeout: 900_000 }, async () => {
       const provider = new ClaudeProvider();
       expect((await provider.available()).ok, 'claude must be available to run the eval').toBe(true);
 
       let tools = 0;
-      const result = await askTrail(provider, root, scope, new AbortController().signal, () => tools++, 'tour');
+      const result = await askTrail(provider, root, scope, new AbortController().signal, () => tools++, { kind: 'tour', tier });
       expect(result.ok, result.ok ? '' : result.reason).toBe(true);
       if (!result.ok) return;
 
