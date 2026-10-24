@@ -313,4 +313,16 @@ describe('applyVerdicts', () => {
     applyVerdicts(files, new Map());
     expect(files[0]!.hunks[0]!.scaffolding).toBeUndefined();
   });
+
+  it('inline marks the hunk generated instead, and switching back clears it', () => {
+    const files = [file('dist/a.js')];
+    const verdicts = classifyAll(files, new Map([['dist/a.js', plain]]));
+    applyVerdicts(files, verdicts, true);
+    expect(files[0]!.hunks[0]!.generated).toEqual({ reason: 'build or vendored output' });
+    expect(files[0]!.hunks[0]!.scaffolding).toBeUndefined();
+
+    applyVerdicts(files, verdicts);
+    expect(files[0]!.hunks[0]!.generated).toBeUndefined();
+    expect(files[0]!.hunks[0]!.scaffolding).toEqual({ reason: 'build or vendored output' });
+  });
 });

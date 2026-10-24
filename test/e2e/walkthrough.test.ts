@@ -103,6 +103,6 @@ suite('walkthrough', () => {
     await vscode.commands.executeCommand('jury.walkthrough');
 
     const text = await walkthrough('Fake walkthrough summary.');
-    assert.match(text, /_1 generated file (is|are) not part of the review\._/);
+    assert.match(text, /_1 generated file is not part of the review\._/);
   });
 });

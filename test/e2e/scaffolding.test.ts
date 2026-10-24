@@ -82,13 +82,16 @@ suite('scaffolding', () => {
     }
   });
 
-  test('with jury.scaffolding.mode inline generated files are classified but stay in the reading order', async () => {
+  test('with jury.scaffolding.mode inline generated files are labelled but stay in the reading order', async () => {
     const restore = await configure({ 'scaffolding.mode': 'inline' });
     try {
       const api = await review();
       const lock = api.host.active!.files.find((f) => f.path === 'package-lock.json')!;
-      assert.ok(lock.hunks.every((h) => h.scaffolding), 'still classified');
+      assert.ok(lock.hunks.every((h) => h.generated && !h.scaffolding), 'classified as generated, not set aside');
       assert.ok(!api.host.active!.cohorts.some((c) => c.kind === 'scaffolding'), 'no trailing scaffolding cohort');
+      assert.equal(api.nav.progress.total, 3, 'counted like any other hunk');
+      assert.ok(api.nav.entries.some((e) => e.file.path === 'package-lock.json' && !e.scaffolding), 'stepped onto');
+      assert.match(await sidebar(), /package-lock\.json — 0\/1 · generated · package-lock\.json · 1 hunk/);
     } finally {
       await restore();
     }
@@ -148,7 +151,7 @@ suite('scaffolding', () => {
     void vscode.commands.executeCommand('jury.export');
 
     await waitFor(
-      () => /_1 generated files? (was|were) not reviewed: Generated or vendored: /.test(documentText('Review.md')),
+      () => /_1 generated file was not reviewed: Generated or vendored: /.test(documentText('Review.md')),
       'the generated files in the export',
     );
   });

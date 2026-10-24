@@ -42,6 +42,11 @@ export type Hunk = {
   symbol?: string;
   /** Set when the classifier decided this is generator output; the reason is always shown. */
   scaffolding?: { reason: string };
+  /**
+   * The same verdict under `jury.scaffolding.mode: inline`: generator output, said so on its
+   * row, but read in place like anything else rather than taken out of the reading order.
+   */
+  generated?: { reason: string };
 };
 
 export type Layer = {

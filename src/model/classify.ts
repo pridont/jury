@@ -7,7 +7,10 @@ import { applyVerdicts, classifyAll, type ClassifyInput } from './noise.js';
 import { probeWorkspace } from './workspace.js';
 
 export type ClassifyOptions = {
-  /** "off" skips classification entirely; everything stays in the reading order. */
+  /**
+   * "off" skips classification entirely; everything stays in the reading order. "inline"
+   * classifies, but marks what it finds generated and leaves it in the reading order.
+   */
   mode?: 'collapse' | 'inline' | 'off';
   patterns?: readonly string[];
   /** Paths the reviewer has said are not scaffolding, whatever the signals say. */
@@ -49,7 +52,7 @@ export async function classifyScaffolding(
     }),
   );
 
-  applyVerdicts(files, classifyAll(files, inputs));
+  applyVerdicts(files, classifyAll(files, inputs), options.mode === 'inline');
 }
 
 /** The first bytes of the new side, which is where a generated-code marker lives. */

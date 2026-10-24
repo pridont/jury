@@ -17,11 +17,15 @@ export type ClusterResult =
  * `merge` has to turn it into a complete partition of the hunk set, and a clustering that
  * organised nothing is declined outright. A declined answer is never written to the cache,
  * because a schema-valid non-answer cached is a known-bad result replayed on every open.
+ *
+ * With `fresh`, the cache is not read: the reviewer asked again because they doubt the
+ * answer it holds. The new answer replaces it.
  */
 export async function clusterChange(
   deps: PassDeps,
   files: readonly FileChange[],
   summaries: ReadonlyMap<string, string>,
+  fresh = false,
 ): Promise<ClusterResult> {
   const budget = inputBudget(deps.provider);
   const digest = buildDigest(files, summaries, budget);
@@ -32,7 +36,7 @@ export async function clusterChange(
   const model = deps.provider.capabilities().models.smart ?? 'smart';
   const key = Cache.key({ promptVersion: clusterPrompt.version, model, input: digest.text });
 
-  const hit = await deps.cache.get(key);
+  const hit = fresh ? null : await deps.cache.get(key);
   if (hit !== null) {
     const fromCache = accept(hit, digest);
     // A cached answer is judged by the same standard when it is read back, so an entry

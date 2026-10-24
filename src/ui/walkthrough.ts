@@ -76,7 +76,7 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
 
   if (scaffolding) {
     const files = scaffolding.layers.length;
-    lines.push(`_${files} generated file${files === 1 ? '' : 's'} are not part of the review._`, '');
+    lines.push(`_${files} generated ${files === 1 ? 'file is' : 'files are'} not part of the review._`, '');
   }
 
   return lines.join('\n');
