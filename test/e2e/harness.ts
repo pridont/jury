@@ -65,11 +65,15 @@ export const repo = {
 export const fake = {
   dir: process.env.JURY_FAKE_DIR ?? '',
 
-  /** Answer any call whose system prompt or input matches `match` with `reply`. First match wins. */
-  reply(match: string, reply: string): void {
+  /**
+   * Answer any call whose system prompt or input matches `match` with `reply`, or with the
+   * canned answer when it is left out. First match wins. `delayMs` answers slowly; `exit`
+   * fails the call with `stderr`, the way the real CLI does.
+   */
+  reply(match: string, reply?: string, options: { delayMs?: number; exit?: number; stderr?: string } = {}): void {
     const file = path.join(this.dir, 'replies.json');
     const replies = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as unknown[]) : [];
-    fs.writeFileSync(file, JSON.stringify([...replies, { match, reply }]));
+    fs.writeFileSync(file, JSON.stringify([...replies, { match, reply, ...options }]));
   },
 
   calls(): { args: string[]; system: string; input: string }[] {
@@ -82,11 +86,141 @@ export const fake = {
       .map((line) => JSON.parse(line) as { args: string[]; system: string; input: string });
   },
 
+  /** Forget every scripted answer and recorded call, of both fakes, and every dialog answer. */
   reset(): void {
-    fs.rmSync(path.join(this.dir, 'replies.json'), { force: true });
-    fs.rmSync(path.join(this.dir, 'calls.jsonl'), { force: true });
+    for (const file of ['replies.json', 'calls.jsonl', 'gh-replies.json', 'gh-calls.jsonl']) {
+      fs.rmSync(path.join(this.dir, file), { force: true });
+    }
+    dialogs.reset();
   },
 };
+
+// The window's environment comes from the login shell, whatever PATH the test run started
+// with, so the fake `gh` goes first on it here. The extension shares this process.
+process.env.PATH = `${path.join(fake.dir, 'bin')}${path.delimiter}${process.env.PATH ?? ''}`;
+
+/** The fake `gh` CLI on PATH: script its answers, read back what it was asked. */
+export const gh = {
+  /**
+   * Answer any call whose arguments, joined by spaces, match `match`. First match wins.
+   * Unscripted calls fail, except `--version` and `auth status`.
+   */
+  reply(match: string, stdout: string, code = 0): void {
+    const file = path.join(fake.dir, 'gh-replies.json');
+    const replies = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as unknown[]) : [];
+    fs.writeFileSync(file, JSON.stringify([...replies, { match, stdout, code }]));
+  },
+
+  /** Every call so far: its arguments joined by spaces, and what was piped to it. */
+  calls(): { line: string; stdin: string }[] {
+    const file = path.join(fake.dir, 'gh-calls.jsonl');
+    if (!fs.existsSync(file)) return [];
+    return fs
+      .readFileSync(file, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { args: string[]; stdin: string })
+      .map(({ args, stdin }) => ({ line: args.join(' '), stdin }));
+  },
+};
+
+type Said = { kind: 'info' | 'warning' | 'error'; message: string; detail?: string };
+
+/**
+ * Every notification, input box, list and save dialog the extension opens, answered from
+ * here instead of waiting on a person. Unscripted, each is dismissed — what pressing Escape
+ * does. The tests share the extension's `vscode` object, so replacing these is enough.
+ */
+export const dialogs = {
+  /** Every message shown, in order. */
+  said: [] as Said[],
+  answers: [] as { match: RegExp; choice: string }[],
+  inputs: [] as string[],
+  choices: [] as RegExp[],
+  saveTarget: undefined as vscode.Uri | undefined,
+
+  /** Press `choice` on the next message matching `match`. */
+  answer(match: RegExp, choice: string): void {
+    this.answers.push({ match, choice });
+  },
+
+  /** Type `text` into the next input box and press Enter. */
+  type(text: string): void {
+    this.inputs.push(text);
+  },
+
+  /** Pick the first item whose label matches `match` in the next list opened with `showQuickPick`. */
+  choose(match: RegExp): void {
+    this.choices.push(match);
+  },
+
+  /** Answer the next save dialog with `uri`. */
+  saveTo(uri: vscode.Uri): void {
+    this.saveTarget = uri;
+  },
+
+  messages(kind?: Said['kind']): string[] {
+    return this.said.filter((said) => !kind || said.kind === kind).map((said) => said.message);
+  },
+
+  reset(): void {
+    this.said = [];
+    this.answers = [];
+    this.inputs = [];
+    this.choices = [];
+    this.saveTarget = undefined;
+  },
+};
+
+function message(kind: Said['kind']) {
+  return async (text: string, ...rest: unknown[]) => {
+    const options =
+      typeof rest[0] === 'object' && rest[0] !== null && !('title' in rest[0])
+        ? (rest.shift() as vscode.MessageOptions)
+        : undefined;
+    dialogs.said.push({ kind, message: text, ...(options?.detail ? { detail: options.detail } : {}) });
+    const index = dialogs.answers.findIndex((answer) => answer.match.test(text));
+    if (index === -1) return undefined;
+    const { choice } = dialogs.answers.splice(index, 1)[0]!;
+    return rest.find((item) => (typeof item === 'string' ? item : (item as vscode.MessageItem).title) === choice);
+  };
+}
+
+Object.assign(vscode.window, {
+  showInformationMessage: message('info'),
+  showWarningMessage: message('warning'),
+  showErrorMessage: message('error'),
+  showInputBox: async () => dialogs.inputs.shift(),
+  showSaveDialog: async () => {
+    const target = dialogs.saveTarget;
+    dialogs.saveTarget = undefined;
+    return target;
+  },
+  showQuickPick: async (items: readonly vscode.QuickPickItem[] | Thenable<readonly vscode.QuickPickItem[]>) => {
+    const match = dialogs.choices.shift();
+    return match ? (await items).find((item) => match.test(item.label)) : undefined;
+  },
+});
+
+/**
+ * Set `jury.*` workspace settings for one test. Returns the undo, which puts back what the
+ * workspace had — the fake provider is itself a workspace setting, so clearing would lose it.
+ */
+export async function configure(settings: Record<string, unknown>): Promise<() => Promise<void>> {
+  const config = vscode.workspace.getConfiguration('jury');
+  const before = Object.keys(settings).map((key) => [key, config.inspect(key)?.workspaceValue] as const);
+  for (const [key, value] of Object.entries(settings)) {
+    await config.update(key, value, vscode.ConfigurationTarget.Workspace);
+  }
+  return async () => {
+    for (const [key, value] of before) await config.update(key, value, vscode.ConfigurationTarget.Workspace);
+  };
+}
+
+/** Let fire-and-forget work the extension started finish, when there is nothing to wait on. */
+export function settle(ms = 500): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** Poll until `check` returns something truthy, and return it. */
 export async function waitFor<T>(check: () => T | Promise<T>, what: string, timeoutMs = 10_000): Promise<NonNullable<T>> {
@@ -116,17 +250,31 @@ export async function review(command = 'jury.review', options: { clustered?: boo
   return api;
 }
 
+type Row = { node: Node; item: vscode.TreeItem; label: string; depth: number };
+
+/** Every row of the Jury sidebar, expanded, top to bottom. */
+async function rows(): Promise<Row[]> {
+  const { tree } = await jury();
+  const found: Row[] = [];
+  const walk = (node: Node | undefined, depth: number) => {
+    for (const child of tree.getChildren(node)) {
+      const item = tree.getTreeItem(child);
+      const label = typeof item.label === 'string' ? item.label : (item.label?.label ?? '');
+      found.push({ node: child, item, label, depth });
+      if (item.collapsibleState !== vscode.TreeItemCollapsibleState.None) walk(child, depth + 1);
+    }
+  };
+  walk(undefined, 0);
+  return found;
+}
+
 /**
  * The Jury sidebar as text, one row per line, indented by depth — what a reviewer sees.
  * `[x]`/`[ ]` is the reviewed checkbox; the part after `—` is the row's grey description.
  */
 export async function sidebar(): Promise<string> {
-  const { tree } = await jury();
-  const lines: string[] = [];
-  const walk = (node: Node | undefined, depth: number) => {
-    for (const child of tree.getChildren(node)) {
-      const item = tree.getTreeItem(child);
-      const label = typeof item.label === 'string' ? item.label : (item.label?.label ?? '');
+  return (await rows())
+    .map(({ item, label, depth }) => {
       const box =
         item.checkboxState === undefined
           ? ''
@@ -135,12 +283,19 @@ export async function sidebar(): Promise<string> {
             ? '[x] '
             : '[ ] ';
       const description = typeof item.description === 'string' && item.description ? ` — ${item.description}` : '';
-      lines.push(`${'  '.repeat(depth)}${box}${label}${description}`);
-      if (item.collapsibleState !== vscode.TreeItemCollapsibleState.None) walk(child, depth + 1);
-    }
-  };
-  walk(undefined, 0);
-  return lines.join('\n');
+      return `${'  '.repeat(depth)}${box}${label}${description}`;
+    })
+    .join('\n');
+}
+
+/**
+ * The first sidebar row whose label matches, with its tree item — what a context menu
+ * command is handed when the reviewer right-clicks that row.
+ */
+export async function row(match: RegExp): Promise<Row> {
+  const found = (await rows()).find((candidate) => match.test(candidate.label));
+  if (!found) throw new Error(`no sidebar row matches ${match}:\n${await sidebar()}`);
+  return found;
 }
 
 /** Leave a note on `line` (1-based, new side) of `file`, the way the comment gutter does. */
