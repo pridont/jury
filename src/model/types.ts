@@ -9,15 +9,18 @@ export type ReviewSpec =
   | { kind: 'commit'; sha: string; subject?: string }
   /**
    * Code nobody changed, read in an order that answers `question`. The steps are the
-   * model's answer, kept in the spec so a saved trail reopens without asking again.
+   * model's answer, kept in the spec so a saved trail reopens without asking again. A tour
+   * of the repository is a trail too, one whose steps are grouped into areas.
    */
-  | { kind: 'trail'; question: string; summary: string; steps: TrailStep[] };
+  | { kind: 'trail'; question: string; summary: string; steps: TrailStep[]; diagram?: string };
 
 /** One stop on a trail: what to read, and why. Lines are 1-based and inclusive. */
 export type TrailStep = {
   title: string;
   summary: string;
   spans: { path: string; start: number; end: number }[];
+  /** The part of the codebase the step is in, on a tour. Steps of one area are read together. */
+  area?: string;
 };
 
 export function describeSpec(spec: ReviewSpec): string {

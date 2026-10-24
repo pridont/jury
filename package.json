@@ -55,7 +55,7 @@
     "viewsWelcome": [
       {
         "view": "jury.stack",
-        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a commit](command:jury.reviewCommit)\n[Review a pull request](command:jury.reviewPr)\n[Walk me through this code](command:jury.trail)\n[Resume last review](command:jury.resume)\n[Open a saved review](command:jury.list)\n\nSomething not working? [Run the doctor](command:jury.doctor)\n",
+        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a commit](command:jury.reviewCommit)\n[Review a pull request](command:jury.reviewPr)\n[Walk me through this code](command:jury.trail)\n[Tour this repository](command:jury.tour)\n[Resume last review](command:jury.resume)\n[Open a saved review](command:jury.list)\n\nSomething not working? [Run the doctor](command:jury.doctor)\n",
         "when": "!jury.active"
       }
     ],
@@ -89,6 +89,11 @@
       {
         "command": "jury.trail",
         "title": "Walk Me Through…",
+        "category": "Jury"
+      },
+      {
+        "command": "jury.tour",
+        "title": "Tour This Repository…",
         "category": "Jury"
       },
       {

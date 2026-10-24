@@ -60,3 +60,50 @@ describe('trail', () => {
     });
   }
 });
+
+const TOURS = [
+  { scope: 'the whole repository', through: ['src/git/', 'src/model/', 'src/agent/', 'src/ui/'] },
+  { scope: 'the folder src/agent/', through: ['src/agent/'] },
+];
+
+describe('tour', () => {
+  for (const { scope, through } of TOURS) {
+    it(scope, async () => {
+      const provider = new ClaudeProvider();
+      expect((await provider.available()).ok, 'claude must be available to run the eval').toBe(true);
+
+      let tools = 0;
+      const result = await askTrail(provider, root, scope, new AbortController().signal, () => tools++, 'tour');
+      expect(result.ok, result.ok ? '' : result.reason).toBe(true);
+      if (!result.ok) return;
+
+      const { steps, summary, diagram } = result.trail;
+      const built = buildTrail(steps, read);
+      console.log(
+        `\n=== tour of ${scope} ===\n${summary}\n${diagram ?? '(no diagram)'}\n` +
+          built.cohorts
+            .map((c, i) => `  ${i + 1}. ${c.title}\n${c.layers.map((l) => `       - ${l.title}`).join('\n')}`)
+            .join('\n') +
+          `\n  ${steps.length} stops, ${tools} tool calls, $${result.usage.costUsd.toFixed(4)}`,
+      );
+
+      // Areas, each read in one go: an area that comes back later is a tour that wanders.
+      const areas = steps.map((step) => step.area ?? '');
+      const visits = areas.filter((area, i) => area !== areas[i - 1]);
+      expect(areas.every(Boolean), 'every stop is in an area').toBe(true);
+      expect(new Set(visits).size, `each area visited once: ${visits.join(' → ')}`).toBe(visits.length);
+      expect(visits.length).toBeGreaterThanOrEqual(2);
+      expect(visits.length).toBeLessThanOrEqual(7);
+      expect(diagram, 'a diagram that parses').toMatch(/^flowchart/);
+
+      const spans = steps.flatMap((step) => step.spans);
+      for (const span of spans) {
+        const lines = read(span.path);
+        expect(lines, `${span.path} exists`).not.toBeNull();
+        expect(span.end, `${span.path}:${span.start}-${span.end} inside the file`).toBeLessThanOrEqual(lines!.length);
+        expect(span.end - span.start + 1, `${span.path}:${span.start}-${span.end} readable`).toBeLessThanOrEqual(80);
+      }
+      for (const place of through) expect(spans.some((span) => span.path.startsWith(place)), `passes through ${place}`).toBe(true);
+    });
+  }
+});

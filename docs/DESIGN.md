@@ -44,6 +44,14 @@ file is cut to it, and a range in a file that is not there, or outside the repos
 dropped. A trail with nothing left is an error, not an empty review. Trails are not
 classified and not grouped; the model's order is the reading order.
 
+A span is also cut to its first 80 lines. The prompt asks for that, and a model does not
+always do it.
+
+A tour is a trail with a different prompt. Each step names its area, and steps of one area
+that come one after another become the layers of one cohort. An area with a single stop is
+one row titled `Area: stop`. The answer can also hold a mermaid diagram of the areas, which
+is kept in the spec and drawn in the walkthrough.
+
 ## Hunk identity
 
 A hunk's id is a hash of its file path and its added and removed lines. Context lines and the

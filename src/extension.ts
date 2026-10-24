@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { findRepo, currentBranch, type Repo } from './git/repo.js';
-import { guardAgainstOrphans, killAll } from './util/exec.js';
+import { guardAgainstOrphans, killAll, run } from './util/exec.js';
 import { acquire } from './git/source.js';
 import { enrichSymbols } from './enrich.js';
 import { doctor, formatChecks } from './doctor.js';
@@ -147,6 +147,7 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.commands.registerCommand('jury.reviewCommit', () => reviewCommit(host, ctx())),
     vscode.commands.registerCommand('jury.reviewPr', () => reviewPr(host, ctx())),
     vscode.commands.registerCommand('jury.trail', (question?: string) => walkThrough(host, ctx(), question)),
+    vscode.commands.registerCommand('jury.tour', () => tour(host, ctx())),
     vscode.commands.registerCommand('jury.submitReview', () => submitReview(host, documents)),
     vscode.commands.registerCommand('jury.refresh', () => refresh(host, ctx())),
     vscode.commands.registerCommand('jury.close', () => {
@@ -516,6 +517,7 @@ async function load(session: Session, ctx: Context): Promise<boolean> {
       if (acquired.cohorts.length === 0) throw new Error('none of the code this trail points at is in the working tree');
       session.cohorts = acquired.cohorts;
       session.overview = session.spec.kind === 'trail' ? session.spec.summary : '';
+      session.diagram = session.spec.kind === 'trail' ? (session.spec.diagram ?? '') : '';
       session.clustered = true;
     } else {
       await classify(session);
@@ -1096,22 +1098,67 @@ async function walkThrough(host: SessionHost, ctx: Context, question?: string): 
       placeHolder: 'How does a review get saved?',
     }));
   if (!asked?.trim()) return;
+  await layOut(host, ctx, repo, 'trail', asked.trim(), asked.trim());
+}
 
+/**
+ * A tour of the repository, or of one folder in it: a trail whose steps are grouped into
+ * the areas of the code, with a picture of how the areas fit together.
+ */
+async function tour(host: SessionHost, ctx: Context): Promise<void> {
+  const repo = await resolveRepo();
+  if (!repo) return;
+
+  // Two levels of tracked folders: enough to aim a tour at one part of a large repository,
+  // few enough to pick from.
+  const listed = await run('git', ['ls-tree', '-r', '-d', '--name-only', 'HEAD'], { cwd: repo.root, timeoutMs: 10_000 }).catch(
+    () => null,
+  );
+  const folders = (listed?.code === 0 ? listed.stdout.split('\n') : []).filter((f) => f && f.split('/').length <= 2);
+  const whole = 'The whole repository';
+  const picked =
+    folders.length === 0
+      ? whole
+      : (
+          await vscode.window.showQuickPick(
+            [whole, ...folders].map((label) => ({ label })),
+            { title: 'Jury: Tour This Repository', placeHolder: 'What to tour' },
+          )
+        )?.label;
+  if (!picked) return;
+
+  const scope = picked === whole ? 'the whole repository' : `the folder ${picked}/`;
+  await layOut(host, ctx, repo, 'tour', `Tour of ${picked === whole ? path.basename(repo.root) : `${picked}/`}`, scope);
+}
+
+/** Ask for a trail or a tour, and open it. `title` names the review; `asked` is what the model is given. */
+async function layOut(
+  host: SessionHost,
+  ctx: Context,
+  repo: Repo,
+  kind: 'trail' | 'tour',
+  title: string,
+  asked: string,
+): Promise<void> {
   const provider = await providerFor('ask', true);
   if (!provider) return;
   if (!provider.capabilities().repoTools) {
-    vscode.window.showWarningMessage(`Jury: ${provider.id} cannot read the repository, so it cannot lay out a trail.`);
+    vscode.window.showWarningMessage(`Jury: ${provider.id} cannot read the repository, so it cannot lay out a ${kind}.`);
     return;
   }
 
-  log.appendLine(`[${new Date().toISOString()}] trail: ${asked}`);
+  log.appendLine(`[${new Date().toISOString()}] ${kind}: ${asked}`);
   const result = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: 'Jury: finding the code to read', cancellable: true },
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: kind === 'tour' ? 'Jury: exploring the code' : 'Jury: finding the code to read',
+      cancellable: true,
+    },
     async (progress, token) => {
       const controller = new AbortController();
       token.onCancellationRequested(() => controller.abort());
       try {
-        return await askTrail(provider, repo.root, asked, controller.signal, (label) => progress.report({ message: label }));
+        return await askTrail(provider, repo.root, asked, controller.signal, (label) => progress.report({ message: label }), kind);
       } catch (error) {
         if (error instanceof ProviderError && error.kind === 'cancelled') return null;
         return { ok: false as const, reason: error instanceof Error ? error.message : String(error) };
@@ -1120,15 +1167,15 @@ async function walkThrough(host: SessionHost, ctx: Context, question?: string): 
   );
   if (!result) return;
   if (!result.ok) {
-    log.appendLine(`  trail failed: ${result.reason}`);
-    vscode.window.showErrorMessage(`Jury: no trail for that question — ${result.reason}.`);
+    log.appendLine(`  ${kind} failed: ${result.reason}`);
+    vscode.window.showErrorMessage(`Jury: no ${kind} — ${result.reason}.`);
     return;
   }
 
-  log.appendLine(`  trail: ${result.trail.steps.length} steps, $${result.usage.costUsd.toFixed(4)}`);
-  await open(host, { kind: 'trail', question: asked.trim(), ...result.trail }, ctx, repo);
+  log.appendLine(`  ${kind}: ${result.trail.steps.length} steps, $${result.usage.costUsd.toFixed(4)}`);
+  await open(host, { kind: 'trail', question: title, ...result.trail }, ctx, repo);
 
-  // The answer to the question is the trail's summary: show it, as grouping shows its own.
+  // The answer is the trail's summary: show it, as grouping shows its own.
   const session = host.active;
   if (session?.spec.kind === 'trail' && !session.error && vscode.workspace.getConfiguration('jury').get('walkthrough.autoOpen', true)) {
     await showWalkthrough(session, ctx.documents);

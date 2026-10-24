@@ -69,6 +69,7 @@ Open the command palette and run one of:
 | Jury: Review a Commit… | One commit, compared to its parent |
 | Jury: Resume Last Review | The review you had open most recently |
 | Jury: Walk Me Through… | Code that answers a question you type, in the order to read it |
+| Jury: Tour This Repository… | How the repository, or one folder of it, is put together |
 | Jury: Open a Saved Review… | A review you started earlier, picked from a list |
 
 The review opens in the Jury panel in the activity bar.
@@ -181,6 +182,17 @@ span you step through with `alt+j` and mark with `alt+m`, and you can leave note
 walkthrough shows the short answer. The files open as they are in your working tree, not as a
 diff. A trail is saved like any review: **Jury: Open a Saved Review…** brings it back without
 asking the model again. It needs a provider that can read the repository (`claude`).
+
+### Touring a repository
+
+**Jury: Tour This Repository…** is a trail for someone new to the code. Pick the whole
+repository or one folder. The model explores it and lays out a tour: the areas of the code
+(for example "Git layer" or "Editor UI"), in the order that makes each one understandable,
+with a few stops in each. Every area is a row in the Jury panel and its stops are below it.
+The walkthrough shows a summary and a diagram of how the areas fit together.
+
+A tour of a whole repository reads a lot of code. On this repository it takes about 45
+seconds and costs about $0.25–0.35 with Sonnet; a folder costs less.
 
 ### Generated files
 
