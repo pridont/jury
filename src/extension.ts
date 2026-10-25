@@ -25,6 +25,7 @@ import { Queue } from './agent/queue.js';
 import { isWorthSummarising, summariseFiles } from './agent/summaries.js';
 import { clusterChange } from './agent/cluster.js';
 import { authorIntent } from './git/intent.js';
+import { codebaseMap } from './agent/map.js';
 import { render as renderWalkthrough, showWalkthrough } from './ui/walkthrough.js';
 import { Activity } from './ui/activity.js';
 import { forgetSessions, registerChat } from './ui/chat.js';
@@ -607,9 +608,13 @@ async function cluster(
 
   ctx.activity.start('Grouping the change', 0, 'deliberating');
   const reading = ctx.nav.current?.hunk.id;
-  const intent = await authorIntent(session.repo, session.spec, session.base, session.head);
+  const [intent, map] = await Promise.all([
+    authorIntent(session.repo, session.spec, session.base, session.head),
+    codebaseMap(session.repo, session.files.map((file) => file.path)),
+  ]);
   if (!live()) return 'cancelled';
-  const result = await clusterChange(deps, session.files, session.summaries, fresh, intent);
+  if (map) log.appendLine(`  with the map from ${map.slice(0, map.indexOf(':'))}`);
+  const result = await clusterChange(deps, session.files, session.summaries, fresh, intent, map);
   // Grouped from files that are no longer on screen, or for a review that is gone.
   if (!live()) return 'cancelled';
 
@@ -1192,8 +1197,11 @@ async function layOut(
   log.appendLine(`  ${kind}: ${result.trail.steps.length} steps, $${result.usage.costUsd.toFixed(4)}`);
   await open(host, { kind: 'trail', question: title, ...result.trail }, ctx, repo);
 
-  // The answer is the trail's summary: show it, as grouping shows its own.
+  // Saved now, not at the first mark: the answer was paid for, and a tour is the codebase map.
   const session = host.active;
+  if (session?.spec.kind === 'trail') await persist(session);
+
+  // The answer is the trail's summary: show it, as grouping shows its own.
   if (session?.spec.kind === 'trail' && !session.error && vscode.workspace.getConfiguration('jury').get('walkthrough.autoOpen', true)) {
     await showWalkthrough(session, ctx.documents);
   }

@@ -56,6 +56,9 @@ A detailed tour asks the `deep` tier and a quick one the `smart` tier, with the 
 The detailed one is the default: a tour is asked for once and saved, and on this repository
 the deep model gave more stops that explain mechanisms rather than name files.
 
+A trail is saved as soon as it opens, not at its first mark: the answer cost money, and a
+saved tour is also the codebase map (see below).
+
 Model calls normally stop after 90 seconds. Trails and tours get 10 minutes: they run behind
 a progress notification with a Cancel button, and a detailed tour takes about two.
 
@@ -123,6 +126,15 @@ instructions. The model uses it to name cohorts and as a hint for where they spl
 a note wherever the claim and the diff disagree: something described that no hunk does, or a
 change in behaviour nobody mentioned. A grouping pass has no tools, so text in a
 description can at worst produce a bad grouping, which is then checked like any other.
+
+Before that comes a map of the codebase, if a tour of it was taken: the tour's summary, its
+areas with the files read for each, and its diagram, cut at 4,000 characters. Nothing new is
+stored or asked for: the map is the saved tour that covers most of the changed files (one of
+`src/` covers those under `src/`; one of the whole repository covers them all), the newest
+on a tie. It is fenced in `<map>` tags the same way. The model uses it to say which area of
+the codebase a cohort touches and how far a change can reach. A map can be older than the
+code; it is context, not a claim to check, so the prompt asks for no notes about it. Take a
+new tour when the code has moved on.
 
 ## Detecting generated files
 
