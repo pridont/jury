@@ -52,29 +52,47 @@ export function buildTrail(
     return { path, status: 'unchanged', binary: false, hunks, stats: { added: 0, removed: 0 } };
   });
 
+  // A step is a cohort of its own, unless it shares an area with the step before it: then
+  // it is the next layer of that area's cohort, as a tour reads one part of the code at a time.
   const cohorts: Cohort[] = [];
+  let area: string | undefined;
   steps.forEach((step, index) => {
     const hunks = placed[index]!;
     if (hunks.length === 0) return;
     const id = `t${index + 1}`;
+    const layer = {
+      id: `${id}l1`,
+      title: step.title,
+      summary: step.summary,
+      hunkIds: hunks.map((hunk) => hunk.id),
+      paths: [...new Set(hunks.map((hunk) => hunk.path))],
+    };
+
+    const last = cohorts.at(-1);
+    if (last && step.area && step.area === area) {
+      last.layers.push(layer);
+      last.summary = '';
+      return;
+    }
+    area = step.area;
     cohorts.push({
       id,
-      title: step.title,
+      title: step.area || step.title,
+      // A cohort of one layer is drawn as that layer, so it speaks for it. An area of
+      // several says nothing a stop does not say better.
       summary: step.summary,
       kind: 'change',
       risk: 'low',
       origin: 'ai',
-      layers: [
-        {
-          id: `${id}l1`,
-          title: step.title,
-          summary: step.summary,
-          hunkIds: hunks.map((hunk) => hunk.id),
-          paths: [...new Set(hunks.map((hunk) => hunk.path))],
-        },
-      ],
+      layers: [layer],
     });
   });
+
+  // An area with one stop is drawn as one row: it carries the stop's name as well as its own.
+  for (const cohort of cohorts) {
+    const only = cohort.layers.length === 1 ? cohort.layers[0]! : undefined;
+    if (only && cohort.title !== only.title) cohort.title = `${cohort.title}: ${only.title}`;
+  }
 
   return { files, cohorts };
 }

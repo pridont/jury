@@ -242,7 +242,7 @@ const DIAGRAM_TYPES =
  * the preview would render a broken code block instead of saying nothing — which is worse
  * than the omission the field is supposed to default to.
  */
-function diagramOf(value: unknown): string {
+export function diagramOf(value: unknown): string {
   const source = text(value)
     .replace(/^```(?:mermaid)?\s*\n?/i, '')
     .replace(/\n?```$/, '')

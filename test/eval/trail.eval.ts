@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ClaudeProvider } from '../../src/agent/providers/claude.js';
 import { askTrail } from '../../src/agent/trail.js';
+import type { Tier } from '../../src/agent/provider.js';
 import { buildTrail } from '../../src/model/trail.js';
 
 /**
@@ -50,6 +51,59 @@ describe('trail', () => {
       expect(steps.length).toBeLessThanOrEqual(8);
       // Every span is a file that exists, and lands inside it: nothing was dropped or clamped.
       expect(built.cohorts).toHaveLength(steps.length);
+      for (const span of spans) {
+        const lines = read(span.path);
+        expect(lines, `${span.path} exists`).not.toBeNull();
+        expect(span.end, `${span.path}:${span.start}-${span.end} inside the file`).toBeLessThanOrEqual(lines!.length);
+        expect(span.end - span.start + 1, `${span.path}:${span.start}-${span.end} readable`).toBeLessThanOrEqual(80);
+      }
+      for (const place of through) expect(spans.some((span) => span.path.startsWith(place)), `passes through ${place}`).toBe(true);
+    });
+  }
+});
+
+const TOURS: { scope: string; tier: Tier; through: string[] }[] = [
+  { scope: 'the whole repository', tier: 'smart', through: ['src/git/', 'src/model/', 'src/agent/', 'src/ui/'] },
+  { scope: 'the folder src/agent/', tier: 'smart', through: ['src/agent/'] },
+  // The detailed tour has to go further than the quick one, or it is not worth five times the cost.
+  {
+    scope: 'the whole repository',
+    tier: 'deep',
+    through: ['src/git/', 'src/model/', 'src/agent/', 'src/ui/', 'src/state/', 'src/github/'],
+  },
+];
+
+describe('tour', () => {
+  for (const { scope, tier, through } of TOURS) {
+    it(`${scope} (${tier})`, { timeout: 900_000 }, async () => {
+      const provider = new ClaudeProvider();
+      expect((await provider.available()).ok, 'claude must be available to run the eval').toBe(true);
+
+      let tools = 0;
+      const result = await askTrail(provider, root, scope, new AbortController().signal, () => tools++, { kind: 'tour', tier });
+      expect(result.ok, result.ok ? '' : result.reason).toBe(true);
+      if (!result.ok) return;
+
+      const { steps, summary, diagram } = result.trail;
+      const built = buildTrail(steps, read);
+      console.log(
+        `\n=== tour of ${scope} ===\n${summary}\n${diagram ?? '(no diagram)'}\n` +
+          built.cohorts
+            .map((c, i) => `  ${i + 1}. ${c.title}\n${c.layers.map((l) => `       - ${l.title}`).join('\n')}`)
+            .join('\n') +
+          `\n  ${steps.length} stops, ${tools} tool calls, $${result.usage.costUsd.toFixed(4)}`,
+      );
+
+      // Areas, each read in one go: an area that comes back later is a tour that wanders.
+      const areas = steps.map((step) => step.area ?? '');
+      const visits = areas.filter((area, i) => area !== areas[i - 1]);
+      expect(areas.every(Boolean), 'every stop is in an area').toBe(true);
+      expect(new Set(visits).size, `each area visited once: ${visits.join(' → ')}`).toBe(visits.length);
+      expect(visits.length).toBeGreaterThanOrEqual(2);
+      expect(visits.length).toBeLessThanOrEqual(7);
+      expect(diagram, 'a diagram that parses').toMatch(/^flowchart/);
+
+      const spans = steps.flatMap((step) => step.spans);
       for (const span of spans) {
         const lines = read(span.path);
         expect(lines, `${span.path} exists`).not.toBeNull();

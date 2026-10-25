@@ -65,7 +65,13 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
   lines.push('## Read in this order', '');
   cohorts.forEach((cohort, index) => {
     const risk = cohort.risk === 'low' ? '' : ` **(${cohort.risk} risk)**`;
-    lines.push(`${index + 1}. **${cohort.title}**${risk} — ${cohort.summary || 'no summary'}`);
+    // An area of a tour has no account of its own; its stops do, so they speak for it.
+    if (!cohort.summary && cohort.layers.length > 1) {
+      lines.push(`${index + 1}. **${cohort.title}**${risk}`);
+      for (const layer of cohort.layers) lines.push(`   - **${layer.title}** — ${layer.summary || 'no summary'}`);
+    } else {
+      lines.push(`${index + 1}. **${cohort.title}**${risk} — ${cohort.summary || 'no summary'}`);
+    }
     if (cohort.riskReason) lines.push(`   ${cohort.riskReason}`);
   });
   lines.push('');

@@ -29,6 +29,11 @@ export type Request = {
   tools?: readonly ToolCapability[];
   cwd?: string;
   session?: { id: string; resume?: boolean };
+  /**
+   * How long the call may run, when the provider's own limit is too short. Only for work a
+   * person started, can see running, and can cancel: a tour of a repository takes minutes.
+   */
+  timeoutMs?: number;
 };
 
 export type Usage = {

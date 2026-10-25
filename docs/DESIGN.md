@@ -44,6 +44,21 @@ file is cut to it, and a range in a file that is not there, or outside the repos
 dropped. A trail with nothing left is an error, not an empty review. Trails are not
 classified and not grouped; the model's order is the reading order.
 
+A span is also cut to its first 80 lines. The prompt asks for that, and a model does not
+always do it.
+
+A tour is a trail with a different prompt. Each step names its area, and steps of one area
+that come one after another become the layers of one cohort. An area with a single stop is
+one row titled `Area: stop`. The answer can also hold a mermaid diagram of the areas, which
+is kept in the spec and drawn in the walkthrough.
+
+A detailed tour asks the `deep` tier and a quick one the `smart` tier, with the same prompt.
+The detailed one is the default: a tour is asked for once and saved, and on this repository
+the deep model gave more stops that explain mechanisms rather than name files.
+
+Model calls normally stop after 90 seconds. Trails and tours get 10 minutes: they run behind
+a progress notification with a Cancel button, and a detailed tour takes about two.
+
 ## Hunk identity
 
 A hunk's id is a hash of its file path and its added and removed lines. Context lines and the
