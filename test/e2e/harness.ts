@@ -322,6 +322,16 @@ export async function pick(index = 0): Promise<void> {
   await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
 }
 
+/**
+ * The files of the multi-file diff editor in front, as VS Code holds them: one pair of sides
+ * each. VS Code leaves out a file with one side, an added or a deleted one, and heads a pair
+ * whose two paths differ as a rename. Its tab input is a proposed API, but it is there.
+ */
+export function multiDiffSides(): vscode.TabInputTextDiff[] {
+  const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input as { textDiffs?: vscode.TabInputTextDiff[] } | undefined;
+  return input?.textDiffs ?? [];
+}
+
 /** The text of the active editor, or of the open untitled/virtual document named `name`. */
 export function documentText(name?: string): string {
   if (!name) return vscode.window.activeTextEditor?.document.getText() ?? '';

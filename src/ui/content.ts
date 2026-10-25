@@ -51,7 +51,10 @@ export function blobUri(root: string, path: string, rev: string): vscode.Uri {
     // by scheme, authority and path and drops the query, so without it the base and head of
     // one file are the same document to it — and whichever opened first answers for both.
     authority: rev.toLowerCase().replace(/[^a-z0-9.-]+/g, '-'),
-    path: `/${path}`,
+    // The file's own path on disk, as git's `git:` URIs do. The multi-file diff editor calls
+    // two sides with different paths a rename, whatever their schemes, and labels a path
+    // under the workspace folder relative to it.
+    path: vscode.Uri.joinPath(vscode.Uri.file(root), path).path,
     query: new URLSearchParams({ root, path, rev }).toString(),
   });
 }

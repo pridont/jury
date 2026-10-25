@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { Session } from '../../src/session.js';
-import { configure, dialogs, documentText, fake, gh, jury, pick, repo, review, waitFor } from './harness.js';
+import { configure, dialogs, documentText, fake, gh, jury, multiDiffSides, pick, repo, review, row, waitFor } from './harness.js';
 
 const BASE = {
   'src/clock.ts': 'export function now(): number {\n  return Date.now();\n}\n',
@@ -112,7 +112,7 @@ async function side(file: string, which: 'old' | 'new' = 'new'): Promise<vscode.
   return waitFor(
     () =>
       vscode.window.visibleTextEditors.find(
-        (e) => e.document.uri.scheme === 'jury' && e.document.uri.path === `/${file}` && new URLSearchParams(e.document.uri.query).get('rev') === rev,
+        (e) => e.document.uri.scheme === 'jury' && e.document.uri.path === vscode.Uri.file(path.join(repo.root, file)).path && new URLSearchParams(e.document.uri.query).get('rev') === rev,
       ),
     `the ${which} side of ${file}`,
   );
@@ -202,6 +202,30 @@ suite('pull request review', () => {
         call.input,
       );
       assert.doesNotMatch(call.input, /Describe your change/);
+    } finally {
+      await restore();
+    }
+  });
+
+  test('files opened together are each headed by their own name and status, never as a rename', async () => {
+    const restore = await configure({ 'ai.enabled': true });
+    try {
+      // The fake model groups the edited token.ts with the added session.ts.
+      await pullRequest({ extra: { 'src/session.ts': 'export const ttl = 60;\n' } });
+      await openPullRequest();
+      const api = await jury();
+      await waitFor(() => api.host.active?.clustered, 'the model grouping to land');
+
+      await vscode.commands.executeCommand('jury.openCohort', (await row(/Fake cohort 1/)).node);
+      const tab = () => vscode.window.tabGroups.activeTabGroup.activeTab?.label;
+      await waitFor(() => tab() === 'Fake cohort 1 (2 files)', `the cohort's files, not "${tab()}"`);
+
+      const token = vscode.Uri.file(path.join(repo.root, 'src/token.ts')).path;
+      assert.deepEqual(
+        multiDiffSides().map(({ original, modified }) => [original.path, modified.path]),
+        [[token, token]],
+        'the added file has one side',
+      );
     } finally {
       await restore();
     }
