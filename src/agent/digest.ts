@@ -32,6 +32,8 @@ export function buildDigest(
   budget: number,
   /** What the author says the change does, from `authorIntent`. */
   intent = '',
+  /** How the codebase is organised, from `codebaseMap`. */
+  map = '',
 ): Digest {
   const labels = new Map<string, Hunk>();
   const scaffolding: Hunk[] = [];
@@ -52,18 +54,23 @@ export function buildDigest(
   // Render at the fullest sample that fits, then progressively less. Structure is written
   // every time; only the samples give way.
   for (const sample of [SAMPLE_LINES, 4, 2]) {
-    const text = intro(intent) + render(reviewable, summaries, labelOf, scaffolding, sample);
+    const text = intro(intent, map) + render(reviewable, summaries, labelOf, scaffolding, sample);
     if (text.length <= budget) return { text, labels, scaffolding };
   }
-  return { text: intro(intent) + render(reviewable, summaries, labelOf, scaffolding, 0), labels, scaffolding };
+  return { text: intro(intent, map) + render(reviewable, summaries, labelOf, scaffolding, 0), labels, scaffolding };
 }
 
-/** The author's own account, fenced off from the change so it reads as a claim about it. */
-function intro(intent: string): string {
-  if (!intent) return '';
-  // The author's text ends where we say it does, not where it says it does.
-  const fenced = intent.replaceAll('</author>', '</ author>');
-  return `What the author says about this change:\n<author>\n${fenced}\n</author>\n\n`;
+/**
+ * The map of the codebase, then the author's own account, each fenced off from the change:
+ * one is background, the other a claim about it.
+ */
+function intro(intent: string, map: string): string {
+  let text = '';
+  // Both are written from the repository, which anyone can write to. Each ends where we say
+  // it does, not where it says it does.
+  if (map) text += `How the codebase is organised, from an earlier tour of it:\n<map>\n${map.replaceAll('</map>', '</ map>')}\n</map>\n\n`;
+  if (intent) text += `What the author says about this change:\n<author>\n${intent.replaceAll('</author>', '</ author>')}\n</author>\n\n`;
+  return text;
 }
 
 function render(

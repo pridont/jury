@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { dialogs, documentText, fake, jury, repo, sidebar, waitFor } from './harness.js';
+import { configure, dialogs, documentText, fake, jury, repo, review, sidebar, waitFor } from './harness.js';
 
 const lines = (name: string) => Array.from({ length: 6 }, (_, i) => `export const ${name}${i + 1} = ${i + 1};`).join('\n') + '\n';
 
@@ -81,6 +81,35 @@ suite('tour', () => {
 
     assert.match(asked()[0]!.input, /^Tour: the whole repository$/m);
     assert.match(asked()[0]!.args.join(' '), /--model sonnet/);
+  });
+
+  test('a saved tour is the map the grouping model reads a later change against', async () => {
+    fake.reset();
+    await repo.reset({ 'src/types.ts': lines('t'), 'src/ui/tree.ts': lines('u'), 'src/ids.ts': lines('i') });
+    fake.reply('guided tour', JSON.stringify(TOUR));
+    const undo = await configure({ 'ai.enabled': true });
+    try {
+      const api = await jury();
+      dialogs.choose(/^src$/);
+      dialogs.choose(/^Quick$/);
+      await vscode.commands.executeCommand('jury.tour');
+      await waitFor(() => api.host.active?.spec.kind === 'trail' && !api.host.active.loading, 'the tour');
+
+      // Three hunks: fewer is not worth grouping, and the model is never asked.
+      repo.write({ 'src/types.ts': lines('t2'), 'src/ui/tree.ts': lines('u2'), 'src/ids.ts': lines('i2') });
+      await review('jury.review');
+      const call = await waitFor(() => fake.calls().find((c) => c.system.includes('organise code reviews')), 'grouping');
+      assert.ok(
+        call.input.startsWith(
+          'How the codebase is organised, from an earlier tour of it:\n<map>\n' +
+            `Tour of src/: ${TOUR.summary}\n\nAreas, and the files read for each:\n- Core: src/types.ts\n- UI: src/ui/tree.ts\n\n` +
+            `How they fit together:\n${TOUR.diagram}\n</map>\n\n`,
+        ),
+        call.input,
+      );
+    } finally {
+      await undo();
+    }
   });
 
   test('closing the second question asks nothing', async () => {

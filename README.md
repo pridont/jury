@@ -34,7 +34,8 @@ language model finds and orders the code. You do the reading.
   in the order to read it.
 - Ask for a **tour** of the whole repository or one folder: its parts in the order that makes
   each one understandable, with a diagram of how they fit together.
-- Trails and tours are saved, so you can come back to one without asking again.
+- Trails and tours are saved, so you can come back to one without asking again. A saved
+  tour is also given to the model as a map of the codebase when it groups a later change.
 
 ### Both
 
@@ -218,6 +219,11 @@ Jury then asks how thorough the tour should be:
 
 A detailed tour covers more of the code and says more at each stop about how things work.
 A tour is saved, so you pay for it once. Touring one folder costs less.
+
+A saved tour also helps later reviews. When a change is grouped, the model is given the tour
+that covers most of the changed files as a map of the codebase, so cohort summaries can say
+which part of the code a change touches, for example "the Gateway's authenticate middleware".
+Take a new tour when the code has changed a lot; the old one is still used until then.
 
 ### Generated files
 
