@@ -1,7 +1,7 @@
 {
   "name": "jury",
   "displayName": "Jury",
-  "description": "Review a diff as an ordered stack of logical changes, not an alphabetical list of files. A model groups and orders the change; you judge the code.",
+  "description": "Read code in the order it makes sense. Review a diff or pull request as an ordered stack of related changes, or ask how something works and get the code to read, step by step. A model finds and orders the code; you read it and judge it.",
   "version": "0.0.1",
   "publisher": "pridont",
   "icon": "media/jury-tile-128.png",
@@ -27,6 +27,10 @@
     "code review",
     "diff",
     "pull request",
+    "code understanding",
+    "onboarding",
+    "codebase tour",
+    "code walkthrough",
     "claude",
     "ai"
   ],
@@ -55,7 +59,7 @@
     "viewsWelcome": [
       {
         "view": "jury.stack",
-        "contents": "No review is open.\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a commit](command:jury.reviewCommit)\n[Review a pull request](command:jury.reviewPr)\n[Walk me through this code](command:jury.trail)\n[Tour this repository](command:jury.tour)\n[Resume last review](command:jury.resume)\n[Open a saved review](command:jury.list)\n\nSomething not working? [Run the doctor](command:jury.doctor)\n",
+        "contents": "Review a change\n[Review working tree](command:jury.review)\n[Review staged changes](command:jury.reviewStaged)\n[Review this branch](command:jury.reviewBase)\n[Review a commit](command:jury.reviewCommit)\n[Review a pull request](command:jury.reviewPr)\n\nUnderstand code\n[Walk me through this code](command:jury.trail)\n[Tour this repository](command:jury.tour)\n\nPick up where you left off\n[Resume last review](command:jury.resume)\n[Open a saved review](command:jury.list)\n\nSomething not working? [Run the doctor](command:jury.doctor)\n",
         "when": "!jury.active"
       }
     ],
@@ -799,7 +803,7 @@
         "id": "jury.ask",
         "name": "jury",
         "fullName": "Jury",
-        "description": "Ask about the change you are reading",
+        "description": "Ask about the code you are reading, or /trail for code to read in order",
         "isSticky": true,
         "commands": [
           {

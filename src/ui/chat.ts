@@ -41,7 +41,7 @@ export function registerChat(deps: ChatDeps): vscode.Disposable {
 
     const session = deps.host.active;
     if (!session) {
-      stream.markdown('No review is open. Run **Jury: Review Working Tree** first.');
+      stream.markdown('No review is open. Run **Jury: Review Working Tree**, or ask `@jury /trail` how something in this repository works.');
       return;
     }
 
