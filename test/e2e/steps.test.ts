@@ -65,6 +65,37 @@ suite('step lenses', () => {
     assert.deepEqual(await steps('src/c.ts'), [[0, '2. Tests — Cover the boundary. …']]);
   });
 
+  test('a diff editor, which hides lenses, gets the same words after the line', async () => {
+    fake.reply('organise code reviews', ANSWER);
+    const api = await review('jury.review', { clustered: true });
+    const uri = vscode.Uri.file(path.join(repo.root, 'src/a.ts')).toString();
+    const entry = api.nav.entries.find((e) => e.hunk.path === 'src/a.ts')!;
+
+    // A modified file opens as a diff; the working tree file is its new side.
+    await api.nav.goToHunk(entry.hunk.id);
+    const drawn = await waitFor(() => api.steps.drawn.get(uri), 'the text after line 1 of a.ts');
+    assert.deepEqual(drawn, [
+      '⚠ Not as described …  ·  1. Expiry check …',
+    ]);
+
+    // With lenses on in diff editors, the lens says it and the text would say it twice.
+    const diffEditor = vscode.workspace.getConfiguration('diffEditor');
+    await diffEditor.update('codeLens', true, vscode.ConfigurationTarget.Workspace);
+    try {
+      await waitFor(() => api.steps.drawn.size === 0 || undefined, 'no text once lenses show');
+    } finally {
+      await diffEditor.update('codeLens', undefined, vscode.ConfigurationTarget.Workspace);
+    }
+  });
+
+  test('a plain editor gets the lens and no text after the line', async () => {
+    fake.reply('organise code reviews', ANSWER);
+    const api = await review('jury.review', { clustered: true });
+    await vscode.window.showTextDocument(vscode.Uri.file(path.join(repo.root, 'src/a.ts')));
+    await waitFor(async () => (await steps('src/a.ts')).length === 2 || undefined, 'the lenses on a.ts');
+    assert.equal(api.steps.drawn.size, 0);
+  });
+
   test('a review no model grouped has no step lenses: its steps are its files', async () => {
     const undo = await configure({ 'ai.enabled': false });
     try {
