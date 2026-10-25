@@ -606,7 +606,7 @@ async function cluster(
 ): Promise<string | null> {
   if (session.clustered) return null;
 
-  ctx.activity.start('Grouping the change', 0, 'deliberating');
+  ctx.activity.start('Grouping the change');
   const reading = ctx.nav.current?.hunk.id;
   const [intent, map] = await Promise.all([
     authorIntent(session.repo, session.spec, session.base, session.head),
@@ -698,7 +698,7 @@ function worthSummarising(session: Session): boolean {
 /** Pass 1: a sentence per file, appearing as each lands. */
 async function summarise(session: Session, ctx: Context, deps: PassDeps): Promise<void> {
   const started = Date.now();
-  ctx.activity.start('Reading the change', session.files.filter(isWorthSummarising).length, 'answering');
+  ctx.activity.start('Reading the change', session.files.filter(isWorthSummarising).length);
 
   const tally = await summariseFiles(deps, session.files, (event) => {
     if (event.kind === 'summary') session.summaries.set(event.path, event.summary);

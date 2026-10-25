@@ -214,20 +214,14 @@ time you open a review in that repository.
 
 ## Loading icons
 
-While work is running, the first row of the tree shows what is happening, with an animated
-icon for the kind of work:
+While work is running, the first row of the tree shows what is happening, with
+`jury-loading.svg`: the mark putting itself in order, one step and its line at a time.
 
-| Icon                    | When                             |
-| ----------------------- | -------------------------------- |
-| `jury-scanning.svg`     | Reading the diff                 |
-| `jury-answering.svg`    | File summaries are coming in     |
-| `jury-deliberating.svg` | The model is grouping the change |
-
-The animations loop for as long as the work does. They cannot be finite: the tree draws an
+The animation loops for as long as the work does. It cannot be finite: the tree draws an
 icon as an image, an image's animation clock starts when the file is loaded rather than when
 it is shown, and the file stays cached — so a fixed number of iterations plays out once and
-every appearance after that is a frozen picture. With reduced motion turned on, the static
-mark is shown instead. Both rules are written into the SVG files themselves.
+every appearance after that is a frozen picture. With reduced motion turned on, the finished
+mark is shown instead. Both rules are written into the SVG file itself.
 
 An image has no inherited text colour, so `currentColor` resolves to black and disappears on
 a dark theme. The art lives in `media/` in `currentColor`, the build writes a light and a
