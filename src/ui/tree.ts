@@ -168,7 +168,12 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // one depth have to line up: a row that alone has a checkbox and an icon starts its
         // label some 36px right of its siblings, and the tree's own indent is 8px, so that
         // shift reads as being nested under the row above rather than as a sibling of it.
-        const icon = riskIcon(node.cohort.risk);
+        // A mismatch takes the icon: the description saying so is the first thing a long title
+        // pushes off the row, and it has to be seen before the code is. The risk is still in the
+        // tooltip, the walkthrough and what a screen reader hears.
+        const icon = node.cohort.mismatch
+          ? new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'))
+          : riskIcon(node.cohort.risk);
         if (icon) item.iconPath = icon;
         else if (!onlyPath) item.iconPath = new vscode.ThemeIcon('layers');
         item.contextValue = scaffolding ? 'cohort-scaffolding' : 'cohort';

@@ -142,6 +142,7 @@ left out. Where the claim and the diff disagree:
 
 - a change in behaviour nobody mentioned, or one described differently, is a `mismatch` on
   the cohort whose hunks make it. It is shown as **Not as described** on that cohort's row,
+  with a warning icon in place of the risk icon, since a long title pushes the words off it,
   under it in the walkthrough and the export, and on its code, where the expectation meets
   the code.
 - something described that no hunk does has no cohort to go on, so it is a note.

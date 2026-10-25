@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { configure, fake, repo, review, waitFor } from './harness.js';
+import { configure, fake, repo, review, row, waitFor } from './harness.js';
 
 const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
 const PATHS = ['src/a.ts', 'src/b.ts', 'src/c.ts'];
@@ -63,6 +63,16 @@ suite('step lenses', () => {
     // Too long for one line, so the title and the whole sentences that fit. The rest is the
     // lens's hover, which this command does not hand back.
     assert.deepEqual(await steps('src/c.ts'), [[0, '2. Tests — Cover the boundary. …']]);
+  });
+
+  test('a cohort that is not as described has a warning icon on its row', async () => {
+    fake.reply('organise code reviews', ANSWER);
+    await review('jury.review', { clustered: true });
+    // The icon, not the description: a long title pushes the description off a narrow row.
+    const flagged = (await row(/Expiry check/)).item;
+    assert.equal((flagged.iconPath as vscode.ThemeIcon).id, 'warning');
+    assert.match(String(flagged.description), /^not as described · /);
+    assert.notEqual(((await row(/Tests/)).item.iconPath as vscode.ThemeIcon | undefined)?.id, 'warning');
   });
 
   test('a diff editor, which hides lenses, gets the same words after the line', async () => {
