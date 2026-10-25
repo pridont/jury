@@ -64,6 +64,10 @@ export function toMarkdown(input: ExportInput): string {
       lines.push(`**Risk: ${cohort.risk}**${cohort.riskReason ? ` — ${cohort.riskReason}` : ''}`);
       lines.push('');
     }
+    if (cohort.mismatch) {
+      lines.push(`**Not as described:** ${cohort.mismatch}`);
+      lines.push('');
+    }
 
     for (const layer of cohort.layers) {
       const notes = layer.hunkIds.flatMap((id) => byHunk.get(id) ?? []);

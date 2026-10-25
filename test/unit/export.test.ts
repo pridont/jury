@@ -44,6 +44,13 @@ describe('toMarkdown', () => {
     expect(out).toContain('`aaaaaaaaaaaa` → `bbbbbbbbbbbb`');
   });
 
+  it('says on its cohort where the code is not as the author described it', () => {
+    const files = [file('src/auth.ts')];
+    const cohorts = heuristicCohorts(files).map((c) => ({ ...c, mismatch: 'Called a refactor, but expiry now rejects equal times.' }));
+    const out = toMarkdown({ spec: { kind: 'worktree' }, base: 'HEAD', head: 'worktree', cohorts, files, comments: [], marks: new Set() });
+    expect(out).toContain('**Not as described:** Called a refactor, but expiry now rejects equal times.');
+  });
+
   it('groups notes by cohort, not by path', () => {
     const files = [file('src/auth.ts'), file('src/auth.spec.ts')];
     const note = newComment(files[0]!.hunks[0]!.id, 1, 'new', 'boundary looks off by one');

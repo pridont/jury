@@ -140,6 +140,8 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         // A cohort of one layer stands in for that layer, so it says what the layer row would.
         const notes = only ? notesOn(session, only.hunkIds) : 0;
         item.description = [
+          // Before reading, not after: the title may have set an expectation the code breaks.
+          node.cohort.mismatch ? 'not as described' : '',
           notes > 0 ? `${notes} note${notes === 1 ? '' : 's'}` : '',
           only ? changedNote(session, only.hunkIds) : '',
           this.progressNote(session, node.cohort.layers.flatMap((layer) => layer.hunkIds)),
@@ -154,7 +156,8 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const risk = node.cohort.risk === 'low' ? '' : `${node.cohort.risk} risk`;
         item.tooltip = new vscode.MarkdownString(
           prose +
-            (risk ? `\n\n**${risk[0]!.toUpperCase()}${risk.slice(1)}**${node.cohort.riskReason ? `: ${node.cohort.riskReason}` : ''}` : ''),
+            (risk ? `\n\n**${risk[0]!.toUpperCase()}${risk.slice(1)}**${node.cohort.riskReason ? `: ${node.cohort.riskReason}` : ''}` : '') +
+            (node.cohort.mismatch ? `\n\n**Not as described:** ${node.cohort.mismatch}` : ''),
         );
         // Medium and high differ only by colour on screen; a screen reader gets the word.
         item.accessibilityInformation = {

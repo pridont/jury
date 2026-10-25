@@ -122,10 +122,20 @@ Before the hunks comes what the author says about the change: the pull request's
 description (without the HTML comments a template leaves), and the commit messages, oldest
 first, cut at 6,000 characters. Uncommitted work has neither. It is fenced in `<author>` tags
 that the text cannot close itself, and the prompt treats it as a claim to check, never as
-instructions. The model uses it to name cohorts and as a hint for where they split, and adds
-a note wherever the claim and the diff disagree: something described that no hunk does, or a
-change in behaviour nobody mentioned. A grouping pass has no tools, so text in a
-description can at worst produce a bad grouping, which is then checked like any other.
+instructions. The model uses it as a hint for where cohorts split, and borrows its words for
+a cohort's title only where the hunks bear them out. A reviewer reads a cohort expecting what
+its title says, and tends to see that whether or not the code does it (Soloway and Ehrlich,
+1984), so a title written from the description could hide exactly the change the description
+left out. Where the claim and the diff disagree:
+
+- a change in behaviour nobody mentioned, or one described differently, is a `mismatch` on
+  the cohort whose hunks make it. It is shown as **Not as described** on that cohort's row,
+  under it in the walkthrough and the export, and on its code, where the expectation meets
+  the code.
+- something described that no hunk does has no cohort to go on, so it is a note.
+
+A grouping pass has no tools, so text in a description can at worst produce a bad grouping,
+which is then checked like any other.
 
 Before that comes a map of the codebase, if a tour of it was taken: the tour's summary, its
 areas with the files read for each, and its diagram, cut at 4,000 characters. Nothing new is
@@ -154,6 +164,20 @@ Checked in this order, most certain first:
 Each file shows why it was moved and can be brought back with **Not Scaffolding**. Jury
 remembers that choice for the repository. The rules lean towards leaving a file in the
 review, because hiding real code is worse than showing a generated file.
+
+## What each step is for
+
+The tree and the walkthrough say why a step is there, but neither is in view while its code
+is, and focus mode hides the tree. So a code lens above the line where a step begins says
+which step it is and what it is for. A step begins wherever a hunk's neighbour above it in
+the file belongs to a different layer: reading a file top to bottom, those are the lines
+where the reason for the code changes. A cohort of one layer is shown as the cohort, as in
+the tree. A cohort's mismatch goes on the starts of its first layer, before the step's own
+lens, so a long title cannot push it out of sight.
+
+The lens is drawn on one side only, the side with content, or a diff editor would say
+everything twice. A review grouped by file has none: each step is a file, and the tab
+already names it.
 
 ## Uses outside the change
 

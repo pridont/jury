@@ -20,8 +20,10 @@ language model finds and orders the code. You do the reading.
 - Groups a diff into **cohorts** (related work) and **layers** (steps within that work), in
   reading order.
 - A short walkthrough of what the change does before you read any code. It also says where
-  the pull request description or commit messages promise something the diff does not do,
-  or leave out something it does.
+  the pull request description or commit messages promise something the diff does not do.
+  A group whose code does something the description leaves out or tells differently is
+  marked **not as described**, on that group and on its code. Groups are named for what the
+  code does, not for what the description says it does.
 - Review GitHub pull requests without checking them out, post your notes back as review
   comments, suggest changes the author can apply in one click, and reply to other reviewers.
 - See how much code outside the change uses each function the change touches.
@@ -41,6 +43,8 @@ language model finds and orders the code. You do the reading.
 
 - Press `alt+j` to go to the next hunk or span, opening the next file when needed, and
   `alt+k` to go back.
+- Above the first line of each step, the editor says which step it is and what to look for
+  in it, so you do not have to look away from the code to know why you are reading it.
 - Mark what you have read. Marks are saved and survive a rebase. Each row shows how much of
   it is done, and the status bar shows the total; click it to go to the next unread part.
 - Leave notes on the code and export them as markdown.
@@ -130,6 +134,15 @@ After the author pushes again, run **Jury: Refresh Review**. Hunks that are unch
 their mark, even if they moved. Hunks whose content changed lose their mark, so you review
 them again. Rows with new or changed hunks say **changed**, and **Next / Previous Changed
 Hunk** steps through just those, until you open a different review.
+
+### What each step is for
+
+Once a model has grouped a review, or for any trail or tour, a line above where each step
+begins in a file names the step and says what it is for, for example **1. Accept tokens
+expiring exactly now — the comparison is now inclusive**. Hover it to read all of it. A
+group that is not what the author described has a second line, **Not as described**, at
+the start of its code. Reviews grouped by file have none: there, a step is just its file.
+These are code lenses, so they need `editor.codeLens` on, which is the default.
 
 ### Uses outside the change
 
