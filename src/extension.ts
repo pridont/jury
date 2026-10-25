@@ -64,7 +64,14 @@ const LEGACY_LAST_REVIEW = 'changestack.lastReview';
 let progressItem: vscode.StatusBarItem;
 
 /** What `activate` hands back: the live objects, so the end-to-end tests can inspect them. */
-export type Api = { host: SessionHost; tree: StackTree; nav: Navigator; comments: Comments; documents: Documents };
+export type Api = {
+  host: SessionHost;
+  tree: StackTree;
+  nav: Navigator;
+  comments: Comments;
+  documents: Documents;
+  steps: StepLenses;
+};
 
 export function activate(context: vscode.ExtensionContext): Api {
   log = vscode.window.createOutputChannel('Jury');
@@ -90,6 +97,7 @@ export function activate(context: vscode.ExtensionContext): Api {
   providers.register(vscodeLm);
   const queue = new Queue(4);
   const documents = new Documents();
+  const steps = new StepLenses(host);
 
   context.subscriptions.push(
     log,
@@ -113,7 +121,8 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, blobs),
     vscode.languages.registerDefinitionProvider({ scheme: SCHEME }, new BlobDefinitions(host)),
     vscode.languages.registerCodeLensProvider([{ scheme: SCHEME }, { scheme: 'file' }], new OutsideUses(host)),
-    vscode.languages.registerCodeLensProvider([{ scheme: SCHEME }, { scheme: 'file' }], new StepLenses(host)),
+    steps,
+    vscode.languages.registerCodeLensProvider([{ scheme: SCHEME }, { scheme: 'file' }], steps),
     vscode.workspace.registerTextDocumentContentProvider(DOC_SCHEME, documents),
     documents,
 
@@ -291,7 +300,7 @@ export function activate(context: vscode.ExtensionContext): Api {
   applyProviderSettings(claude, vscodeLm);
   void vscode.commands.executeCommand('setContext', 'jury.active', false);
   void restoreLast(host, ctx());
-  return { host, tree, nav, comments, documents };
+  return { host, tree, nav, comments, documents, steps };
 
   function unreviewed(entry: Entry): boolean {
     return !host.active?.marks.has(entry.hunk.id);

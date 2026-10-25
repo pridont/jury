@@ -142,6 +142,7 @@ left out. Where the claim and the diff disagree:
 
 - a change in behaviour nobody mentioned, or one described differently, is a `mismatch` on
   the cohort whose hunks make it. It is shown as **Not as described** on that cohort's row,
+  with a warning icon in place of the risk icon, since a long title pushes the words off it,
   under it in the walkthrough and the export, and on its code, where the expectation meets
   the code.
 - something described that no hunk does has no cohort to go on, so it is a note.
@@ -195,6 +196,16 @@ sentence can read as a different claim. The whole text is the lens's hover.
 The lens is drawn on one side only, the side with content, or a diff editor would say
 everything twice. A review grouped by file has none: each step is a file, and the tab
 already names it.
+
+A diff editor hides code lenses unless `diffEditor.codeLens` is on, which it is not by
+default, and most of a review is read in one. Turning it on for everyone would change every
+diff editor, not just Jury's, so a diff editor gets a decoration instead: the step's title,
+faint, after the line, in the lens colour, with the whole note as the line's hover. Only the
+title, because it shares the line with code in a pane half the editor wide. An
+editor counts as a diff when its document is a side of the active tab's text diff, or of a
+multi-file diff, in its group. When `diffEditor.codeLens` is on the lens shows there, and
+the decoration is not drawn, so nothing is said twice. The lens for uses outside the change
+still has no such fallback.
 
 ## Uses outside the change
 

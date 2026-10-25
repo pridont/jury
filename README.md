@@ -22,7 +22,7 @@ language model finds and orders the code. You do the reading.
 - A short walkthrough of what the change does before you read any code. It also says where
   the pull request description or commit messages promise something the diff does not do.
   A group whose code does something the description leaves out or tells differently is
-  marked **not as described**, on that group and on its code. Groups are named for what the
+  marked **not as described**, with a warning icon on its row, and on its code. Groups are named for what the
   code does, not for what the description says it does.
 - Review GitHub pull requests without checking them out, post your notes back as review
   comments, suggest changes the author can apply in one click, and reply to other reviewers.
@@ -145,6 +145,11 @@ of it. A
 group that is not what the author described has a second line, **Not as described**, at
 the start of its code. Reviews grouped by file have none: there, a step is just its file.
 These are code lenses, so they need `editor.codeLens` on, which is the default.
+
+A diff editor hides code lenses unless `diffEditor.codeLens` is on, and it is off by
+default. So in a diff editor the step's title is written faintly after its first line
+instead, and hovering that line shows the whole note. With `diffEditor.codeLens` on, the lens
+shows there too and the text after the line goes away.
 
 On a trail or tour, a stop can name the one line it turns on: the comparison, the call, the
 field. That line is highlighted, the stop's line sits on it instead of on the span's first
