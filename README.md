@@ -38,7 +38,8 @@ language model finds and orders the code. You do the reading.
 
 ### Both
 
-- Step through every hunk or span with one key, across files.
+- Press `alt+j` to go to the next hunk or span, opening the next file when needed, and
+  `alt+k` to go back.
 - Mark what you have read. Marks are saved and survive a rebase. Each row shows how much of
   it is done, and the status bar shows the total; click it to go to the next unread part.
 - Leave notes on the code and export them as markdown.
