@@ -187,6 +187,11 @@ where the reason for the code changes. A cohort of one layer is shown as the coh
 the tree. A cohort's mismatch goes on the starts of its first layer, before the step's own
 lens, so a long title cannot push it out of sight.
 
+A lens does not wrap, and an extension cannot ask how wide the editor is, so a line longer
+than 100 characters would run off its edge unread. It is shortened to the title and the
+summary's first sentence, or the title alone, ending in "…", never cut mid-sentence: half a
+sentence can read as a different claim. The whole text is the lens's hover.
+
 The lens is drawn on one side only, the side with content, or a diff editor would say
 everything twice. A review grouped by file has none: each step is a file, and the tab
 already names it.

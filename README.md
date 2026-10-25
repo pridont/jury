@@ -139,7 +139,9 @@ Hunk** steps through just those, until you open a different review.
 
 Once a model has grouped a review, or for any trail or tour, a line above where each step
 begins in a file names the step and says what it is for, for example **1. Accept tokens
-expiring exactly now — the comparison is now inclusive**. Hover it to read all of it. A
+expiring exactly now — the comparison is now inclusive**. A line too long to read whole
+shows the title and as many whole sentences as fit, ending in **…**; hover it to read all
+of it. A
 group that is not what the author described has a second line, **Not as described**, at
 the start of its code. Reviews grouped by file have none: there, a step is just its file.
 These are code lenses, so they need `editor.codeLens` on, which is the default.

@@ -23,7 +23,7 @@ const ANSWER = JSON.stringify({
     {
       id: 'c2',
       title: 'Tests',
-      summary: '',
+      summary: 'Cover the boundary. Every token that expires on the exact second of the check is now rejected, and the tests pin the clock to prove it.',
       kind: 'test',
       risk: 'low',
       layers: [{ id: 'c2l1', title: 'Cover it', summary: '', hunks: ['h3'] }],
@@ -37,8 +37,8 @@ async function steps(file: string): Promise<[number, string][]> {
   const uri = vscode.Uri.file(path.join(repo.root, file));
   // The command only asks about a document that is open.
   await vscode.workspace.openTextDocument(uri);
-  const lenses = (await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', uri)) ?? [];
-  return lenses
+  const found = (await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', uri)) ?? [];
+  return found
     .map((lens): [number, string] => [lens.range.start.line, lens.command?.title ?? ''])
     .filter(([, title]) => !title.includes('outside this change'));
 }
@@ -60,8 +60,9 @@ suite('step lenses', () => {
       [0, '$(warning) Not as described: Called a refactor, but expiry now rejects equal times.'],
       [0, '1. Expiry check — The comparison is inclusive.'],
     ]);
-    // A step with nothing to say still says which one it is.
-    assert.deepEqual(await steps('src/c.ts'), [[0, '2. Tests']]);
+    // Too long for one line, so the title and the whole sentences that fit. The rest is the
+    // lens's hover, which this command does not hand back.
+    assert.deepEqual(await steps('src/c.ts'), [[0, '2. Tests — Cover the boundary. …']]);
   });
 
   test('a review no model grouped has no step lenses: its steps are its files', async () => {
