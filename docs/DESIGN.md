@@ -201,7 +201,13 @@ A diff editor hides code lenses unless `diffEditor.codeLens` is on, which it is 
 default, and most of a review is read in one. Turning it on for everyone would change every
 diff editor, not just Jury's, so a diff editor gets a decoration instead: the step's title,
 faint, after the line, in the lens colour, with the whole note as the line's hover. Only the
-title, because it shares the line with code in a pane half the editor wide. An
+title, because it shares the line with code in a pane half the editor wide. And not always
+after the step's first line: after the nearest of its first four that leaves room for it in
+60 characters, about one side of a side-by-side diff beside the sidebar, or the shortest of
+them when none does. Text after a line starts where the code ends, and after a long line even
+a title is cut off at the pane's edge. A hunk opens with context, so the room is usually a
+closing brace or a blank line or two in. The nearest rather than the shortest, because a
+blank line further down sits between two declarations and reads as the next one's. An
 editor counts as a diff when its document is a side of the active tab's text diff, or of a
 multi-file diff, in its group. When `diffEditor.codeLens` is on the lens shows there, and
 the decoration is not drawn, so nothing is said twice. The lens for uses outside the change

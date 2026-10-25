@@ -84,9 +84,7 @@ suite('step lenses', () => {
     // A modified file opens as a diff; the working tree file is its new side.
     await api.nav.goToHunk(entry.hunk.id);
     const drawn = await waitFor(() => api.steps.drawn.get(uri), 'the text after line 1 of a.ts');
-    assert.deepEqual(drawn, [
-      '⚠ Not as described …  ·  1. Expiry check …',
-    ]);
+    assert.deepEqual(drawn, [[0, '⚠ Not as described …  ·  1. Expiry check …']]);
 
     // With lenses on in diff editors, the lens says it and the text would say it twice.
     const diffEditor = vscode.workspace.getConfiguration('diffEditor');
@@ -96,6 +94,29 @@ suite('step lenses', () => {
     } finally {
       await diffEditor.update('codeLens', undefined, vscode.ConfigurationTarget.Workspace);
     }
+  });
+
+  test("in a diff, the text goes after the roomiest of the step's first lines", async () => {
+    const LONG = "export const greeting = 'a line long enough to fill most of one side of a diff';\n\nexport function hello() {\n  return greeting;\n}\n";
+    await repo.reset({ ...BASE, 'src/long.ts': LONG });
+    repo.write({ ...EDITED, 'src/long.ts': LONG.replace('return greeting;', 'return greeting.toUpperCase();') });
+    const answer = JSON.parse(ANSWER);
+    answer.cohorts.push({
+      id: 'c3',
+      title: 'Shout the greeting',
+      summary: 'hello upper-cases it.',
+      kind: 'feature',
+      risk: 'low',
+      layers: [{ id: 'c3l1', title: 'Shout', summary: '', hunks: ['h4'] }],
+    });
+    fake.reply('organise code reviews', JSON.stringify(answer));
+    const api = await review('jury.review', { clustered: true });
+    const uri = vscode.Uri.file(path.join(repo.root, 'src/long.ts')).toString();
+
+    await api.nav.goToHunk(api.nav.entries.find((e) => e.hunk.path === 'src/long.ts')!.hunk.id);
+    // The hunk starts at line 1, which is long; line 2 is blank and has the whole pane.
+    const drawn = await waitFor(() => api.steps.drawn.get(uri), 'the text in long.ts');
+    assert.deepEqual(drawn, [[1, '3. Shout the greeting …']]);
   });
 
   test('a plain editor gets the lens and no text after the line', async () => {
