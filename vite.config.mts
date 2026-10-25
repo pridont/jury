@@ -3,14 +3,13 @@ import { defineConfig, type Plugin } from 'vite';
 
 /** The colour the editor draws its own icons in, on light and on dark themes. */
 const INK = { light: '#424242', dark: '#C5C5C5' } as const;
-const KINDS = ['scanning', 'answering', 'deliberating'] as const;
 
 /**
- * Write each loader icon once per theme.
+ * Write the loader icon once per theme.
  *
  * The tree draws an icon file as an image, and an image has no inherited text colour for
  * `currentColor` to take — it comes out black, invisible on a dark theme. So the art is kept
- * in one file per loader and the themed copies are generated here, rather than written into
+ * in one file and the themed copies are generated here, rather than written into
  * a storage folder at runtime: they ship inside the extension, where the editor is happy to
  * serve them and they exist before the first tree row is ever drawn.
  */
@@ -20,11 +19,9 @@ function themedLoaders(): Plugin {
     async closeBundle() {
       const out = 'dist/loaders';
       await mkdir(out, { recursive: true });
-      for (const kind of KINDS) {
-        const source = await readFile(`media/jury-${kind}.svg`, 'utf8');
-        for (const theme of ['light', 'dark'] as const) {
-          await writeFile(`${out}/jury-${kind}-${theme}.svg`, source.replaceAll('currentColor', INK[theme]));
-        }
+      const source = await readFile('media/jury-loading.svg', 'utf8');
+      for (const theme of ['light', 'dark'] as const) {
+        await writeFile(`${out}/jury-loading-${theme}.svg`, source.replaceAll('currentColor', INK[theme]));
       }
     },
   };

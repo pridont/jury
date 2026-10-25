@@ -2,12 +2,12 @@ import { basename, dirname } from 'node:path/posix';
 import * as vscode from 'vscode';
 import type { FileChange } from '../git/parse.js';
 import type { Session, SessionHost } from '../session.js';
-import type { Activity, ActivityKind } from './activity.js';
+import type { Activity } from './activity.js';
 import type { Cohort, Comment, Layer, Risk } from '../model/types.js';
 
 export type Node =
-  | { type: 'message'; text: string; icon?: string; loader?: ActivityKind }
-  | { type: 'status'; text: string; kind: ActivityKind }
+  | { type: 'message'; text: string; icon?: string; loader?: boolean }
+  | { type: 'status'; text: string }
   | { type: 'orphans' }
   | { type: 'orphan'; comment: Comment }
   | { type: 'cohort'; cohort: Cohort; index: number }
@@ -40,16 +40,16 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
   }
 
   /**
-   * The animated icon for a kind of work, as a light and dark pair the editor picks from.
+   * The animated loading icon, as a light and dark pair the editor picks from.
    *
    * Both are built into `dist/loaders/` at build time and live inside the extension, which
    * is where the activity bar icon is served from too. Copies written somewhere else at
    * runtime — a storage folder, say — add a directory the renderer may decline to serve and
    * a window in which the files do not exist yet.
    */
-  private loaderIcon(kind: ActivityKind): { light: vscode.Uri; dark: vscode.Uri } {
+  private loaderIcon(): { light: vscode.Uri; dark: vscode.Uri } {
     const file = (theme: 'light' | 'dark') =>
-      vscode.Uri.joinPath(this.extension, 'dist', 'loaders', `jury-${kind}-${theme}.svg`);
+      vscode.Uri.joinPath(this.extension, 'dist', 'loaders', `jury-loading-${theme}.svg`);
     return { light: file('light'), dark: file('dark') };
   }
 
@@ -101,7 +101,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const item = new vscode.TreeItem(node.text, vscode.TreeItemCollapsibleState.None);
         item.id = 'message';
         item.contextValue = 'message';
-        if (node.loader) item.iconPath = this.loaderIcon(node.loader);
+        if (node.loader) item.iconPath = this.loaderIcon();
         else if (node.icon) item.iconPath = new vscode.ThemeIcon(node.icon);
         return item;
       }
@@ -110,7 +110,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         const item = new vscode.TreeItem(node.text, vscode.TreeItemCollapsibleState.None);
         item.id = 'status';
         item.contextValue = 'status';
-        item.iconPath = this.loaderIcon(node.kind);
+        item.iconPath = this.loaderIcon();
         return item;
       }
 
@@ -294,7 +294,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
     if (!node) {
       if (session.error) return [{ type: 'message', text: session.error, icon: 'error' }];
       if (session.loading) {
-        return [{ type: 'message', text: `Reading ${session.title}…`, icon: 'loading~spin', loader: 'scanning' }];
+        return [{ type: 'message', text: `Reading ${session.title}…`, icon: 'loading~spin', loader: true }];
       }
       if (session.cohorts.length === 0) return [{ type: 'message', text: 'No changes to review.' }];
 
@@ -303,7 +303,7 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         .filter((node) => !this.hidden(session, node.cohort.layers.flatMap((layer) => layer.hunkIds)));
       if (nodes.length === 0) nodes.push({ type: 'message', text: 'Everything is reviewed.', icon: 'check-all' });
       const running = this.activity.current;
-      if (running) nodes.unshift({ type: 'status', text: running.text, kind: running.kind });
+      if (running) nodes.unshift({ type: 'status', text: running });
       // Orphaned notes get their own section rather than vanishing with the code they were
       // about. Last, so they never push the reading order down the view.
       if (session.comments.some((comment) => comment.orphaned)) nodes.push({ type: 'orphans' });

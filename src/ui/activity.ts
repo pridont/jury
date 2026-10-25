@@ -1,36 +1,31 @@
 import * as vscode from 'vscode';
 
-/** Which loading icon fits the work: reading the diff, writing an answer, or grouping. */
-export type ActivityKind = 'scanning' | 'answering' | 'deliberating';
-
 /**
  * What the extension is doing, while it is doing it.
  *
  * Model work runs behind a review that is already usable, so without this it would look like
- * nothing is happening. The tree shows the current step with its loading icon, and the status
+ * nothing is happening. The tree shows the current step with the loading icon, and the status
  * bar shows it for someone looking elsewhere.
  */
 export class Activity implements vscode.Disposable {
   private done = 0;
   private total = 0;
   private phase = '';
-  private kind: ActivityKind = 'deliberating';
   private report: ((value: { message: string }) => void) | null = null;
   private finish: (() => void) | null = null;
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changed.event;
 
   /** The step in progress, or null when nothing is running. */
-  get current(): { text: string; kind: ActivityKind } | null {
-    return this.phase ? { text: this.text(), kind: this.kind } : null;
+  get current(): string | null {
+    return this.phase ? this.text() : null;
   }
 
   /** Begin a step. Replaces the previous one if it was still open. */
-  start(phase: string, total = 0, kind: ActivityKind = 'deliberating'): void {
+  start(phase: string, total = 0): void {
     this.phase = phase;
     this.total = total;
     this.done = 0;
-    this.kind = kind;
     this.paint();
 
     if (this.finish) return;
