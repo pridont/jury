@@ -147,8 +147,9 @@ the start of its code. Reviews grouped by file have none: there, a step is just 
 These are code lenses, so they need `editor.codeLens` on, which is the default.
 
 A diff editor hides code lenses unless `diffEditor.codeLens` is on, and it is off by
-default. So in a diff editor the step's title is written faintly after its first line
-instead, and hovering that line shows the whole note. With `diffEditor.codeLens` on, the lens
+default. So in a diff editor the step's title is written faintly at its start instead, after
+the first of its first few lines short enough to leave room for it, and hovering that line
+shows the whole note. With `diffEditor.codeLens` on, the lens
 shows there too and the text after the line goes away.
 
 On a trail or tour, a stop can name the one line it turns on: the comparison, the call, the

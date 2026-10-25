@@ -12,10 +12,20 @@ import { fileForUri } from './diff.js';
 const FITS = 100;
 
 /**
- * One thing said about a step: the line it is said on, as much as fits on a lens, the least
- * that names it, and all of it.
+ * One thing said about a step: the line it is said on, the last line of its hunk, as much as
+ * fits on a lens, the least that names it, and all of it.
  */
-type Note = { line: number; shown: string; brief: string; full: string; warning: boolean };
+type Note = { line: number; last: number; shown: string; brief: string; full: string; warning: boolean };
+
+/** How far into a step the text after a line may move to find room: its hunk's context, and a line more. */
+const NEAR = 4;
+
+/**
+ * How many characters one side of a side-by-side diff shows, for the text after a line to fit
+ * in with the code before it.
+ */
+// ponytail: one side beside the sidebar on a laptop; a wider editor only has more room.
+const ROOM = 60;
 
 /**
  * What a diff editor gets instead of lenses: faint text after the line, coloured as a lens
@@ -41,7 +51,7 @@ export class StepLenses implements vscode.CodeLensProvider, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.changed.event;
   /** The text after each line of each document drawn in a diff editor, as last drawn. */
-  readonly drawn = new Map<string, string[]>();
+  readonly drawn = new Map<string, [line: number, text: string][]>();
   private readonly subscriptions: vscode.Disposable[];
 
   constructor(private readonly host: SessionHost) {
@@ -78,15 +88,23 @@ export class StepLenses implements vscode.CodeLensProvider, vscode.Disposable {
       // Notes on one line share it, as lenses on one line do.
       const byLine = new Map<number, Note[]>();
       for (const note of notes) byLine.set(note.line, [...(byLine.get(note.line) ?? []), note]);
-      const options = [...byLine].map(([line, here]) => ({
-        // The whole line, so hovering it shows everything the text after it had to leave out.
-        range: editor.document.lineAt(line).range,
-        hoverMessage: new vscode.MarkdownString(here.map((note) => note.full).join('\n\n')),
+      const options = [...byLine].map(([line, here]) => {
         // Only what names the step: it shares a line with code, in a pane half the editor wide.
-        renderOptions: { after: { contentText: here.map((note) => (note.warning ? `⚠ ${note.brief}` : note.brief)).join('  ·  ') } },
-      }));
+        const text = here.map((note) => (note.warning ? `⚠ ${note.brief}` : note.brief)).join('  ·  ');
+        return {
+          // The whole line, so hovering it shows everything the text after it had to leave out.
+          range: editor.document.lineAt(roomiest(editor.document, line, here[0]!.last, text)).range,
+          hoverMessage: new vscode.MarkdownString(here.map((note) => note.full).join('\n\n')),
+          renderOptions: { after: { contentText: text } },
+        };
+      });
       editor.setDecorations(AFTER, options);
-      if (options.length > 0) this.drawn.set(editor.document.uri.toString(), options.map((o) => o.renderOptions.after.contentText));
+      if (options.length > 0) {
+        this.drawn.set(
+          editor.document.uri.toString(),
+          options.map((o) => [o.range.start.line, o.renderOptions.after.contentText]),
+        );
+      }
     }
   }
 
@@ -103,20 +121,22 @@ export class StepLenses implements vscode.CodeLensProvider, vscode.Disposable {
       // On a trail stop's key line, when it has one: the note and the line it is about together.
       const start = entry.hunk.focus ?? (located.side === 'old' ? entry.hunk.oldStart : entry.hunk.newStart);
       const line = Math.min(Math.max(0, start - 1), Math.max(0, document.lineCount - 1));
+      const end = located.side === 'old' ? entry.hunk.oldStart + entry.hunk.oldCount : entry.hunk.newStart + entry.hunk.newCount;
+      const last = Math.min(Math.max(line, end - 2), Math.max(0, document.lineCount - 1));
 
       const notes: Note[] = [];
       // On where the cohort begins, and first, so a long step title cannot push it out of sight.
       const mismatch = entry.cohort.mismatch;
       if (mismatch && entry.layerIndex === 0) {
         const said = `Not as described: ${mismatch}`;
-        notes.push({ line, shown: fit(said, 'Not as described …'), brief: 'Not as described …', full: said, warning: true });
+        notes.push({ line, last, shown: fit(said, 'Not as described …'), brief: 'Not as described …', full: said, warning: true });
       }
       const { title, summary } = describe(entry);
       const said = summary ? `${title} — ${summary}` : title;
       const first = summary.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? summary;
       // Whole sentences or none: a summary cut mid-sentence reads as a different claim.
       const shown = fit(said, `${title} — ${first}${first === summary ? '' : ' …'}`, summary ? `${title} …` : title);
-      notes.push({ line, shown, brief: summary ? `${title} …` : title, full: said, warning: false });
+      notes.push({ line, last, shown, brief: summary ? `${title} …` : title, full: said, warning: false });
       return notes;
     });
   }
@@ -126,6 +146,21 @@ export class StepLenses implements vscode.CodeLensProvider, vscode.Disposable {
     this.changed.dispose();
     for (const editor of vscode.window.visibleTextEditors) editor.setDecorations(AFTER, []);
   }
+}
+
+/**
+ * The line to write a step's text after: the nearest of its first few with room for `text`
+ * after the code, or the shortest of them when none has. Text after a line starts where the
+ * code ends, and a side-by-side diff gives each side half the editor, so after a long line
+ * even a title is cut off at the pane's edge. A hunk opens with context, which often has a
+ * short line, a closing brace or a blank one, a line or two in. The nearest, not simply the
+ * shortest: a blank line further down sits between two declarations and reads as the next one's.
+ */
+function roomiest(document: vscode.TextDocument, first: number, last: number, text: string): number {
+  // The text starts 2em after the code, about three characters.
+  const width = (line: number) => document.lineAt(line).text.trimEnd().replace(/\t/g, '    ').length + 3;
+  const lines = Array.from({ length: Math.min(last, first + NEAR - 1) - first + 1 }, (_, i) => first + i);
+  return lines.find((line) => width(line) + text.length <= ROOM) ?? lines.reduce((best, line) => (width(line) < width(best) ? line : best));
 }
 
 /**
