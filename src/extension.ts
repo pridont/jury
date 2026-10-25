@@ -10,6 +10,7 @@ import { StackTree, type Node } from './ui/tree.js';
 import { BlobProvider, SCHEME } from './ui/content.js';
 import { BlobDefinitions } from './ui/definitions.js';
 import { OutsideUses } from './ui/references.js';
+import { StepLenses } from './ui/steps.js';
 import { openMultiDiff } from './ui/diff.js';
 import { Navigator } from './ui/nav.js';
 import { Comments } from './ui/comments.js';
@@ -112,6 +113,7 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, blobs),
     vscode.languages.registerDefinitionProvider({ scheme: SCHEME }, new BlobDefinitions(host)),
     vscode.languages.registerCodeLensProvider([{ scheme: SCHEME }, { scheme: 'file' }], new OutsideUses(host)),
+    vscode.languages.registerCodeLensProvider([{ scheme: SCHEME }, { scheme: 'file' }], new StepLenses(host)),
     vscode.workspace.registerTextDocumentContentProvider(DOC_SCHEME, documents),
     documents,
 

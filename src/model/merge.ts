@@ -97,6 +97,8 @@ export function merge(
     };
     const reason = text(record['riskReason'] ?? record['risk_reason']);
     if (cohort.risk !== 'low' && reason) cohort.riskReason = reason;
+    const mismatch = text(record['mismatch']);
+    if (mismatch) cohort.mismatch = mismatch;
     cohorts.push(cohort);
   });
 
@@ -149,6 +151,7 @@ export function merge(
     cohort.title = unlabel(cohort.title, names);
     cohort.summary = unlabel(cohort.summary, names);
     if (cohort.riskReason) cohort.riskReason = unlabel(cohort.riskReason, names);
+    if (cohort.mismatch) cohort.mismatch = unlabel(cohort.mismatch, names);
     for (const layer of cohort.layers) {
       layer.title = unlabel(layer.title, names);
       layer.summary = unlabel(layer.summary, names);

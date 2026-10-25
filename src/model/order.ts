@@ -80,6 +80,20 @@ export function progress(
   return { reviewed: read.filter((entry) => isMarked(entry.hunk.id)).length, total: read.length };
 }
 
+/**
+ * Where a step begins in one file: each hunk whose neighbour above it, in the file, belongs
+ * to a different layer. Read top to bottom, these are the lines where the reason for the
+ * code changes. Scaffolding is not read, so it starts nothing.
+ */
+export function stepStarts(order: readonly Entry[], path: string, side: 'old' | 'new'): Entry[] {
+  const line = (entry: Entry) => (side === 'old' ? entry.hunk.oldStart : entry.hunk.newStart);
+  const inFile = order.filter((entry) => entry.file.path === path && !entry.scaffolding).sort((a, b) => line(a) - line(b));
+  return inFile.filter((entry, index) => {
+    const above = inFile[index - 1];
+    return !above || above.cohortIndex !== entry.cohortIndex || above.layerIndex !== entry.layerIndex;
+  });
+}
+
 /** The next position that belongs to a different layer than the one at `from`. */
 export function stepLayer(order: readonly Entry[], from: number, direction: 1 | -1): number {
   const current = order[from];

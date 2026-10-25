@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildOrder, layerEntry, progress, step, stepLayer } from '../../src/model/order.js';
+import { buildOrder, layerEntry, progress, step, stepLayer, stepStarts } from '../../src/model/order.js';
 import { heuristicCohorts } from '../../src/model/heuristic.js';
 import type { FileChange } from '../../src/git/parse.js';
-import type { Hunk } from '../../src/model/types.js';
+import type { Cohort, Hunk } from '../../src/model/types.js';
 
 let counter = 0;
 const hunk = (path: string): Hunk => {
@@ -160,5 +160,41 @@ describe('progress', () => {
     const files = [file('yarn.lock', 2, true)];
     const order = buildOrder(heuristicCohorts(files), files);
     expect(progress(order, () => true)).toEqual({ reviewed: 0, total: 0 });
+  });
+});
+
+describe('stepStarts', () => {
+  const files = [file('src/a.ts', 4), file('src/b.ts', 1)];
+  const [a1, a2, a3, a4] = files[0]!.hunks as [Hunk, Hunk, Hunk, Hunk];
+  const b1 = files[1]!.hunks[0]!;
+  const cohort = (id: string, ...layers: Hunk[][]): Cohort => ({
+    id,
+    title: id,
+    summary: '',
+    kind: 'feature',
+    risk: 'low',
+    origin: 'ai',
+    layers: layers.map((hunks, index) => ({
+      id: `${id}l${index + 1}`,
+      title: `${id} step ${index + 1}`,
+      summary: '',
+      hunkIds: hunks.map((h) => h.id),
+      paths: [...new Set(hunks.map((h) => h.path))],
+    })),
+  });
+  // The reading order meets a4 first; the file is still read from the top.
+  const order = buildOrder([cohort('c1', [a4, b1]), cohort('c2', [a1, a2], [a3])], files);
+
+  it('is the first hunk of each run of one step, in the order they sit in the file', () => {
+    expect(stepStarts(order, 'src/a.ts', 'new').map((e) => e.hunk.id)).toEqual([a1.id, a3.id, a4.id]);
+  });
+
+  it('only looks at the file it is asked about', () => {
+    expect(stepStarts(order, 'src/b.ts', 'new').map((e) => e.hunk.id)).toEqual([b1.id]);
+  });
+
+  it('starts nothing in scaffolding, which is not read', () => {
+    const lock = [file('yarn.lock', 2, true)];
+    expect(stepStarts(buildOrder(heuristicCohorts(lock), lock), 'yarn.lock', 'new')).toEqual([]);
   });
 });

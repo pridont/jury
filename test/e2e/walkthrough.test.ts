@@ -71,6 +71,20 @@ suite('walkthrough', () => {
     else assert.match(text, /Install \[Markdown Preview Mermaid Support\]/);
   });
 
+  test('says under a cohort where its code is not as the author described it', async () => {
+    const answer = JSON.parse(ANSWER);
+    answer.cohorts[0].mismatch = 'Called a refactor, but expiry now rejects equal times.';
+    fake.reply('organise code reviews', JSON.stringify(answer));
+    await review('jury.review', { clustered: true });
+    await vscode.commands.executeCommand('jury.walkthrough');
+
+    const text = await walkthrough('Not as described');
+    assert.match(
+      text,
+      /1\. \*\*Expiry check\*\*.*\n {3}every session check goes through it\n {3}\*\*Not as described:\*\* Called a refactor, but expiry now rejects equal times\.\n2\. /,
+    );
+  });
+
   test('stays closed when jury.walkthrough.autoOpen is off', async () => {
     // The previous test's preview can open after its editors were closed.
     await settle();

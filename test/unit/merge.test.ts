@@ -112,6 +112,14 @@ describe('merge', () => {
     });
   });
 
+  it('keeps a mismatch on its cohort, with labels turned into the files they stand for', () => {
+    const mismatch = 'Described as a refactor, but h1 now rejects tokens expiring exactly now.';
+    const result = merge({ cohorts: [cohort('A', ['h1', 'h2'], { mismatch }), cohort('B', ['h3', 'h4'])] }, four);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.merged.cohorts[0]!.mismatch).toBe('Described as a refactor, but a.ts now rejects tokens expiring exactly now.');
+    expect(result.merged.cohorts[1]!.mismatch).toBeUndefined();
+  });
+
   it('declines one cohort per file, which is the grouping the reviewer already had', () => {
     const six = labels(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']);
     const output = { cohorts: [...six.keys()].map((label) => cohort(label, [label])) };

@@ -98,6 +98,11 @@ export type Cohort = {
   kind: CohortKind;
   risk: Risk;
   riskReason?: string;
+  /**
+   * Where these hunks are not what the author's description says: a change in behaviour it
+   * leaves out or describes differently. Kept on the cohort so it is read with the code.
+   */
+  mismatch?: string;
   /** Array position is the reading order. */
   layers: Layer[];
   origin: 'ai' | 'heuristic';

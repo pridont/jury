@@ -73,6 +73,7 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
       lines.push(`${index + 1}. **${cohort.title}**${risk} — ${cohort.summary || 'no summary'}`);
     }
     if (cohort.riskReason) lines.push(`   ${cohort.riskReason}`);
+    if (cohort.mismatch) lines.push(`   **Not as described:** ${cohort.mismatch}`);
   });
   lines.push('');
 
