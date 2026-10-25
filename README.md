@@ -144,6 +144,10 @@ group that is not what the author described has a second line, **Not as describe
 the start of its code. Reviews grouped by file have none: there, a step is just its file.
 These are code lenses, so they need `editor.codeLens` on, which is the default.
 
+On a trail or tour, a stop can name the one line it turns on: the comparison, the call, the
+field. That line is highlighted, the stop's line sits on it instead of on the span's first
+line, and `alt+j` lands on it, so a long span opens where you should start looking.
+
 ### Uses outside the change
 
 Above each function, method or class the change touches, a line says how many places use it
@@ -214,6 +218,10 @@ span you step through with `alt+j` and mark with `alt+m`, and you can leave note
 walkthrough shows the short answer. The files open as they are in your working tree, not as a
 diff. A trail is saved like any review: **Jury: Open a Saved Review…** brings it back without
 asking the model again. It needs a provider that can read the repository (`claude`).
+
+A trail is only the places that answer the question. When the model finds something off the
+trail that changes the answer, such as a second caller or a setting that overrides it, the
+short answer says what and where.
 
 ### Touring a repository
 

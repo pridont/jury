@@ -16,6 +16,12 @@ const ACTIVE = vscode.window.createTextEditorDecorationType({
   borderColor: new vscode.ThemeColor('focusBorder'),
 });
 
+/** The line a trail stop turns on, where its lens sits. Highlighted, not bordered: a place, not a step. */
+const KEY = vscode.window.createTextEditorDecorationType({
+  isWholeLine: true,
+  backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
+});
+
 /** Walks the reading order and keeps the editor pointed at the current hunk. */
 export class Navigator implements vscode.Disposable {
   private order: Entry[] = [];
@@ -162,12 +168,15 @@ export class Navigator implements vscode.Disposable {
     for (const editor of vscode.window.visibleTextEditors) {
       editor.setDecorations(UNCHANGED, []);
       editor.setDecorations(ACTIVE, []);
+      editor.setDecorations(KEY, []);
     }
   }
 }
 
 function reveal(editor: vscode.TextEditor, entry: Entry): void {
-  const line = Math.max(0, (entry.hunk.newCount > 0 ? entry.hunk.newStart : entry.hunk.oldStart) - 1);
+  // A long span's key line can be well below its first; land where the reader should look.
+  const start = entry.hunk.focus ?? (entry.hunk.newCount > 0 ? entry.hunk.newStart : entry.hunk.oldStart);
+  const line = Math.max(0, start - 1);
   const position = new vscode.Position(Math.min(line, Math.max(0, editor.document.lineCount - 1)), 0);
   editor.selection = new vscode.Selection(position, position);
   editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
@@ -211,4 +220,11 @@ function focusLayer(editor: vscode.TextEditor, entry: Entry, order: readonly Ent
 
   editor.setDecorations(UNCHANGED, unchanged);
   editor.setDecorations(ACTIVE, active);
+  editor.setDecorations(
+    KEY,
+    inFile.flatMap((other) => {
+      const focus = other.hunk.focus;
+      return focus === undefined ? [] : [new vscode.Range(Math.min(focus - 1, lastLine), 0, Math.min(focus - 1, lastLine), 0)];
+    }),
+  );
 }

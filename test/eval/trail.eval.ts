@@ -43,7 +43,16 @@ describe('trail', () => {
       const built = buildTrail(steps, read);
       console.log(
         `\n=== ${question} ===\n${summary}\n` +
-          steps.map((s, i) => `  ${i + 1}. ${s.title}  ${s.spans.map((p) => `${p.path}:${p.start}-${p.end}`).join(' ')}`).join('\n') +
+          steps
+            .map(
+              (s, i) =>
+                `  ${i + 1}. ${s.title}  ${s.spans.map((p) => `${p.path}:${p.start}-${p.end}`).join(' ')}` +
+                s.spans
+                  .filter((p) => p.focus !== undefined)
+                  .map((p) => `\n       key line ${p.path}:${p.focus}: ${read(p.path)?.[p.focus! - 1]?.trim() ?? ''}`)
+                  .join(''),
+            )
+            .join('\n') +
           `\n  ${tools.length} tool calls, $${result.usage.costUsd.toFixed(4)}`,
       );
 

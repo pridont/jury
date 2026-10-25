@@ -47,6 +47,18 @@ classified and not grouped; the model's order is the reading order.
 A span is also cut to its first 80 lines. The prompt asks for that, and a model does not
 always do it.
 
+A span can name a `focus`: the one line inside it the stop turns on. A long span's point is
+often one comparison or one call, and a reader who starts at the top spreads their attention
+evenly where an experienced one would go straight to it (Crosby, Scholtz and Wiedenbeck,
+2002). The focus is a claim like the line numbers: one outside what is kept of its span,
+after the cut or the clamp, is dropped. It is highlighted, the step's lens sits on it, and
+stepping lands on it.
+
+A trail is the places that answer a question and nothing else, which is how people read
+when they only read what looks relevant, and that misses interactions with code they never
+opened (Littman et al., 1986). So the prompt asks the model to name, in the answer, anything
+it found off the trail that changes it.
+
 A tour is a trail with a different prompt. Each step names its area, and steps of one area
 that come one after another become the layers of one cohort. An area with a single stop is
 one row titled `Area: stop`. The answer can also hold a mermaid diagram of the areas, which

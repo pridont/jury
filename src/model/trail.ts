@@ -40,6 +40,9 @@ export function buildTrail(
         stats: { added: 0, removed: 0 },
         kind: 'text',
       };
+      // A key line clamped out of its span points at nothing the reader is shown.
+      const focus = span.focus === undefined ? NaN : Math.floor(span.focus);
+      if (focus >= start && focus <= end) hunk.focus = focus;
       placed[index]!.push(hunk);
       byPath.set(span.path, [...(byPath.get(span.path) ?? []), hunk]);
     }

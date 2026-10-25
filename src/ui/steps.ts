@@ -31,7 +31,8 @@ export class StepLenses implements vscode.CodeLensProvider {
     return stepStarts(order, located.file.path, located.side).flatMap((entry) => {
       // The heuristic's steps are files, and the tab already names the file.
       if (entry.cohort.origin !== 'ai') return [];
-      const start = located.side === 'old' ? entry.hunk.oldStart : entry.hunk.newStart;
+      // On a trail stop's key line, when it has one: the note and the line it is about together.
+      const start = entry.hunk.focus ?? (located.side === 'old' ? entry.hunk.oldStart : entry.hunk.newStart);
       const line = Math.min(Math.max(0, start - 1), Math.max(0, document.lineCount - 1));
       const range = new vscode.Range(line, 0, line, 0);
 

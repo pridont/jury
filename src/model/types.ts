@@ -14,11 +14,14 @@ export type ReviewSpec =
    */
   | { kind: 'trail'; question: string; summary: string; steps: TrailStep[]; diagram?: string };
 
-/** One stop on a trail: what to read, and why. Lines are 1-based and inclusive. */
+/**
+ * One stop on a trail: what to read, and why. Lines are 1-based and inclusive. `focus` is
+ * the line inside a span to look at first, when one line is what the stop turns on.
+ */
 export type TrailStep = {
   title: string;
   summary: string;
-  spans: { path: string; start: number; end: number }[];
+  spans: { path: string; start: number; end: number; focus?: number }[];
   /** The part of the codebase the step is in, on a tour. Steps of one area are read together. */
   area?: string;
 };
@@ -57,6 +60,8 @@ export type Hunk = {
   stats: { added: number; removed: number };
   kind: HunkKind;
   symbol?: string;
+  /** On a trail, the line of the file (1-based) the stop turns on, inside the hunk. */
+  focus?: number;
   /** Set when the classifier decided this is generator output; the reason is always shown. */
   scaffolding?: { reason: string };
   /**

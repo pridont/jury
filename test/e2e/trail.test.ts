@@ -86,6 +86,36 @@ suite('trail', () => {
     assert.equal(asked().length, 1);
   });
 
+  test("a stop's key line is where stepping lands, with the stop's lens on it", async () => {
+    fake.reset();
+    await repo.reset({ 'src/open.ts': OPEN, 'src/store.ts': STORE });
+    fake.reply(
+      'guide a developer through a codebase',
+      JSON.stringify({
+        summary: 'Opening shows the review.',
+        steps: [{ title: 'Show it', summary: 'The call that draws it.', spans: [{ path: 'src/open.ts', start: 1, end: 5, focus: 3 }] }],
+      }),
+    );
+    const api = await jury();
+
+    dialogs.type(QUESTION);
+    await vscode.commands.executeCommand('jury.trail');
+    await waitFor(() => (api.host.active?.spec.kind === 'trail' && !api.host.active.loading ? api.host.active : null), 'the trail');
+
+    await vscode.commands.executeCommand('jury.nextHunk');
+    const editor = await waitFor(
+      () => (vscode.window.activeTextEditor?.document.uri.path.endsWith('/src/open.ts') ? vscode.window.activeTextEditor : null),
+      'src/open.ts open',
+    );
+    // `show(review);`, not the span's first line.
+    assert.equal(editor.selection.active.line, 2);
+    const lenses = (await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', editor.document.uri)) ?? [];
+    assert.deepEqual(
+      lenses.map((lens) => [lens.range.start.line, lens.command?.title]).filter(([, title]) => !String(title).includes('outside this change')),
+      [[2, '1. Show it — The call that draws it.']],
+    );
+  });
+
   test('an answer with no code in the repository opens nothing', async () => {
     fake.reset();
     await repo.reset({ 'src/open.ts': OPEN });
