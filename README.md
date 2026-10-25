@@ -2,30 +2,47 @@
 
 # Jury
 
-A VS Code extension for reviewing code changes. Instead of showing files in alphabetical
-order, Jury groups the diff into related changes and puts them in the order they should be
-read. A language model does the grouping. You do the reviewing.
+A VS Code extension that puts code in the order it should be read.
+
+- **Reviewing a change.** Instead of showing files in alphabetical order, Jury groups the
+  diff into related changes and orders them: new code first, then the code that uses it,
+  then tests.
+- **Understanding code.** Ask how something works, or ask for a tour of a repository or one
+  folder of it. Jury opens the code to read, in order, with a note at each stop.
+
+Either way, you step through it with one key, mark what you have read, and leave notes. A
+language model finds and orders the code. You do the reading.
 
 ## Features
 
+### Reviewing a change
+
 - Groups a diff into **cohorts** (related work) and **layers** (steps within that work), in
-  reading order: new code first, then the code that uses it, then tests.
+  reading order.
 - A short walkthrough of what the change does before you read any code. It also says where
   the pull request description or commit messages promise something the diff does not do,
   or leave out something it does.
-- Step through every hunk with one key, across files.
-- Mark hunks as reviewed. Marks are saved and survive a rebase. Each cohort and layer shows
-  how much of it is reviewed, and the status bar shows the total; click it to go to the next
-  unreviewed hunk.
-- Leave notes on the diff and export them as markdown.
 - Review GitHub pull requests without checking them out, post your notes back as review
   comments, suggest changes the author can apply in one click, and reply to other reviewers.
-- Ask questions about the code you are looking at.
-- Ask how something in the repository works, and get the code to read, in order, to step
-  through like a review.
 - See how much code outside the change uses each function the change touches.
 - Lockfiles and generated files are moved out of the way.
 - Works without a model too, grouped by file.
+
+### Understanding code
+
+- Ask how something in the repository works, and get a **trail**: the code that answers it,
+  in the order to read it.
+- Ask for a **tour** of the whole repository or one folder: its parts in the order that makes
+  each one understandable, with a diagram of how they fit together.
+- Trails and tours are saved, so you can come back to one without asking again.
+
+### Both
+
+- Step through every hunk or span with one key, across files.
+- Mark what you have read. Marks are saved and survive a rebase. Each row shows how much of
+  it is done, and the status bar shows the total; click it to go to the next unread part.
+- Leave notes on the code and export them as markdown.
+- Ask questions about the code you are looking at.
 
 ## Requirements
 
