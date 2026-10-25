@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { configure, dialogs, fake, repo, review, row, settle, sidebar, waitFor } from './harness.js';
+import { configure, dialogs, fake, multiDiffSides, pick, repo, review, row, settle, sidebar, waitFor } from './harness.js';
 
 const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
 
@@ -294,6 +294,37 @@ suite('summaries and grouping', () => {
 
     await vscode.commands.executeCommand('jury.openCohort', (await row(/^2\. Rest$/)).node);
     await waitFor(() => activeTab() === 'Rest (2 files)', `the cohort's files, not "${activeTab()}"`);
+  });
+
+  test('files opened together are each headed by their own name and status, never as a rename', async () => {
+    // Labelled in path order: h1 a.ts edited, h2 b.ts deleted, h3 c.ts edited, h4 f.ts added.
+    await repo.reset(BASE);
+    repo.write({ 'src/a.ts': EDITED['src/a.ts']!, 'src/c.ts': EDITED['src/c.ts']!, 'src/f.ts': lines(2) });
+    repo.remove('src/b.ts');
+    fake.reply(
+      GROUPING,
+      grouping([
+        { title: 'Together', layers: [{ title: 'Three kinds', hunks: ['h1', 'h2', 'h4'] }] },
+        { title: 'Rest', layers: [{ title: 'Other', hunks: ['h3'] }] },
+      ]),
+    );
+    const activeTab = () => vscode.window.tabGroups.activeTabGroup.activeTab?.label;
+    const sides = async () => {
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      await vscode.commands.executeCommand('jury.openCohort', (await row(/^1\. Together$/)).node);
+      await waitFor(() => activeTab() === 'Together (3 files)', `the cohort's files, not "${activeTab()}"`);
+      return multiDiffSides().map(({ original, modified }) => [original.scheme, original.path, modified.scheme, modified.path]);
+    };
+    const a = vscode.Uri.joinPath(vscode.Uri.file(repo.root), 'src/a.ts').path;
+
+    const api = await review('jury.review', { clustered: true });
+    assert.deepEqual(await sides(), [['jury', a, 'file', a]], 'the added and deleted files have one side each');
+
+    repo.commit('three kinds');
+    void vscode.commands.executeCommand('jury.reviewCommit');
+    await pick(0);
+    await waitFor(() => api.host.active?.spec.kind === 'commit' && api.host.active.clustered, 'the commit review grouped');
+    assert.deepEqual(await sides(), [['jury', a, 'jury', a]]);
   });
 
   test('a risky cohort says so in its tooltip and to a screen reader', async () => {

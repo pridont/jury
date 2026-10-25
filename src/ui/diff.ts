@@ -120,9 +120,15 @@ export async function openMultiDiff(session: Session, title: string, files: File
     return true;
   }
 
+  // A side that does not exist is left out rather than given as an empty blob: that is what
+  // marks a file added or deleted in the header.
   const resources = files.map((file) => {
     const { before, after } = sidesFor(session, file);
-    return [vscode.Uri.file(path.join(session.repo.root, file.path)), before, after];
+    return [
+      vscode.Uri.file(path.join(session.repo.root, file.path)),
+      file.status === 'added' ? undefined : before,
+      file.status === 'deleted' ? undefined : after,
+    ];
   });
 
   if (await hasMultiDiffEditor()) {
