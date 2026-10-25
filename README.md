@@ -10,7 +10,7 @@ A VS Code extension that puts code in the order it should be read.
 - **Understanding code.** Ask how something works, or ask for a tour of a repository or one
   folder of it. Jury opens the code to read, in order, with a note at each stop.
 
-Either way, you step through it with one key, mark what you have read, and leave notes. A
+Either way, you step through it with `alt+j`, mark what you have read, and leave notes. A
 language model finds and orders the code. You do the reading.
 
 ## Features
