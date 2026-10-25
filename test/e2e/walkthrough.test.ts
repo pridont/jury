@@ -61,7 +61,7 @@ suite('walkthrough', () => {
     assert.match(text, /^# working tree\n\n2 changes · 3 hunks · 3 files\n\nTokens now expire on the second they are due\.\n/);
     assert.match(
       text,
-      /## Read in this order\n\n1\. \*\*Expiry check\*\* \*\*\(high risk\)\*\* — The comparison is inclusive\.\n {3}every session check goes through it\n2\. \*\*Tests\*\* — no summary\n/,
+      /## Read in this order\n\n1\. \*\*Expiry check\*\* \*\*\(high risk\)\*\* — The comparison is inclusive\.\n\n {3}every session check goes through it\n2\. \*\*Tests\*\* — no summary\n/,
     );
     assert.match(text, /## Worth your attention\n\n- Nothing migrates existing sessions\./);
     const drawable = ['vscode.mermaid-markdown-features', 'bierner.markdown-mermaid'].some((id) =>
@@ -81,7 +81,7 @@ suite('walkthrough', () => {
     const text = await walkthrough('Not as described');
     assert.match(
       text,
-      /1\. \*\*Expiry check\*\*.*\n {3}every session check goes through it\n {3}\*\*Not as described:\*\* Called a refactor, but expiry now rejects equal times\.\n2\. /,
+      /1\. \*\*Expiry check\*\*.*\n\n {3}every session check goes through it\n\n {3}\*\*Not as described:\*\* Called a refactor, but expiry now rejects equal times\.\n2\. /,
     );
   });
 

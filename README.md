@@ -139,10 +139,16 @@ Hunk** steps through just those, until you open a different review.
 
 Once a model has grouped a review, or for any trail or tour, a line above where each step
 begins in a file names the step and says what it is for, for example **1. Accept tokens
-expiring exactly now — the comparison is now inclusive**. Hover it to read all of it. A
+expiring exactly now — the comparison is now inclusive**. A line too long to read whole
+shows the title and as many whole sentences as fit, ending in **…**; hover it to read all
+of it. A
 group that is not what the author described has a second line, **Not as described**, at
 the start of its code. Reviews grouped by file have none: there, a step is just its file.
 These are code lenses, so they need `editor.codeLens` on, which is the default.
+
+On a trail or tour, a stop can name the one line it turns on: the comparison, the call, the
+field. That line is highlighted, the stop's line sits on it instead of on the span's first
+line, and `alt+j` lands on it, so a long span opens where you should start looking.
 
 ### Uses outside the change
 
@@ -214,6 +220,10 @@ span you step through with `alt+j` and mark with `alt+m`, and you can leave note
 walkthrough shows the short answer. The files open as they are in your working tree, not as a
 diff. A trail is saved like any review: **Jury: Open a Saved Review…** brings it back without
 asking the model again. It needs a provider that can read the repository (`claude`).
+
+A trail is only the places that answer the question. When the model finds something off the
+trail that changes the answer, such as a second caller or a setting that overrides it, the
+short answer says what and where.
 
 ### Touring a repository
 

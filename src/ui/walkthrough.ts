@@ -72,8 +72,10 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
     } else {
       lines.push(`${index + 1}. **${cohort.title}**${risk} — ${cohort.summary || 'no summary'}`);
     }
-    if (cohort.riskReason) lines.push(`   ${cohort.riskReason}`);
-    if (cohort.mismatch) lines.push(`   **Not as described:** ${cohort.mismatch}`);
+    // Paragraphs of the item, after a blank line: an indented line straight after the item
+    // is a continuation of its last sentence, and renders run into it.
+    if (cohort.riskReason) lines.push('', `   ${cohort.riskReason}`);
+    if (cohort.mismatch) lines.push('', `   **Not as described:** ${cohort.mismatch}`);
   });
   lines.push('');
 

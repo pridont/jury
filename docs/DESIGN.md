@@ -47,6 +47,18 @@ classified and not grouped; the model's order is the reading order.
 A span is also cut to its first 80 lines. The prompt asks for that, and a model does not
 always do it.
 
+A span can name a `focus`: the one line inside it the stop turns on. A long span's point is
+often one comparison or one call, and a reader who starts at the top spreads their attention
+evenly where an experienced one would go straight to it (Crosby, Scholtz and Wiedenbeck,
+2002). The focus is a claim like the line numbers: one outside what is kept of its span,
+after the cut or the clamp, is dropped. It is highlighted, the step's lens sits on it, and
+stepping lands on it.
+
+A trail is the places that answer a question and nothing else, which is how people read
+when they only read what looks relevant, and that misses interactions with code they never
+opened (Littman et al., 1986). So the prompt asks the model to name, in the answer, anything
+it found off the trail that changes it.
+
 A tour is a trail with a different prompt. Each step names its area, and steps of one area
 that come one after another become the layers of one cohort. An area with a single stop is
 one row titled `Area: stop`. The answer can also hold a mermaid diagram of the areas, which
@@ -174,6 +186,11 @@ the file belongs to a different layer: reading a file top to bottom, those are t
 where the reason for the code changes. A cohort of one layer is shown as the cohort, as in
 the tree. A cohort's mismatch goes on the starts of its first layer, before the step's own
 lens, so a long title cannot push it out of sight.
+
+A lens does not wrap, and an extension cannot ask how wide the editor is, so a line longer
+than 100 characters would run off its edge unread. It is shortened to the title and the
+summary's first sentence, or the title alone, ending in "…", never cut mid-sentence: half a
+sentence can read as a different claim. The whole text is the lens's hover.
 
 The lens is drawn on one side only, the side with content, or a diff editor would say
 everything twice. A review grouped by file has none: each step is a file, and the tab

@@ -8,7 +8,7 @@ import type { Shape } from '../json.js';
  * are grouped into the areas of the code they are in, and the parts are drawn.
  */
 export const tourPrompt = {
-  version: 1,
+  version: 2,
 
   system: [
     'You give a developer who has never seen this codebase a guided tour of it. Use your',
@@ -35,6 +35,8 @@ export const tourPrompt = {
     '  and end (1-based, inclusive). Only lines you have read, with the line numbers you',
     '  read them at. Keep a span to what matters — a type, a function, the heart of a module',
     '  — never more than 80 lines.',
+    '- focus, in a span: the one line inside it to look at first — the field, the call, the',
+    '  check the stop turns on. Leave it out when no single line stands out.',
     '',
     'summary: what this codebase is and how it is put together, in three to five sentences,',
     'naming the areas in the order the tour takes them.',
@@ -52,7 +54,7 @@ export const tourPrompt = {
     '  "summary": "three to five sentences",',
     '  "diagram": "flowchart TD\\n  git[\\"Git layer\\"] --> model[\\"Model\\"]",',
     '  "steps": [',
-    '    {"area": "...", "title": "...", "summary": "...", "spans": [{"path": "src/a.ts", "start": 10, "end": 42}]}',
+    '    {"area": "...", "title": "...", "summary": "...", "spans": [{"path": "src/a.ts", "start": 10, "end": 42, "focus": 17}]}',
     '  ]',
     '}',
   ].join('\n'),

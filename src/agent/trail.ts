@@ -78,14 +78,19 @@ function step(value: unknown): TrailStep[] {
 
   const kept = spans
     .filter(
-      (span): span is { path: string; start: number; end: number } =>
+      (span): span is { path: string; start: number; end: number; focus?: unknown } =>
         typeof span === 'object' &&
         span !== null &&
         typeof span.path === 'string' &&
         Number.isFinite(span.start) &&
         Number.isFinite(span.end),
     )
-    .map(({ path, start, end }) => ({ path: path.replace(/^\.\//, ''), start, end: Math.min(end, start + MAX_SPAN_LINES - 1) }))
+    .map(({ path, start, end, focus }) => {
+      const last = Math.min(end, start + MAX_SPAN_LINES - 1);
+      // A key line outside what is kept of its span is a claim about lines nobody is shown.
+      const inside = typeof focus === 'number' && focus >= start && focus <= last;
+      return { path: path.replace(/^\.\//, ''), start, end: last, ...(inside ? { focus } : {}) };
+    })
     .slice(0, MAX_SPANS);
   if (kept.length === 0) return [];
   return [

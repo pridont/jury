@@ -5,6 +5,13 @@ import type { SessionHost } from '../session.js';
 import { fileForUri } from './diff.js';
 
 /**
+ * How many characters of a lens can be read. A lens does not wrap, so what runs past the
+ * editor's edge is lost, and an extension cannot ask how wide the editor is.
+ */
+// ponytail: a fixed budget sized for an editor beside the sidebar; narrower splits still cut.
+const FITS = 100;
+
+/**
  * What a step is for, written on the code where it begins.
  *
  * The tree and the walkthrough say why a step is there, but neither is in view while its
@@ -31,7 +38,8 @@ export class StepLenses implements vscode.CodeLensProvider {
     return stepStarts(order, located.file.path, located.side).flatMap((entry) => {
       // The heuristic's steps are files, and the tab already names the file.
       if (entry.cohort.origin !== 'ai') return [];
-      const start = located.side === 'old' ? entry.hunk.oldStart : entry.hunk.newStart;
+      // On a trail stop's key line, when it has one: the note and the line it is about together.
+      const start = entry.hunk.focus ?? (located.side === 'old' ? entry.hunk.oldStart : entry.hunk.newStart);
       const line = Math.min(Math.max(0, start - 1), Math.max(0, document.lineCount - 1));
       const range = new vscode.Range(line, 0, line, 0);
 
@@ -40,14 +48,23 @@ export class StepLenses implements vscode.CodeLensProvider {
       const mismatch = entry.cohort.mismatch;
       if (mismatch && entry.layerIndex === 0) {
         const said = `Not as described: ${mismatch}`;
-        lenses.push(new vscode.CodeLens(range, { title: `$(warning) ${said}`, tooltip: said, command: '' }));
+        const title = fit(`$(warning) ${said}`, '$(warning) Not as described …');
+        lenses.push(new vscode.CodeLens(range, { title, tooltip: said, command: '' }));
       }
       const { title, summary } = describe(entry);
       const said = summary ? `${title} — ${summary}` : title;
-      lenses.push(new vscode.CodeLens(range, { title: said, tooltip: said, command: '' }));
+      const first = summary.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? summary;
+      // Whole sentences or none: a summary cut mid-sentence reads as a different claim.
+      const shown = fit(said, `${title} — ${first}${first === summary ? '' : ' …'}`, summary ? `${title} …` : title);
+      lenses.push(new vscode.CodeLens(range, { title: shown, tooltip: said, command: '' }));
       return lenses;
     });
   }
+}
+
+/** The first of `choices`, longest first, that can be read whole; the shortest when none can. */
+function fit(...choices: string[]): string {
+  return choices.find((choice) => choice.length <= FITS) ?? choices.at(-1)!;
 }
 
 /** A cohort of one step is that step, as in the tree; otherwise the step speaks for itself. */

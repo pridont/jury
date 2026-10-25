@@ -45,6 +45,20 @@ describe('buildTrail', () => {
     expect(cohorts.map((c) => c.title)).toEqual(['Past the end']);
   });
 
+  it('carries a key line onto its hunk, unless clamping cut it out of the span', () => {
+    const { files } = buildTrail(
+      [
+        { title: 'Inside', summary: '', spans: [{ path: 'a.ts', start: 2, end: 4, focus: 3 }] },
+        { title: 'Clamped away', summary: '', spans: [{ path: 'a.ts', start: 8, end: 40, focus: 20 }] },
+      ],
+      read,
+    );
+    expect(files[0]!.hunks.map((h) => [h.newStart, h.focus])).toEqual([
+      [2, 3],
+      [8, undefined],
+    ]);
+  });
+
   it('reads the steps of one area together, as layers of one cohort', () => {
     const at = (start: number) => [{ path: 'a.ts', start, end: start }];
     const { cohorts } = buildTrail(
@@ -181,6 +195,19 @@ describe('askTrail', () => {
       JSON.stringify({ summary: 'S.', steps: [{ title: 'Long', summary: '', spans: [{ path: 'a.ts', start: 10, end: 400 }] }] }),
     );
     expect(result).toMatchObject({ ok: true, trail: { steps: [{ spans: [{ start: 10, end: 89 }] }] } });
+  });
+
+  it('keeps a key line only when it is a line of what is kept of its span', async () => {
+    const span = (focus: unknown) => ({ path: 'a.ts', start: 10, end: 400, focus });
+    const result = await ask(
+      JSON.stringify({
+        summary: 'S.',
+        steps: [{ title: 'T', summary: '', spans: [span(12), span(9), span(200), span('12'), span(null)] }],
+      }),
+    );
+    if (!result.ok) throw new Error(result.reason);
+    // 200 is past the cut at line 89, so it would point at a line nobody is shown.
+    expect(result.trail.steps[0]!.spans.map((s) => s.focus)).toEqual([12, undefined, undefined, undefined, undefined]);
   });
 
   it('says so when there is no trail in the answer', async () => {
