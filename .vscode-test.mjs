@@ -7,7 +7,10 @@ import * as path from 'node:path';
 // The window opens on a throwaway repository, which the tests rebuild between cases, and
 // every model call goes to the fake CLI in `test/e2e`, never to a real account. `gh` is the
 // fake in `test/e2e` too, linked into `fake/bin`, which the harness puts first on PATH.
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jury-e2e-'));
+//
+// The temporary folder by its real path: on macOS it is a link out of /var into /private/var,
+// git answers with the real path, and a working-tree file named one way is not found the other.
+const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'jury-e2e-'));
 const workspace = path.join(root, 'repo');
 const fake = path.join(root, 'fake');
 fs.mkdirSync(path.join(fake, 'bin'), { recursive: true });
@@ -35,6 +38,13 @@ export default defineConfig({
   files: 'out/e2e/test/e2e/**/*.test.js',
   workspaceFolder: workspace,
   env: { JURY_FAKE_DIR: fake },
-  launchArgs: ['--disable-extensions', '--disable-workspace-trust', '--ozone-platform=headless'],
+  // VS Code keeps a socket in its user data folder, and a socket path is limited to about 100
+  // characters: the default folder, under this checkout, is past that from a worktree.
+  launchArgs: [
+    '--disable-extensions',
+    '--disable-workspace-trust',
+    '--ozone-platform=headless',
+    `--user-data-dir=${path.join(root, 'user')}`,
+  ],
   mocha: { ui: 'tdd', timeout: 30_000 },
 });
