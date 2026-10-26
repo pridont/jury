@@ -24,6 +24,9 @@ language model finds and orders the code. You do the reading.
   A group whose code does something the description leaves out or tells differently is
   marked **not as described**, with a warning icon on its row, and on its code. Groups are named for what the
   code does, not for what the description says it does.
+- Two or three **questions to check** on each group, each asked from a different side: a
+  caller of the changed code, a tester, someone running it. Questions, never findings. You
+  answer them by reading, in a note if you like.
 - Review GitHub pull requests without checking them out, post your notes back as review
   comments, suggest changes the author can apply in one click, and reply to other reviewers.
 - See how much code outside the change uses each function the change touches.
@@ -107,6 +110,7 @@ While a review is open you can also run:
 | Jury: Hide Reviewed / Show Reviewed | Hide fully reviewed cohorts and layers in the panel (also a button in its title bar) |
 | Jury: Next / Previous Changed Hunk | Step through only the hunks the last refresh found new or changed |
 | Jury: Mark Cohort Reviewed | Mark every hunk in a cohort |
+| Jury: Answer a Question in a Note | Pick one of a cohort's questions to check, and start a note quoting it |
 | Jury: Open All Files in This Cohort / Step | Open the files together in one diff editor |
 | Jury: Clear Model Answer Cache | Forget cached model answers, so the next run asks again |
 
@@ -155,6 +159,23 @@ shows there too and the text after the line goes away.
 On a trail or tour, a stop can name the one line it turns on: the comparison, the call, the
 field. That line is highlighted, the stop's line sits on it instead of on the span's first
 line, and `alt+j` lands on it, so a long span opens where you should start looking.
+
+### Questions to check
+
+Once a change is grouped, a second call asks for two or three questions per cohort, each
+from a different perspective: a **caller** of the changed code, a **tester**, and an
+**operator** running it. For example: *Caller: What does isExpired return when exp equals
+now?* They are listed under the cohort in the walkthrough and in its row's tooltip.
+
+They point at what to check. They are not review comments: each one asks about behaviour
+that the code answers, and Jury drops any that asks whether something is a bug, correct or
+safe, or that suggests a change. Readers who write their answers down answer better, so
+**Jury: Answer a Question in a Note** (on a cohort's right-click menu) opens a note on the
+cohort's first hunk with the question quoted, for you to answer under. It is a note like any
+other: delete it, or keep it and it is exported and posted with the rest.
+
+Turn them off with `jury.ai.questions`. It is one call per review, about $0.02 with Sonnet on
+a small change, and cached like grouping.
 
 ### Uses outside the change
 
@@ -274,6 +295,7 @@ Jury uses the `claude` CLI, so there is no API key to set up.
 |---|---|
 | Summarising each file | Haiku |
 | Grouping and ordering | Sonnet |
+| Questions to check | Sonnet |
 | Answering questions | Sonnet |
 
 File summaries are skipped for changes larger than 60 files.
@@ -292,7 +314,8 @@ only.
 | `jury.ai.enabled` | `true` | Use a model at all |
 | `jury.provider` | `claude` | `claude` or `vscode-lm` |
 | `jury.providers` | | Command and models per provider |
-| `jury.passes` | `{}` | Use a different provider for summaries, grouping or questions |
+| `jury.passes` | `{}` | Use a different provider for `summaries`, `clustering`, `questions` or `ask` (chat) |
+| `jury.ai.questions` | `true` | Ask for questions to check on each cohort after grouping |
 | `jury.ai.summariseUpTo` | `60` | Skip file summaries above this many files. `0` turns them off |
 | `jury.scaffolding.mode` | `collapse` | `collapse`, `inline` or `off` |
 | `jury.scaffolding.patterns` | `[]` | Extra paths to treat as generated. Start with `!` to exclude one |

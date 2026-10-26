@@ -39,7 +39,13 @@ export type AskScope = 'hunk' | 'step' | 'cohort';
  * model can read the rest from the repository, and is told which they are rather than left
  * to assume it saw everything.
  */
-export function askContext(entry: Entry, scope: AskScope, order: readonly Entry[], budget: number): string {
+export function askContext(
+  entry: Entry,
+  scope: AskScope,
+  order: readonly Entry[],
+  budget: number,
+  reading = true,
+): string {
   if (scope === 'hunk') return [...header(entry), ...hunkBlock(entry.hunk)].join('\n');
 
   const inScope = order.filter(
@@ -50,7 +56,7 @@ export function askContext(entry: Entry, scope: AskScope, order: readonly Entry[
   // cannot know to go and read. So the structure is paid for up front, and showing a hunk
   // costs only what its body adds over its stub.
   const shown = new Set<Entry>();
-  let left = budget - render(entry, inScope, shown).length;
+  let left = budget - render(entry, inScope, shown, reading).length;
   for (const candidate of [entry, ...inScope.filter((other) => other !== entry)]) {
     const extra = hunkBlock(candidate.hunk).join('\n').length - stub(candidate.hunk).length;
     // The hunk being read is shown whatever it costs: a stub of it answers nothing.
@@ -58,10 +64,11 @@ export function askContext(entry: Entry, scope: AskScope, order: readonly Entry[
     shown.add(candidate);
     left -= extra;
   }
-  return render(entry, inScope, shown);
+  return render(entry, inScope, shown, reading);
 }
 
-function render(entry: Entry, inScope: readonly Entry[], shown: ReadonlySet<Entry>): string {
+/** Without `reading`, nobody is on a hunk yet: the cohort is sent whole, ahead of the read. */
+function render(entry: Entry, inScope: readonly Entry[], shown: ReadonlySet<Entry>, reading: boolean): string {
   const lines = header(entry);
   let layer = -1;
   for (const other of inScope) {
@@ -72,7 +79,7 @@ function render(entry: Entry, inScope: readonly Entry[], shown: ReadonlySet<Entr
     lines.push(...(shown.has(other) ? hunkBlock(other.hunk) : [stub(other.hunk)]), '');
   }
 
-  lines.push(`The reviewer is on the hunk in ${entry.hunk.path}:${entry.hunk.newStart}.`);
+  if (reading) lines.push(`The reviewer is on the hunk in ${entry.hunk.path}:${entry.hunk.newStart}.`);
   const hidden = inScope.length - shown.size;
   if (hidden > 0) {
     lines.push(

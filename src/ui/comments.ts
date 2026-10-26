@@ -122,7 +122,22 @@ export class Comments implements vscode.Disposable {
       return;
     }
 
-    const comment = newComment(located.hunkId, located.offset, 'new', suggestion(text));
+    this.start(newComment(located.hunkId, located.offset, 'new', suggestion(text)));
+  }
+
+  /**
+   * Start a note on the first line of a hunk, open for editing with `body` in it: a question
+   * from the walkthrough, quoted, for the reviewer to answer under. Clearing it discards it.
+   */
+  startOn(hunkId: string, body: string): void {
+    const hunk = this.session?.files.flatMap((file) => file.hunks).find((candidate) => candidate.id === hunkId);
+    if (!hunk) return;
+    this.start(newComment(hunkId, 0, hunk.newCount > 0 ? 'new' : 'old', body));
+  }
+
+  private start(comment: Comment): void {
+    const session = this.session;
+    if (!session) return;
     session.comments.push(comment);
 
     const thread = this.threadFor(comment.hunkId, comment, [{ ...this.toRendered(comment), mode: vscode.CommentMode.Editing }]);

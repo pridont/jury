@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { Session } from '../session.js';
-import { describeSpec } from '../model/types.js';
+import { describeSpec, type Question } from '../model/types.js';
 import type { Documents } from './documents.js';
 
 /** The extension that teaches an older VS Code's markdown preview to draw mermaid. */
@@ -84,6 +84,7 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
     // is a continuation of its last sentence, and renders run into it.
     if (cohort.riskReason) lines.push('', `   ${cohort.riskReason}`);
     if (cohort.mismatch) lines.push('', `   **Not as described:** ${cohort.mismatch}`);
+    if (cohort.questions?.length) lines.push('', '   Check while reading:', ...questionLines(cohort.questions, '   '));
   });
   lines.push('');
 
@@ -99,6 +100,13 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
   }
 
   return lines.join('\n');
+}
+
+/** A cohort's questions as a markdown list, each led by who would ask it. */
+export function questionLines(questions: readonly Question[], indent = ''): string[] {
+  return questions.map(
+    ({ perspective, question }) => `${indent}- *${perspective[0]!.toUpperCase()}${perspective.slice(1)}:* ${question}`,
+  );
 }
 
 function hasMermaid(): boolean {

@@ -115,10 +115,18 @@ export type Cohort = {
    * leaves out or describes differently. Kept on the cohort so it is read with the code.
    */
   mismatch?: string;
+  /**
+   * What to check while reading, each from a different perspective. Questions, never
+   * findings: the reviewer answers them, in a note if they like.
+   */
+  questions?: Question[];
   /** Array position is the reading order. */
   layers: Layer[];
   origin: 'ai' | 'heuristic';
 };
+
+/** `perspective` is who would ask it: a caller of the changed code, a tester, an operator. */
+export type Question = { perspective: string; question: string };
 
 export type Comment = {
   id: string;

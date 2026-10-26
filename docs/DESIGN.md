@@ -22,6 +22,10 @@ git diff → parse → detect generated files → group by file → shown in the
                                                   └─ pass 2: group and order         (Sonnet)
                                                                    │
                                                           checked, then replaces the tree once
+                                                                   │
+                                                   pass 3: questions to check per cohort (Sonnet)
+                                                                   │
+                                                          checked, then added to the cohorts
 ```
 
 The file-based grouping appears first and is usable straight away. The model passes run in
@@ -136,6 +140,34 @@ one piece of work, with an order to read it in.
 In the text sent to the model, hunks are labelled `h1`, `h2` and so on. Short labels are
 cheap to repeat back, and a made-up one is easy to spot. If a label shows up in a title or
 summary, it is replaced with the file name before you see it.
+
+## Questions to check
+
+Pass 3 runs after grouping and asks, in one call for every cohort, for two or three
+questions per cohort. One call rather than one per cohort is cheaper and lets the cohorts
+share the input budget: each gets an equal share, sent the way a `/cohort` chat question is,
+with the hunks past its share named but not shown. On the `auth-clock` eval fixture it is
+about $0.017, 545 output tokens and 5 seconds with Sonnet.
+
+Each question comes from a named perspective (caller, tester, operator). This is
+perspective-based reading: at Bosch, reading code from an analyst's and a tester's
+perspective found more than a checklist did (Laitenberger et al., 2001), though it took
+longer, and the benefit goes when the perspectives overlap (Maldonado et al., 2006). So no
+two questions on a cohort share a perspective. Readers understand code by checking
+hypotheses against it (Brooks, 1983), and a question is a hypothesis to check. Readers who
+wrote things down answered better (Lister et al., 2004), so a question can be answered in a
+note on the cohort's first hunk.
+
+It is a separate pass because the grouping prompt says "do not review", and it is right to.
+These do not review either. The answer is checked before it is used: a question without a
+perspective, without a question mark, from a perspective already used on that cohort, or
+that asks for a verdict or proposes a change (`is this a bug`, `should …`, `is it correct`)
+is dropped, and a cohort keeps at most three. A cohort label leaked into a question is
+replaced by the cohort's title. An answer with no usable question is declined and not
+cached. Scaffolding and unclassified cohorts are not asked about, and nor are trails.
+
+Questions arrive after the grouping and change nothing on screen except the tooltips and an
+open walkthrough, which is rewritten in place. `jury.ai.questions` turns the pass off.
 
 ## What the model sees
 
@@ -315,7 +347,7 @@ src/
 media/        icons
 test/
   unit/       unit tests, with diffs generated from real git
-  eval/       grouping quality against hand-written expectations
+  eval/       grouping and question quality against a real model
 ```
 
 Everything is bundled into `dist/extension.js` with Vite. There are no runtime
@@ -325,5 +357,7 @@ dependencies, which is why packaging uses `vsce package --no-dependencies`.
 
 - **Reviewing commit by commit.** It would need a different interface.
 - **Editing code.** Jury only reads. Ask's tools can read files but never change them.
+- **Review findings.** No bug hunting, verdicts or suggestions from the model. Questions to
+  check point attention; the reviewer does the judging.
 - **A custom webview.** VS Code's own diff editor, comments and chat already do the job,
   and they come with language support.

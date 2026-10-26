@@ -30,6 +30,14 @@ export class Documents implements vscode.TextDocumentContentProvider, vscode.Dis
     return document;
   }
 
+  /** Replace `name` in place if it was shown, without opening it or taking focus. */
+  update(name: string, content: string): void {
+    const uri = vscode.Uri.from({ scheme: DOC_SCHEME, path: `/${name}` });
+    if (!this.contents.has(uri.path)) return;
+    this.contents.set(uri.path, content);
+    this.changed.fire(uri);
+  }
+
   dispose(): void {
     this.contents.clear();
     this.changed.dispose();

@@ -68,6 +68,8 @@ function scripted() {
 
 function canned() {
   if (system.includes('organise code reviews')) return cluster();
+  // No questions unless a test scripts some: an answer with none is declined, and nothing shows.
+  if (system.includes('prepare a reviewer to read a change')) return JSON.stringify({ cohorts: [] });
   if (system.includes('summarise diffs')) {
     return JSON.stringify({ summary: `Fake summary of ${input.match(/^File: (.+)$/m)?.[1] ?? 'the file'}.` });
   }
