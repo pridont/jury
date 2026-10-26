@@ -65,8 +65,18 @@ language model finds and orders the code. You do the reading.
 
 ## Quick setup
 
-Jury is not on the VS Code Marketplace yet. To install it, build it from this repository.
-You need [Node.js](https://nodejs.org) 20 or newer.
+Install Jury from the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pridont.jury):
+open the Extensions view, search for **Jury** and click **Install**. Or from a terminal:
+
+```
+code --install-extension pridont.jury
+```
+
+Jury appears in the activity bar. VS Code keeps it up to date.
+
+To build it from this repository instead, you need [Node.js](https://nodejs.org) 20 or
+newer:
 
 ```
 git clone https://github.com/pridont/jury.git
@@ -79,10 +89,6 @@ code --install-extension jury.vsix
 If the `code` command is not found, install the `.vsix` from VS Code instead: open the
 Extensions view, click the `...` menu at the top, choose **Install from VSIX…** and pick
 `jury.vsix`.
-
-Reload VS Code. Jury appears in the activity bar.
-
-To update, pull the latest changes and run the last three commands again.
 
 ## Usage
 

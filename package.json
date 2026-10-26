@@ -2,7 +2,7 @@
   "name": "jury",
   "displayName": "Jury",
   "description": "Read code in the order it makes sense. Review a diff or pull request as an ordered stack of related changes, or ask how something works and get the code to read, step by step. A model finds and orders the code; you read it and judge it.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "pridont",
   "icon": "media/jury-tile-128.png",
   "license": "MIT",
@@ -20,8 +20,9 @@
     "node": ">=20"
   },
   "categories": [
-    "SCM Providers",
-    "Other"
+    "AI",
+    "Chat",
+    "SCM Providers"
   ],
   "keywords": [
     "code review",
