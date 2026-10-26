@@ -80,7 +80,7 @@ suite('questions to check', () => {
     await waitFor(() => documentText('Walkthrough.md').includes('Check while reading'), 'questions in the walkthrough');
     assert.match(
       documentText('Walkthrough.md'),
-      /1\. \*\*Expiry check\*\* — The comparison is inclusive\.\n\n {3}Check while reading:\n {3}- \*Caller:\* What does isExpired return when exp equals now\?\n2\. /,
+      /1\. \*\*\[Expiry check\]\(\S+\)\*\* — The comparison is inclusive\.\n\n {3}Check while reading:\n {3}- \*Caller:\* What does isExpired return when exp equals now\?\n2\. /,
     );
   });
 
