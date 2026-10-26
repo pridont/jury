@@ -1,6 +1,4 @@
-<img src="media/jury-tile-128.png" alt="Jury" width="96">
-
-# Jury
+<h1><img src="media/jury-tile-128.png" alt="" width="48" align="absmiddle"> Jury</h1>
 
 A VS Code extension that puts code in the order it should be read.
 
@@ -16,6 +14,8 @@ language model finds and orders the code. You do the reading.
 ## Features
 
 ### Reviewing a change
+
+![Reviewing a pull request: the diff grouped into cohorts and layers, with the step note above the code](docs/images/review-change.webp)
 
 - Groups a diff into **cohorts** (related work) and **layers** (steps within that work), in
   reading order.
@@ -36,6 +36,8 @@ language model finds and orders the code. You do the reading.
 - Works without a model too, grouped by file.
 
 ### Understanding code
+
+![A tour of a repository: its parts in reading order, with the note for the current stop](docs/images/tour.webp)
 
 - Ask how something in the repository works, and get a **trail**: the code that answers it,
   in the order to read it.
