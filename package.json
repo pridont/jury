@@ -207,6 +207,12 @@
         "category": "Jury"
       },
       {
+        "command": "jury.answerQuestion",
+        "title": "Answer a Question in a Note",
+        "category": "Jury",
+        "icon": "$(comment)"
+      },
+      {
         "command": "jury.markCohortReviewed",
         "title": "Mark Cohort Reviewed",
         "category": "Jury",
@@ -423,6 +429,11 @@
           "group": "navigation@2"
         },
         {
+          "command": "jury.answerQuestion",
+          "when": "view == jury.stack && viewItem == cohort",
+          "group": "navigation@3"
+        },
+        {
           "command": "jury.notScaffolding",
           "when": "view == jury.stack && viewItem == cohort-scaffolding",
           "group": "navigation@3"
@@ -612,6 +623,10 @@
           "when": "jury.active"
         },
         {
+          "command": "jury.answerQuestion",
+          "when": "jury.active"
+        },
+        {
           "command": "jury.submitReview",
           "when": "jury.pr"
         },
@@ -718,7 +733,7 @@
           "type": "object",
           "default": {},
           "description": "Route individual passes to different providers, e.g. { \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }. Unset passes use jury.provider.",
-          "markdownDescription": "Route individual passes to different providers, e.g. `{ \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }`. Summaries are many small calls; clustering is the one call that decides the reading order. Unset passes use `jury.provider`."
+          "markdownDescription": "Route individual passes to different providers, e.g. `{ \"summaries\": \"vscode-lm\", \"clustering\": \"claude\" }`. Summaries are many small calls; clustering is the one call that decides the reading order; questions is one call after it. Unset passes use `jury.provider`."
         },
         "jury.scaffolding.mode": {
           "type": "string",
@@ -747,6 +762,11 @@
           "type": "boolean",
           "default": true,
           "description": "Open the walkthrough when the model finishes organising the change. It is the thing to read before any code."
+        },
+        "jury.ai.questions": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "After grouping, ask for two or three questions per cohort to check while reading — one from a caller of the changed code, one from a tester, one from someone operating it. Questions, never findings: they point attention and leave the judging to you. One extra model call per review, cached like grouping. Route it with `jury.passes` as `questions`."
         },
         "jury.ai.summariseUpTo": {
           "type": "number",

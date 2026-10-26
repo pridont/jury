@@ -25,6 +25,7 @@ import { Cache } from './agent/cache.js';
 import { Queue } from './agent/queue.js';
 import { isWorthSummarising, summariseFiles } from './agent/summaries.js';
 import { clusterChange } from './agent/cluster.js';
+import { askQuestions } from './agent/questions.js';
 import { authorIntent } from './git/intent.js';
 import { codebaseMap } from './agent/map.js';
 import { render as renderWalkthrough, showWalkthrough } from './ui/walkthrough.js';
@@ -263,6 +264,7 @@ export function activate(context: vscode.ExtensionContext): Api {
     ),
     vscode.commands.registerCommand('jury.openLayerFiles', (node?: Node) => openLayerFiles(host, node)),
     vscode.commands.registerCommand('jury.openCohort', (node?: Node) => openCohort(host, node)),
+    vscode.commands.registerCommand('jury.answerQuestion', (node?: Node) => answerQuestion(host, ctx(), node)),
     vscode.commands.registerCommand('jury.markCohortReviewed', (node?: Node) =>
       markCohort(host, node, ctx()),
     ),
@@ -659,7 +661,32 @@ async function cluster(
   if (vscode.workspace.getConfiguration('jury').get<boolean>('walkthrough.autoOpen', true)) {
     await showWalkthrough(session, ctx.documents);
   }
+
+  const questioner =
+    live() && vscode.workspace.getConfiguration('jury').get<boolean>('ai.questions', true)
+      ? await providerFor('questions')
+      : null;
+  if (questioner && live()) await question(session, ctx, passDeps(session, ctx, questioner), live);
   return null;
+}
+
+/**
+ * Pass 3: questions to read each cohort with. They land on the cohorts already on screen, so
+ * nothing moves: the tooltips gain them, and an open walkthrough is rewritten in place.
+ */
+async function question(session: Session, ctx: Context, deps: PassDeps, live: () => boolean): Promise<void> {
+  ctx.activity.start('Writing questions to read with');
+  const result = await askQuestions(deps, session.cohorts, session.files);
+  ctx.activity.stop();
+  if (!live()) return;
+  if (!result.ok) {
+    if (result.reason !== 'cancelled') log.appendLine(`  no questions: ${result.reason}`);
+    return;
+  }
+
+  for (const [cohort, questions] of result.questions) cohort.questions = questions;
+  ctx.tree.refresh();
+  ctx.documents.update('Walkthrough.md', renderWalkthrough(session));
 }
 
 /** Ask again after a refresh, or when the order looks wrong. */
@@ -759,7 +786,7 @@ function applyProviderSettings(claude: ClaudeProvider, vscodeLm: VscodeLmProvide
  * reason the tiers exist.
  */
 /** With `loud`, every reason there is no provider is said, for a pass the reviewer asked for. */
-async function providerFor(pass: 'summaries' | 'clustering' | 'ask', loud = false): Promise<Provider | null> {
+async function providerFor(pass: 'summaries' | 'clustering' | 'questions' | 'ask', loud = false): Promise<Provider | null> {
   const config = vscode.workspace.getConfiguration('jury');
   const say = (message: string) => loud && void vscode.window.showWarningMessage(`Jury: ${message}`);
   if (!config.get<boolean>('ai.enabled', true)) {
@@ -816,6 +843,29 @@ async function openLayerFiles(host: SessionHost, node?: Node): Promise<void> {
     .filter((file): file is FileChange => file !== undefined);
   const multi = await openMultiDiff(session, node.layer.title, files);
   if (!multi) log.appendLine('  multi-file diff editor unavailable; opened files individually');
+}
+
+/**
+ * Answer one of a cohort's questions in a note: pick it, and a note opens on the cohort's
+ * first hunk with the question quoted. Writing the answer down is the part that helps.
+ */
+async function answerQuestion(host: SessionHost, ctx: Context, node?: Node): Promise<void> {
+  const cohort = node?.type === 'cohort' ? node.cohort : ctx.nav.current?.cohort;
+  if (!host.active || !cohort) return;
+  if (!cohort.questions?.length) {
+    vscode.window.showInformationMessage('Jury: this change has no questions to answer.');
+    return;
+  }
+
+  const chosen = await vscode.window.showQuickPick(
+    cohort.questions.map((q) => ({ label: q.question, description: q.perspective, q })),
+    { placeHolder: `Answer a question about "${cohort.title}" in a note` },
+  );
+  const first = cohort.layers[0]?.hunkIds[0];
+  if (!chosen || !first) return;
+
+  await ctx.nav.goToHunk(first);
+  ctx.comments.startOn(first, `> ${chosen.q.question} (${chosen.q.perspective})\n\n`);
 }
 
 async function openCohort(host: SessionHost, node?: Node): Promise<void> {

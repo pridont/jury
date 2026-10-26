@@ -4,6 +4,7 @@ import type { FileChange } from '../git/parse.js';
 import type { Session, SessionHost } from '../session.js';
 import type { Activity } from './activity.js';
 import type { Cohort, Comment, Layer, Risk } from '../model/types.js';
+import { questionLines } from './walkthrough.js';
 
 export type Node =
   | { type: 'message'; text: string; icon?: string; loader?: boolean }
@@ -157,7 +158,10 @@ export class StackTree implements vscode.TreeDataProvider<Node> {
         item.tooltip = new vscode.MarkdownString(
           prose +
             (risk ? `\n\n**${risk[0]!.toUpperCase()}${risk.slice(1)}**${node.cohort.riskReason ? `: ${node.cohort.riskReason}` : ''}` : '') +
-            (node.cohort.mismatch ? `\n\n**Not as described:** ${node.cohort.mismatch}` : ''),
+            (node.cohort.mismatch ? `\n\n**Not as described:** ${node.cohort.mismatch}` : '') +
+            (node.cohort.questions?.length
+              ? `\n\nCheck while reading:\n\n${questionLines(node.cohort.questions).join('\n')}`
+              : ''),
         );
         // Medium and high differ only by colour on screen; a screen reader gets the word.
         item.accessibilityInformation = {
