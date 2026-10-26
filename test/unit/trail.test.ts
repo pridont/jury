@@ -210,6 +210,69 @@ describe('askTrail', () => {
     expect(result.trail.steps[0]!.spans.map((s) => s.focus)).toEqual([12, undefined, undefined, undefined, undefined]);
   });
 
+  describe('terms', () => {
+    let dir: string;
+    beforeEach(async () => {
+      dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'jury-terms-')));
+      await fs.mkdir(path.join(dir, 'repo'));
+      await fs.writeFile(path.join(dir, 'repo', 'a.ts'), 'one\ntwo\nthree\n');
+      await fs.writeFile(path.join(dir, 'outside.ts'), 'one\n');
+    });
+    afterEach(() => fs.rm(dir, { recursive: true, force: true }));
+
+    const tour = (terms: unknown) =>
+      askTrail(
+        answering(JSON.stringify({ summary: 'S.', terms, steps: [{ title: 'T', summary: '', spans: [{ path: 'a.ts', start: 1, end: 2 }] }] })),
+        path.join(dir, 'repo'),
+        'the whole repository',
+        new AbortController().signal,
+        () => {},
+        { kind: 'tour' },
+      );
+    const termsOf = async (terms: unknown) => {
+      const result = await tour(terms);
+      if (!result.ok) throw new Error(result.reason);
+      return result.trail.terms;
+    };
+
+    it('keeps a term whose file is there, with its line clamped to the file', async () => {
+      expect(
+        await termsOf([
+          { term: ' hunk ', meaning: 'A run of changed lines.', path: './a.ts', line: 2 },
+          { term: 'layer', meaning: 'One step of a cohort.', path: 'a.ts', line: 40 },
+          { term: 'cohort', meaning: 'Hunks read together.', path: 'a.ts', line: -3.5 },
+        ]),
+      ).toEqual([
+        { term: 'hunk', meaning: 'A run of changed lines.', path: 'a.ts', line: 2 },
+        { term: 'layer', meaning: 'One step of a cohort.', path: 'a.ts', line: 3 },
+        { term: 'cohort', meaning: 'Hunks read together.', path: 'a.ts', line: 1 },
+      ]);
+    });
+
+    it('drops a term that is malformed, or defined in a file that is not there', async () => {
+      const good = { term: 'span', meaning: 'Lines of a trail.', path: 'a.ts', line: 1 };
+      expect(
+        await termsOf([
+          good,
+          { ...good, path: 'gone.ts' },
+          { ...good, path: '../outside.ts' },
+          { ...good, term: '' },
+          { ...good, meaning: 3 },
+          { ...good, line: '1' },
+          { term: 'trail', meaning: 'x', path: 'a.ts' },
+          'nonsense',
+        ]),
+      ).toEqual([good]);
+    });
+
+    it('keeps at most twelve, and none when there are none', async () => {
+      const many = Array.from({ length: 20 }, (_, i) => ({ term: `t${i}`, meaning: 'm', path: 'a.ts', line: 1 }));
+      expect(await termsOf(many)).toHaveLength(12);
+      expect(await termsOf('hunk, layer')).toBeUndefined();
+      expect(await termsOf([{ term: 'x', meaning: 'm', path: 'gone.ts', line: 1 }])).toBeUndefined();
+    });
+  });
+
   it('says so when there is no trail in the answer', async () => {
     expect(await ask('I could not find it.')).toMatchObject({ ok: false });
     expect(await ask(JSON.stringify({ summary: 'S.', steps: [] }))).toMatchObject({ ok: false });

@@ -64,6 +64,20 @@ that come one after another become the layers of one cohort. An area with a sing
 one row titled `Area: stop`. The answer can also hold a mermaid diagram of the areas, which
 is kept in the spec and drawn in the walkthrough.
 
+A tour also names the codebase's vocabulary: five to twelve words it uses in its own sense
+("hunk", "layer", "cohort", "scaffolding"), each with a one-line meaning and the line where
+it is defined. Comprehension is building links from the code to what the reader knows of
+the domain (Brooks, 1983), and missing domain knowledge is a kind of confusion of its own
+(Hermans, 2021): a newcomer who reads "layer" as a layer of the architecture misreads every
+stop that uses it. The words are shown in the walkthrough before the reading order, and are
+part of the codebase map, so cohort summaries use them too. Where a stop follows a
+well-known pattern (a work queue, an observer, retry with backoff), its summary names it:
+experts read by matching code to plans they already know (Soloway and Ehrlich, 1984), and
+the name is the hook. A term's file and line are a claim, like a span's: a term whose file
+is not in the repository is dropped and its line is clamped to the file. This is checked
+once, when the answer arrives, since the map reads a saved tour without opening it. Tours
+saved before terms existed have none, and open as before. Trails do not ask for terms.
+
 A detailed tour asks the `deep` tier and a quick one the `smart` tier, with the same prompt.
 The detailed one is the default: a tour is asked for once and saved, and on this repository
 the deep model gave more stops that explain mechanisms rather than name files.

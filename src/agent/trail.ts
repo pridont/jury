@@ -1,11 +1,12 @@
-import type { TrailStep } from '../model/types.js';
+import type { Term, TrailStep } from '../model/types.js';
 import { diagramOf } from '../model/merge.js';
+import { readLines } from '../git/source.js';
 import { parse } from './json.js';
 import { tourPrompt } from './prompts/tour.js';
 import { trailPrompt } from './prompts/trail.js';
 import type { Provider, Tier, Usage } from './provider.js';
 
-export type Trail = { summary: string; steps: TrailStep[]; diagram?: string };
+export type Trail = { summary: string; steps: TrailStep[]; diagram?: string; terms?: Term[] };
 
 /**
  * A trail answers a question; a tour walks a whole codebase, or a folder of it. More steps
@@ -16,6 +17,8 @@ const KINDS = {
   tour: { prompt: tourPrompt, label: 'Tour', maxSteps: 35 },
 };
 const MAX_SPANS = 6;
+/** A glossary longer than this is a dictionary, and nobody reads one before starting. */
+const MAX_TERMS = 12;
 /** A span is read in one look. The prompt asks for this, and models do not always listen. */
 const MAX_SPAN_LINES = 80;
 /**
@@ -57,17 +60,51 @@ export async function askTrail(
     },
   );
 
-  const parsed = parse<{ summary: string; steps: unknown[]; diagram?: unknown }>(answer.text, KINDS[kind].prompt.shape);
+  const parsed = parse<{ summary: string; steps: unknown[]; diagram?: unknown; terms?: unknown }>(
+    answer.text,
+    KINDS[kind].prompt.shape,
+  );
   if (!parsed.ok) return { ok: false, reason: `the answer was not a trail (${parsed.error})` };
 
   const steps = parsed.value.steps.flatMap(step).slice(0, KINDS[kind].maxSteps);
   if (steps.length === 0) return { ok: false, reason: 'the answer had no steps with code in them' };
   const diagram = diagramOf(parsed.value.diagram);
+  const terms = await checked(Array.isArray(parsed.value.terms) ? parsed.value.terms.flatMap(term) : [], root);
   return {
     ok: true,
-    trail: { summary: parsed.value.summary, steps, ...(diagram ? { diagram } : {}) },
+    trail: {
+      summary: parsed.value.summary,
+      steps,
+      ...(diagram ? { diagram } : {}),
+      ...(terms.length > 0 ? { terms: terms.slice(0, MAX_TERMS) } : {}),
+    },
     usage: answer.usage,
   };
+}
+
+/** One term as the model wrote it, or nothing when it is not one. */
+function term(value: unknown): Term[] {
+  if (typeof value !== 'object' || value === null) return [];
+  const { term, meaning, path, line } = value as Record<string, unknown>;
+  if (typeof term !== 'string' || !term.trim() || typeof meaning !== 'string' || !meaning.trim()) return [];
+  if (typeof path !== 'string' || typeof line !== 'number' || !Number.isFinite(line)) return [];
+  return [{ term: term.trim(), meaning: meaning.trim(), path: path.replace(/^\.\//, ''), line: Math.floor(line) }];
+}
+
+/**
+ * Where a term is defined is a claim, as a span's lines are: a term whose file is not there
+ * is dropped, and its line is clamped to the file. Checked once, here: a tour is read as the
+ * codebase map without being opened.
+ */
+async function checked(terms: Term[], root: string): Promise<Term[]> {
+  const lengths = new Map<string, number | null>();
+  for (const { path } of terms) {
+    if (!lengths.has(path)) lengths.set(path, (await readLines(root, path))?.length ?? null);
+  }
+  return terms.flatMap((term) => {
+    const length = lengths.get(term.path);
+    return length ? [{ ...term, line: Math.min(Math.max(term.line, 1), length) }] : [];
+  });
 }
 
 /** One step as the model wrote it, or nothing when it is not one. */

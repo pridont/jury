@@ -9,7 +9,7 @@ type Tour = Extract<ReviewSpec, { kind: 'trail' }>;
 
 /**
  * How the codebase is organised, from a tour already taken of it: its summary, its areas and
- * the files each covers, and its diagram. Empty when no saved tour covers the change.
+ * the files each covers, the words the code uses in its own sense, and its diagram. Empty when no saved tour covers the change.
  *
  * Nothing is asked of the model here. A tour is saved like any review, so the map is the
  * best saved tour for these paths: the one covering most of them, the newest on a tie. It
@@ -46,6 +46,10 @@ function render(tour: Tour): string {
     'Areas, and the files read for each:\n' +
       [...areas].map(([area, files]) => `- ${area}: ${[...files].join(', ')}`).join('\n'),
   ];
+  // So a change is summed up in the codebase's own words. Before the diagram: it says more per character.
+  if (tour.terms?.length) {
+    parts.push('Words this code uses:\n' + tour.terms.map(({ term, meaning }) => `- ${term}: ${meaning}`).join('\n'));
+  }
   if (tour.diagram) parts.push(`How they fit together:\n${tour.diagram}`);
 
   const text = parts.join('\n\n');

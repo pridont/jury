@@ -39,7 +39,7 @@ export async function acquire(repo: Repo, spec: ReviewSpec): Promise<Acquired> {
     const files = new Map<string, string[] | null>();
     for (const step of spec.steps) {
       for (const span of step.spans) {
-        if (!files.has(span.path)) files.set(span.path, await readLines(repo, span.path));
+        if (!files.has(span.path)) files.set(span.path, await readLines(repo.root, span.path));
       }
     }
     return { base: 'worktree', head: 'worktree', ...buildTrail(spec.steps, (file) => files.get(file) ?? null) };
@@ -99,9 +99,9 @@ async function resolve(repo: Repo, rev: string): Promise<string> {
  * A file in the working tree, as lines. Null when it is not there, is not a file, or is not
  * inside the repository: a path comes from a model, and `../` is not the repository.
  */
-async function readLines(repo: Repo, relative: string): Promise<string[] | null> {
-  const absolute = path.resolve(repo.root, relative);
-  if (path.isAbsolute(relative) || !absolute.startsWith(repo.root + path.sep)) return null;
+export async function readLines(root: string, relative: string): Promise<string[] | null> {
+  const absolute = path.resolve(root, relative);
+  if (path.isAbsolute(relative) || !absolute.startsWith(root + path.sep)) return null;
   try {
     const content = await fs.readFile(absolute, 'utf8');
     const lines = content.split(/\r?\n/);
