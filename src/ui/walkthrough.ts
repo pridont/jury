@@ -62,6 +62,14 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
     }
   }
 
+  // The words before the code: a reader who misreads "layer" misreads every stop that uses it.
+  const terms = session.spec.kind === 'trail' ? (session.spec.terms ?? []) : [];
+  if (terms.length > 0) {
+    lines.push('## Words this code uses', '');
+    for (const { term, meaning, path, line } of terms) lines.push(`- **${term}** — ${meaning} \`${path}:${line}\``);
+    lines.push('');
+  }
+
   lines.push('## Read in this order', '');
   cohorts.forEach((cohort, index) => {
     const risk = cohort.risk === 'low' ? '' : ` **(${cohort.risk} risk)**`;

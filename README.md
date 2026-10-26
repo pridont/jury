@@ -237,7 +237,11 @@ short answer says what and where.
 repository or one folder. The model explores it and lays out a tour: the areas of the code
 (for example "Git layer" or "Editor UI"), in the order that makes each one understandable,
 with a few stops in each. Every area is a row in the Jury panel and its stops are below it.
-The walkthrough shows a summary and a diagram of how the areas fit together.
+The walkthrough shows a summary and a diagram of how the areas fit together, and, before
+the stops, **Words this code uses**: the terms the codebase gives its own meaning (in Jury,
+for example, hunk, layer and cohort), each with what it means and the file and line where
+it is defined. When a stop follows a well-known pattern, such as a work queue or retry with
+backoff, its summary names it.
 
 Jury then asks how thorough the tour should be:
 
@@ -251,7 +255,8 @@ A tour is saved, so you pay for it once. Touring one folder costs less.
 
 A saved tour also helps later reviews. When a change is grouped, the model is given the tour
 that covers most of the changed files as a map of the codebase, so cohort summaries can say
-which part of the code a change touches, for example "the Gateway's authenticate middleware".
+which part of the code a change touches, for example "the Gateway's authenticate middleware",
+in the codebase's own words.
 Take a new tour when the code has changed a lot; the old one is still used until then.
 
 ### Generated files

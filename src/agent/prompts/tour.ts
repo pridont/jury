@@ -4,11 +4,12 @@ import type { Shape } from '../json.js';
  * A tour: how a codebase, or one folder of it, is put together, as code to read in order.
  *
  * A trail answers one question; a tour answers the one a newcomer has before any other.
- * Same shape of answer, so it opens and is read the same way, with two additions: steps
- * are grouped into the areas of the code they are in, and the parts are drawn.
+ * Same shape of answer, so it opens and is read the same way, with three additions: steps
+ * are grouped into the areas of the code they are in, the parts are drawn, and the words the
+ * code uses in its own sense are explained: a newcomer who misreads them misreads the rest.
  */
 export const tourPrompt = {
-  version: 2,
+  version: 3,
 
   system: [
     'You give a developer who has never seen this codebase a guided tour of it. Use your',
@@ -31,6 +32,9 @@ export const tourPrompt = {
     '- title: what this stop shows, under 60 characters. "Hunk ids are content hashes", not',
     '  "identity.ts".',
     '- summary: one to three sentences on what to notice and why it matters to the rest.',
+    '  When the code there follows a well-known pattern (a work queue, an observer, retry',
+    '  with backoff, a state machine), name the pattern: a reader who knows it reads the',
+    '  code against it.',
     '- spans: one to three ranges of lines, as path (relative to the repository root), start',
     '  and end (1-based, inclusive). Only lines you have read, with the line numbers you',
     '  read them at. Keep a span to what matters — a type, a function, the heart of a module',
@@ -47,12 +51,25 @@ export const tourPrompt = {
     'A -->|label| B, and labels containing punctuation in double quotes. Written as a JSON',
     'string: newlines as \\n, quotes as \\".',
     '',
+    'terms: five to twelve words this codebase uses in its own sense, which a newcomer would',
+    'not know or would misread: the names of its own concepts, or ordinary words it gives a',
+    'narrower meaning. Not words of the language, a library or the field in general. Each',
+    'with:',
+    '- term: the word, as the code spells it in prose.',
+    '- meaning: what it means here, in one line.',
+    '- path and line: where it is defined: the line that declares the type, class, function',
+    '  or constant that is it, or, for a concept no one declaration holds, the comment that',
+    '  explains it. Never a line that only uses the word. Look the definition up with your',
+    '  tools, even when it is outside the part of the code being toured, and give the line',
+    '  number you read it at.',
+    '',
     'Do not suggest changes. Do not review the code. Do not praise it.',
     '',
     'Reply with only this JSON object, with no prose and no code fence:',
     '{',
     '  "summary": "three to five sentences",',
     '  "diagram": "flowchart TD\\n  git[\\"Git layer\\"] --> model[\\"Model\\"]",',
+    '  "terms": [{"term": "...", "meaning": "...", "path": "src/a.ts", "line": 12}],',
     '  "steps": [',
     '    {"area": "...", "title": "...", "summary": "...", "spans": [{"path": "src/a.ts", "start": 10, "end": 42, "focus": 17}]}',
     '  ]',

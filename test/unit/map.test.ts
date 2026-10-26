@@ -35,6 +35,19 @@ describe('mapFrom', () => {
     );
   });
 
+  it('names the words the code uses, and stays within its cap however many there are', () => {
+    const terms = (meaning: string) =>
+      ['hunk', 'cohort'].map((term) => ({ term, meaning: `${term} ${meaning}`, path: 'src/types.ts', line: 1 }));
+    const withTerms = (meaning: string) => saved({ ...(tour('Tour of jury').spec as Extract<ReviewSpec, { kind: 'trail' }>), terms: terms(meaning) });
+
+    expect(mapFrom([withTerms('means this.')], ['src/a.ts'])).toContain(
+      '- UI: src/ui/tree.ts\n\nWords this code uses:\n- hunk: hunk means this.\n- cohort: cohort means this.\n\nHow they fit together:',
+    );
+    const long = mapFrom([withTerms('x'.repeat(5000))], ['src/a.ts']);
+    expect(long).toMatch(/Words this code uses:\n- hunk: hunk x+\n… \(cut short\)$/);
+    expect(long.length).toBeLessThanOrEqual(4000 + '\n… (cut short)'.length);
+  });
+
   it('takes the tour covering most of the change, the newest on a tie', () => {
     const reviews = [tour('Tour of docs/'), tour('Tour of src/'), tour('Tour of jury'), tour('Tour of src/ui/')];
     expect(mapFrom(reviews, ['src/a.ts', 'src/ui/b.ts'])).toMatch(/^Tour of src\//);
