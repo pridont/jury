@@ -47,7 +47,7 @@ const AFTER = vscode.window.createTextEditorDecorationType({
  * Above the line as a code lens in a plain editor. A diff editor hides lenses by default,
  * and most of a review is read in one, so there the same words go after the line instead.
  */
-export class StepLenses implements vscode.CodeLensProvider, vscode.Disposable {
+export class StepLenses implements vscode.CodeLensProvider, vscode.HoverProvider, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.changed.event;
   /** The text after each line of each document drawn in a diff editor, as last drawn. */
@@ -77,6 +77,18 @@ export class StepLenses implements vscode.CodeLensProvider, vscode.Disposable {
           command: '',
         }),
     );
+  }
+
+  /**
+   * The whole of what the lenses on a line say, as the line's hover. A lens's own tooltip is
+   * plain text that VS Code may not show at all; a hover wraps and is shown on request.
+   */
+  provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+    // A diff editor that hides lenses already has it, as the hover of the text after the line.
+    if (this.drawn.has(document.uri.toString())) return undefined;
+    const here = this.notes(document).filter((note) => note.line === position.line);
+    if (here.length === 0) return undefined;
+    return new vscode.Hover(new vscode.MarkdownString(here.map((note) => note.full).join('\n\n')), document.lineAt(position.line).range);
   }
 
   /** Into every diff editor that hides lenses, the notes after their lines; nothing elsewhere. */

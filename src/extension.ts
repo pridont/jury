@@ -124,6 +124,7 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.languages.registerCodeLensProvider([{ scheme: SCHEME }, { scheme: 'file' }], new OutsideUses(host)),
     steps,
     vscode.languages.registerCodeLensProvider([{ scheme: SCHEME }, { scheme: 'file' }], steps),
+    vscode.languages.registerHoverProvider([{ scheme: SCHEME }, { scheme: 'file' }], steps),
     vscode.workspace.registerTextDocumentContentProvider(DOC_SCHEME, documents),
     documents,
 

@@ -252,7 +252,11 @@ lens, so a long title cannot push it out of sight.
 A lens does not wrap, and an extension cannot ask how wide the editor is, so a line longer
 than 100 characters would run off its edge unread. It is shortened to the title and the
 summary's first sentence, or the title alone, ending in "…", never cut mid-sentence: half a
-sentence can read as a different claim. The whole text is the lens's hover.
+sentence can read as a different claim. The whole text is the hover of the line the lens is
+on. A lens's own tooltip is plain text, shown as a native tooltip that VS Code may not show at
+all and that does not wrap; a hover provider's hover is markdown, wraps, and also opens from
+the keyboard. In a diff editor that hides lenses the provider says nothing, since the text
+after the line already carries the note as its hover.
 
 The lens is drawn on one side only, the side with content, or a diff editor would say
 everything twice. A review grouped by file has none: each step is a file, and the tab
