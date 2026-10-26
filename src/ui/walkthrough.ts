@@ -13,6 +13,31 @@ const MERMAID_EXTENSION = 'bierner.markdown-mermaid';
 const MERMAID_RENDERERS = ['vscode.mermaid-markdown-features', MERMAID_EXTENSION];
 
 /**
+ * Where a row of the reading order links to: a layer, as `jury.openLayer` takes it.
+ *
+ * Not a `command:` link: the built-in preview's webview does not enable command URIs, so it
+ * drops them without a word. A link in the editor's own URL scheme does get through, to the
+ * handler `activate` registers. VS Code asks once before handing such a link to Jury.
+ */
+export function layerLink(cohortIndex: number, layerIndex: number): string {
+  return `${vscode.env.uriScheme}://pridont.jury/openLayer?${encodeURIComponent(JSON.stringify([cohortIndex, layerIndex]))}`;
+}
+
+/** The layer a `layerLink` points at, or null for anything else: any page can open these. */
+export function linkedLayer(uri: vscode.Uri): [number, number] | null {
+  if (uri.path !== '/openLayer') return null;
+  try {
+    const args: unknown = JSON.parse(uri.query);
+    if (Array.isArray(args) && args.length === 2 && args.every((n) => Number.isInteger(n) && n >= 0)) {
+      return args as [number, number];
+    }
+  } catch {
+    // Not JSON: not one of ours.
+  }
+  return null;
+}
+
+/**
  * What this change is, before any of it.
  *
  * Not an outline of the tree — the tree is right there, and saying the same thing twice in a
@@ -25,7 +50,8 @@ export async function showWalkthrough(session: Session, documents: Documents): P
   await vscode.commands.executeCommand('markdown.showPreview');
 }
 
-export function render(session: Session, canDrawMermaid = hasMermaid()): string {
+/** `links` off for a copy read anywhere but here, where a link into this window means nothing. */
+export function render(session: Session, canDrawMermaid = hasMermaid(), links = true): string {
   const cohorts = session.cohorts.filter((cohort) => cohort.kind !== 'scaffolding');
   const scaffolding = session.cohorts.find((cohort) => cohort.kind === 'scaffolding');
   const hunks = session.files.flatMap((file) => file.hunks).filter((hunk) => !hunk.scaffolding).length;
@@ -55,8 +81,7 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
     } else {
       lines.push(
         `_A diagram of this change is available, but nothing here can draw it. ` +
-          `Install [Markdown Preview Mermaid Support](command:workbench.extensions.search?%22${MERMAID_EXTENSION}%22) ` +
-          `and reopen this._`,
+          `Install Markdown Preview Mermaid Support (\`${MERMAID_EXTENSION}\`) and reopen this._`,
         '',
       );
     }
@@ -70,15 +95,22 @@ export function render(session: Session, canDrawMermaid = hasMermaid()): string 
     lines.push('');
   }
 
+  // Scaffolding is left out of the list, so a row's number is not its cohort's index.
+  const title = (text: string, cohort: number, layer: number) =>
+    links ? `**[${text.replace(/[[\]]/g, '\\$&')}](${layerLink(cohort, layer)})**` : `**${text}**`;
+
   lines.push('## Read in this order', '');
   cohorts.forEach((cohort, index) => {
+    const at = session.cohorts.indexOf(cohort);
     const risk = cohort.risk === 'low' ? '' : ` **(${cohort.risk} risk)**`;
     // An area of a tour has no account of its own; its stops do, so they speak for it.
     if (!cohort.summary && cohort.layers.length > 1) {
       lines.push(`${index + 1}. **${cohort.title}**${risk}`);
-      for (const layer of cohort.layers) lines.push(`   - **${layer.title}** — ${layer.summary || 'no summary'}`);
+      cohort.layers.forEach((layer, layerIndex) =>
+        lines.push(`   - ${title(layer.title, at, layerIndex)} — ${layer.summary || 'no summary'}`),
+      );
     } else {
-      lines.push(`${index + 1}. **${cohort.title}**${risk} — ${cohort.summary || 'no summary'}`);
+      lines.push(`${index + 1}. ${title(cohort.title, at, 0)}${risk} — ${cohort.summary || 'no summary'}`);
     }
     // Paragraphs of the item, after a blank line: an indented line straight after the item
     // is a continuation of its last sentence, and renders run into it.

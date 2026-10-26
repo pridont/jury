@@ -28,7 +28,7 @@ import { clusterChange } from './agent/cluster.js';
 import { askQuestions } from './agent/questions.js';
 import { authorIntent } from './git/intent.js';
 import { codebaseMap } from './agent/map.js';
-import { render as renderWalkthrough, showWalkthrough } from './ui/walkthrough.js';
+import { linkedLayer, render as renderWalkthrough, showWalkthrough } from './ui/walkthrough.js';
 import { Activity } from './ui/activity.js';
 import { forgetSessions, registerChat } from './ui/chat.js';
 import { Documents, DOC_SCHEME, offerToSave } from './ui/documents.js';
@@ -257,6 +257,13 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.commands.registerCommand('jury.openLayer', (target: number | Node, layerIndex?: number) => {
       if (typeof target === 'number') return nav.goToLayer(target, layerIndex ?? 0);
       if (target.type === 'layer') return nav.goToLayer(target.cohortIndex, target.layerIndex);
+    }),
+    // The walkthrough's rows link here, the one way out of its preview into the reading order.
+    vscode.window.registerUriHandler({
+      handleUri: (uri) => {
+        const layer = linkedLayer(uri);
+        if (layer) void vscode.commands.executeCommand('jury.openLayer', ...layer);
+      },
     }),
     vscode.commands.registerCommand(
       'jury.openLayerFile',
@@ -1337,7 +1344,7 @@ async function describeBranch(host: SessionHost, documents: Documents): Promise<
   const session = host.active;
   if (!session) return;
 
-  const markdown = toDescription(renderWalkthrough(session, true), session.cohorts);
+  const markdown = toDescription(renderWalkthrough(session, true, false), session.cohorts);
   await documents.show('Description.md', markdown, { preview: false });
 
   const pr = session.pr ?? (await resolve(session.repo).catch(() => null));

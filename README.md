@@ -19,7 +19,9 @@ language model finds and orders the code. You do the reading.
 
 - Groups a diff into **cohorts** (related work) and **layers** (steps within that work), in
   reading order.
-- A short walkthrough of what the change does before you read any code. It also says where
+- A short walkthrough of what the change does before you read any code. Each row of its
+  reading order links to that code. The first time you follow one, VS Code asks whether Jury
+  may open the link. The walkthrough also says where
   the pull request description or commit messages promise something the diff does not do.
   A group whose code does something the description leaves out or tells differently is
   marked **not as described**, with a warning icon on its row, and on its code. Groups are named for what the

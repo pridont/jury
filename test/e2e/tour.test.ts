@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import { linkedLayer } from '../../src/ui/walkthrough.js';
 import { configure, dialogs, documentText, fake, jury, repo, review, sidebar, waitFor } from './harness.js';
 
 const lines = (name: string) => Array.from({ length: 6 }, (_, i) => `export const ${name}${i + 1} = ${i + 1};`).join('\n') + '\n';
@@ -61,16 +62,17 @@ suite('tour', () => {
     await vscode.commands.executeCommand('jury.walkthrough');
     // Wait for this tour's text: an earlier test's walkthrough may still be open under the same name.
     const text = await waitFor(() => (documentText('Walkthrough.md').includes('# Tour of src/') ? documentText('Walkthrough.md') : ''), 'the walkthrough');
-    assert.ok(
-      text.includes(
+    // Each stop links to its own layer; the area, which is no one place, does not.
+    assert.match(
+      text,
+      new RegExp(
         [
-          '1. **Core**',
-          '   - **The types** — What everything holds.',
-          '   - **The ids** — How they are named.',
-          '2. **UI: The tree** — Where they are shown.',
+          '1\\. \\*\\*Core\\*\\*',
+          '   - \\*\\*\\[The types\\]\\(\\S+\\)\\*\\* — What everything holds\\.',
+          '   - \\*\\*\\[The ids\\]\\(\\S+\\)\\*\\* — How they are named\\.',
+          '2\\. \\*\\*\\[UI: The tree\\]\\(\\S+\\)\\*\\* — Where they are shown\\.',
         ].join('\n'),
       ),
-      text,
     );
     assert.doesNotMatch(text, /no summary/);
     // The words come before the stops that use them, each where it is defined.
@@ -88,6 +90,11 @@ suite('tour', () => {
       text,
     );
     assert.doesNotMatch(text, /ghost/);
+
+    const ids = linkedLayer(vscode.Uri.parse(/\[The ids\]\((\S+)\)/.exec(text)![1]!));
+    assert.deepEqual(ids, [0, 1]);
+    await vscode.commands.executeCommand('jury.openLayer', ...ids!);
+    await waitFor(() => api.nav.current?.layerIndex === 1 && api.nav.current.cohortIndex === 0, 'the reading position on The ids');
   });
 
   test('a tour without terms, as one saved before them, opens without the section', async () => {

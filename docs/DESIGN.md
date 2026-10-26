@@ -224,6 +224,21 @@ Each file shows why it was moved and can be brought back with **Not Scaffolding*
 remembers that choice for the repository. The rules lean towards leaving a file in the
 review, because hiding real code is worse than showing a generated file.
 
+## From the walkthrough to the code
+
+Every row of the walkthrough's reading order is a link to its code: a cohort to its first
+layer, and each stop of a tour area to its own layer, landing where `jury.openLayer` would
+from the tree. A reader goes back and forth between what the change does and the code that
+does it, so the summary should not be a dead end.
+
+The links are not `command:` links. The walkthrough is shown by VS Code's own markdown
+preview, whose webview does not enable command URIs, so it drops them without a word. A
+link in the editor's own URL scheme, `vscode://pridont.jury/openLayer?[cohort,layer]`, does
+get through, to the URI handler Jury registers. VS Code asks once before it hands such a
+link to an extension, and the dialog offers not to ask again. The handler only accepts two
+indices, because any page can open these links. A link into this window means nothing on
+GitHub, so the copy that becomes a pull request description has no links.
+
 ## What each step is for
 
 The tree and the walkthrough say why a step is there, but neither is in view while its code
