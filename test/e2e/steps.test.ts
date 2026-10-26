@@ -43,6 +43,14 @@ async function steps(file: string): Promise<[number, string][]> {
     .filter(([, title]) => !title.includes('outside this change'));
 }
 
+/** What every hover provider says about a line of a working-tree file. */
+async function hover(file: string, line: number): Promise<string> {
+  const uri = vscode.Uri.file(path.join(repo.root, file));
+  await vscode.workspace.openTextDocument(uri);
+  const found = (await vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', uri, new vscode.Position(line, 0))) ?? [];
+  return found.flatMap((h) => h.contents.map((c) => (typeof c === 'string' ? c : c.value))).join('\n\n');
+}
+
 suite('step lenses', () => {
   setup(async () => {
     fake.reset();
@@ -61,8 +69,10 @@ suite('step lenses', () => {
       [0, '1. Expiry check — The comparison is inclusive.'],
     ]);
     // Too long for one line, so the title and the whole sentences that fit. The rest is the
-    // lens's hover, which this command does not hand back.
+    // hover of the line the lens is on.
     assert.deepEqual(await steps('src/c.ts'), [[0, '2. Tests — Cover the boundary. …']]);
+    assert.ok((await hover('src/c.ts', 0)).includes(`2. Tests — ${JSON.parse(ANSWER).cohorts[1].summary}`));
+    assert.ok(!(await hover('src/c.ts', 1)).includes('2. Tests'));
   });
 
   test('a cohort that is not as described has a warning icon on its row', async () => {
@@ -85,12 +95,15 @@ suite('step lenses', () => {
     await api.nav.goToHunk(entry.hunk.id);
     const drawn = await waitFor(() => api.steps.drawn.get(uri), 'the text after line 1 of a.ts');
     assert.deepEqual(drawn, [[0, '⚠ Not as described …  ·  1. Expiry check …']]);
+    // The text after the line has the whole note as its hover; the line's own would repeat it.
+    assert.ok(!(await hover('src/a.ts', 0)).includes('1. Expiry check'));
 
     // With lenses on in diff editors, the lens says it and the text would say it twice.
     const diffEditor = vscode.workspace.getConfiguration('diffEditor');
     await diffEditor.update('codeLens', true, vscode.ConfigurationTarget.Workspace);
     try {
       await waitFor(() => api.steps.drawn.size === 0 || undefined, 'no text once lenses show');
+      assert.ok((await hover('src/a.ts', 0)).includes('1. Expiry check — The comparison is inclusive.'));
     } finally {
       await diffEditor.update('codeLens', undefined, vscode.ConfigurationTarget.Workspace);
     }
