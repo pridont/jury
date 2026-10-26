@@ -46,3 +46,68 @@ jobs:
         with:
           name: jury-vsix
           path: jury.vsix
+
+  # A release is worked out from the commit messages that reach main, so each of them, and the
+  # title a squash merge takes instead, has to say what kind of change it is.
+  commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The title by environment, not inline: a title is text anyone opening a PR chooses.
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          types='feat|fix|perf|revert|refactor|docs|test|build|ci|chore|style'
+          bad=$({ echo "$TITLE"; git log --no-merges --format=%s "$BASE..$HEAD"; } | grep -Ev "^(($types)(\([^)]+\))?!?: .+|Revert \".+\")$" || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Write these as <type>(<scope>): <summary>, where <type> is one of ${types//|/, }, and a ! before the colon marks a breaking change:"
+            echo "$bad"
+            exit 1
+          fi
+
+  # Every push to main whose tests pass, when its commits call for a release: semantic-release
+  # picks the version, adds it to CHANGELOG.md, commits that back, tags it, attaches the .vsix
+  # to a GitHub release and publishes it to the Marketplace. The rules are under "release" in
+  # package.json.
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    # One at a time, so two quick merges never pick the same version.
+    concurrency: release
+    # The publishing identity's federated credential trusts this environment and nothing else.
+    environment: marketplace
+    permissions:
+      contents: write # the release commit, the tag and the GitHub release
+      issues: write # a comment on each issue a release fixes
+      pull-requests: write # a comment on each pull request a release ships
+      id-token: write # signing in to Azure as the publishing identity
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+      - run: npm audit signatures
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      # The ID the publisher's members list wants for the identity, which is none of its client,
+      # object or resource IDs. Only signed in as the identity can it be read, so here it is.
+      - name: The identity's Marketplace ID
+        continue-on-error: true
+        run: az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798 --query id -o tsv
+      - run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VSCE_AZURE_CREDENTIAL: 'true'

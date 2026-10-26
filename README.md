@@ -340,6 +340,12 @@ npm test          # unit tests
 npm run eval      # measure grouping quality (calls the model)
 ```
 
+Commit messages and pull request titles are
+[conventional commits](https://www.conventionalcommits.org): `feat: …`, `fix: …`,
+`docs: …` and so on. They decide what ships. Every merge to `main` with a `feat`, `fix` or
+`perf` in it is released to the Marketplace with the version and changelog worked out from
+them. See [Releasing](docs/DESIGN.md#releasing).
+
 Press `F5` to run the extension in a new window. **Jury: Doctor** checks that `git`, `gh`
 and `claude` are available. **Jury: Show Log** lists every model call with its token count
 and cost.

@@ -370,7 +370,46 @@ test/
 ```
 
 Everything is bundled into `dist/extension.js` with Vite. There are no runtime
-dependencies, which is why packaging uses `vsce package --no-dependencies`.
+dependencies, which is why `vsce` is told not to look for any (`"vsce": { "dependencies":
+false }` in `package.json`).
+
+## Releasing
+
+Every push to `main` whose tests pass is a release when its commits call for one. Nobody
+picks a version or writes a changelog entry by hand: the commit messages say what changed,
+so they are written as [conventional commits](https://www.conventionalcommits.org), and CI
+fails a pull request whose title or commits are not.
+
+[semantic-release](https://semantic-release.gitbook.io) reads the commits since the last
+`v*` tag and picks the version from the most significant one:
+
+| Commit | Release |
+|---|---|
+| `feat!:`, or a `BREAKING CHANGE:` footer | major |
+| `feat:` | minor |
+| `fix:`, `perf:`, `revert:` | patch |
+| `docs:`, `test:`, `refactor:`, `build:`, `ci:`, `chore:`, `style:` | none |
+
+These are `@semantic-release/commit-analyzer`'s defaults. To ship another type, give
+`@semantic-release/commit-analyzer` a `releaseRules` entry under `release` in
+`package.json`, such as `{ "type": "refactor", "release": "patch" }`; `"release": false`
+stops one. A breaking change before 1.0 still goes to 1.0.0.
+
+Then it adds the version's notes to the top of `CHANGELOG.md`, grouped into features, fixes
+and performance from the commit subjects, packages the `.vsix` with that version, publishes
+it to the Marketplace, commits `CHANGELOG.md` and the version back to `main` as
+`chore(release): x.y.z [skip ci]`, tags it, and makes a GitHub release with the notes and
+the `.vsix`. Pull requests and issues it ships get a comment saying which version has them.
+A squash merge takes the pull request's title as its message when the pull request has more
+than one commit, so the title is checked as well as the commits.
+
+The release job signs in to the Marketplace with Microsoft Entra ID, not a personal access
+token: Azure DevOps retires the global tokens the Marketplace needs on 1 December 2026.
+GitHub's OIDC token is exchanged for a user-assigned managed identity's, through a federated
+credential that trusts only the repository's `marketplace` environment. The identity is a
+Contributor on the `pridont` publisher, added by the ID the release job prints before it
+publishes: the Marketplace knows it by none of its Azure IDs. The `marketplace` environment holds its client and
+tenant IDs as `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`; there is no secret to rotate.
 
 ## Not planned
 
