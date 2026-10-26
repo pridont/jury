@@ -93,12 +93,14 @@ describe('tour', () => {
       expect(result.ok, result.ok ? '' : result.reason).toBe(true);
       if (!result.ok) return;
 
-      const { steps, summary, diagram } = result.trail;
+      const { steps, summary, diagram, terms = [] } = result.trail;
       const built = buildTrail(steps, read);
       console.log(
         `\n=== tour of ${scope} ===\n${summary}\n${diagram ?? '(no diagram)'}\n` +
+          terms.map((t) => `  ${t.term}: ${t.meaning}\n       ${t.path}:${t.line}: ${read(t.path)?.[t.line - 1]?.trim() ?? ''}`).join('\n') +
+          '\n' +
           built.cohorts
-            .map((c, i) => `  ${i + 1}. ${c.title}\n${c.layers.map((l) => `       - ${l.title}`).join('\n')}`)
+            .map((c, i) => `  ${i + 1}. ${c.title}\n${c.layers.map((l) => `       - ${l.title}: ${l.summary}`).join('\n')}`)
             .join('\n') +
           `\n  ${steps.length} stops, ${tools} tool calls, $${result.usage.costUsd.toFixed(4)}`,
       );
@@ -111,6 +113,17 @@ describe('tour', () => {
       expect(visits.length).toBeGreaterThanOrEqual(2);
       expect(visits.length).toBeLessThanOrEqual(7);
       expect(diagram, 'a diagram that parses').toMatch(/^flowchart/);
+
+      // The words: enough of them, and each line is about the word. Whether it is where the word
+      // is defined, rather than used, is for a person reading the log: a concept can be defined
+      // by a type, a comment or a prompt.
+      expect(terms.length, terms.map((t) => t.term).join(', ')).toBeGreaterThanOrEqual(5);
+      const letters = (text: string) => text.toLowerCase().replace(/[^a-z]/g, '');
+      for (const { term, path, line } of terms) {
+        // A line may open the doc comment that explains the word, which names it further down.
+        const near = read(path)!.slice(Math.max(0, line - 3), line + 10).join('\n');
+        expect(letters(near), `${term} at ${path}:${line}`).toContain(letters(term));
+      }
 
       const spans = steps.flatMap((step) => step.spans);
       for (const span of spans) {

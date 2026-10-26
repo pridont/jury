@@ -10,9 +10,16 @@ export type ReviewSpec =
   /**
    * Code nobody changed, read in an order that answers `question`. The steps are the
    * model's answer, kept in the spec so a saved trail reopens without asking again. A tour
-   * of the repository is a trail too, one whose steps are grouped into areas.
+   * of the repository is a trail too, one whose steps are grouped into areas, and which names
+   * the words the code uses in its own sense. Tours saved before terms existed have none.
    */
-  | { kind: 'trail'; question: string; summary: string; steps: TrailStep[]; diagram?: string };
+  | { kind: 'trail'; question: string; summary: string; steps: TrailStep[]; diagram?: string; terms?: Term[] };
+
+/**
+ * A word a codebase uses in its own sense ("hunk", "cohort"), what it means here, and the
+ * line (1-based) where it is defined.
+ */
+export type Term = { term: string; meaning: string; path: string; line: number };
 
 /**
  * One stop on a trail: what to read, and why. Lines are 1-based and inclusive. `focus` is

@@ -87,6 +87,14 @@ export function render(session: Session, canDrawMermaid = hasMermaid(), links = 
     }
   }
 
+  // The words before the code: a reader who misreads "layer" misreads every stop that uses it.
+  const terms = session.spec.kind === 'trail' ? (session.spec.terms ?? []) : [];
+  if (terms.length > 0) {
+    lines.push('## Words this code uses', '');
+    for (const { term, meaning, path, line } of terms) lines.push(`- **${term}** — ${meaning} \`${path}:${line}\``);
+    lines.push('');
+  }
+
   // Scaffolding is left out of the list, so a row's number is not its cohort's index.
   const title = (text: string, cohort: number, layer: number) =>
     links ? `**[${text.replace(/[[\]]/g, '\\$&')}](${layerLink(cohort, layer)})**` : `**${text}**`;
